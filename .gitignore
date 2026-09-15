@@ -1,0 +1,38 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+local.properties
+*.jks
+*.keystore
+
+# Runtime data and backups
+*.db
+*.db-*
+backups/
+data/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Android / Gradle
+.gradle/
+**/build/
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Generated packages and OS files
+*.apk
+*.aab
+*.zip
+.DS_Store
+Thumbs.db

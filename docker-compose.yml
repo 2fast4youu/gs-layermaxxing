@@ -1,0 +1,39 @@
+services:
+  api:
+    build: ./server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /data/layermaxxing.db
+    volumes:
+      - layermaxxing_data:/data
+    ports:
+      - "127.0.0.1:8790:8080"
+  duckdns:
+    image: curlimages/curl:8.16.0
+    restart: unless-stopped
+    env_file: .env
+    command:
+      - /bin/sh
+      - -c
+      - while true; do curl -fsS "https://www.duckdns.org/update?domains=$$DUCKDNS_DOMAIN&token=$$DUCKDNS_TOKEN&ip="; sleep 300; done
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  layermaxxing_data:
+  caddy_data:
+  caddy_config:
