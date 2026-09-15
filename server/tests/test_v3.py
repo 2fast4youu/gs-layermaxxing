@@ -161,6 +161,56 @@ def test_groups_multi_recipient_and_encrypted_attachment(tmp_path, monkeypatch):
             assert content["attachment_ciphertext"] == "YXR0YWNobWVudA=="
 
 
+def test_encrypted_shared_topics_lifecycle_and_permissions(tmp_path, monkeypatch):
+    main = load_app(tmp_path)
+    clock = {"now": 1_800_000_000}
+    monkeypatch.setattr(main, "now_ts", lambda: clock["now"])
+    encrypted = {"ciphertext": "ZW5jcnlwdGVkLXRvcGlj", "nonce": "bm9uY2U=", "encryption_key": "a2V5"}
+    with TestClient(main.app) as client:
+        a, b, c = register(client, "A"), register(client, "B"), register(client, "C")
+
+        personal = client.post("/api/topics", headers=auth(a), json=encrypted)
+        assert personal.status_code == 201, personal.text
+        personal_id = personal.json()["id"]
+        listed = client.get("/api/topics", headers=auth(a)).json()
+        assert listed[0]["id"] == personal_id and listed[0]["target_type"] == "personal"
+        assert listed[0]["ciphertext"] == encrypted["ciphertext"]
+        assert client.get("/api/topics", headers=auth(b)).json() == []
+
+        denied = client.post("/api/topics", headers=auth(a), json={**encrypted, "peer_user_id": b["user_id"]})
+        assert denied.status_code == 403
+        befriend(client, a, b)
+        shared = client.post("/api/topics", headers=auth(a), json={**encrypted, "peer_user_id": b["user_id"]})
+        assert shared.status_code == 201, shared.text
+        shared_id = shared.json()["id"]
+        topic_for_b = next(row for row in client.get("/api/topics", headers=auth(b)).json() if row["id"] == shared_id)
+        assert topic_for_b["target_type"] == "friend" and topic_for_b["target_name"] == "A"
+        assert topic_for_b["can_delete"] is False
+
+        completed = client.patch(f"/api/topics/{shared_id}", headers=auth(b), json={"completed": True})
+        assert completed.status_code == 200
+        updated = next(row for row in client.get("/api/topics", headers=auth(a)).json() if row["id"] == shared_id)
+        assert updated["completed_at"] == clock["now"] and updated["completed_by_name"] == "B"
+        assert client.patch(f"/api/topics/{shared_id}", headers=auth(a), json={"completed": False}).status_code == 200
+        assert client.delete(f"/api/topics/{shared_id}", headers=auth(b)).status_code == 403
+        assert client.delete(f"/api/topics/{shared_id}", headers=auth(a)).status_code == 200
+
+        befriend(client, a, c)
+        group = client.post("/api/groups", headers=auth(a), json={
+            "name": "Treffen", "member_ids": [b["user_id"], c["user_id"]],
+        }).json()
+        group_topic = client.post("/api/topics", headers=auth(a), json={**encrypted, "group_id": group["id"]})
+        assert group_topic.status_code == 201
+        listed_for_c = client.get("/api/topics", headers=auth(c)).json()
+        assert listed_for_c[0]["target_type"] == "group" and listed_for_c[0]["target_name"] == "Treffen"
+        assert client.patch(f"/api/topics/{group_topic.json()['id']}", headers=auth(c), json={"completed": True}).status_code == 200
+
+        both_targets = client.post("/api/topics", headers=auth(a), json={
+            **encrypted, "peer_user_id": b["user_id"], "group_id": group["id"],
+        })
+        assert both_targets.status_code == 422
+
+
 def test_v2_manual_message_mode_is_preserved(tmp_path):
     import sqlite3
     db_path = tmp_path / "test.db"

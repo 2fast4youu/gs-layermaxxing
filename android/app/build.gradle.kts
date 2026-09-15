@@ -22,8 +22,8 @@ android {
         applicationId = "at.gregor.layermaxxing"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "3.6.1"
+        versionCode = 12
+        versionName = "3.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }

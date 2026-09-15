@@ -1,4 +1,4 @@
-# GS Layermaxxing 3.6.1
+# GS Layermaxxing 3.7
 
 Private Android-App für verschlüsselte Nachrichten mit regelbasierter späterer Freigabe.
 
@@ -18,6 +18,7 @@ Private Android-App für verschlüsselte Nachrichten mit regelbasierter spätere
 - eigenes adaptives Android-App-Icon und vereinfachte Material-You-Oberfläche
 - robuster Netzwerkzugriff mit HTTP/1.1-Wiederholung und DNS-over-HTTPS-Fallback
 - fünf rotierende Peitschensounds beim Antippen gesperrter Nachrichten
+- verschlüsselte persönliche, gemeinsame und gruppenweite Gesprächsthemen mit Offen-/Erledigt-Status
 
 ## Architektur
 

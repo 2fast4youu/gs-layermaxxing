@@ -152,6 +152,26 @@ def initialize_database() -> None:
             FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS topics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            creator_id INTEGER NOT NULL,
+            peer_user_id INTEGER,
+            group_id INTEGER,
+            ciphertext TEXT NOT NULL,
+            nonce TEXT NOT NULL,
+            encryption_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            completed_at INTEGER,
+            completed_by_id INTEGER,
+            CHECK(peer_user_id IS NULL OR group_id IS NULL),
+            FOREIGN KEY(creator_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(peer_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
+            FOREIGN KEY(completed_by_id) REFERENCES users(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_topics_creator ON topics(creator_id,completed_at,created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_topics_peer ON topics(peer_user_id,completed_at,created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_topics_group ON topics(group_id,completed_at,created_at DESC);
         """)
 
     # V1 message tables referenced devices. Rebuild once without losing rows.
@@ -189,7 +209,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="GS Layermaxxing", version="3.0.0", docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="GS Layermaxxing", version="3.1.0", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 
 class Credentials(BaseModel):
@@ -257,6 +277,18 @@ class GroupCreate(BaseModel):
     member_ids: list[int] = Field(min_length=1, max_length=20)
 
 
+class TopicCreate(BaseModel):
+    peer_user_id: int | None = None
+    group_id: int | None = None
+    ciphertext: str = Field(min_length=1, max_length=100_000)
+    nonce: str = Field(min_length=1, max_length=256)
+    encryption_key: str = Field(min_length=1, max_length=256)
+
+
+class TopicUpdate(BaseModel):
+    completed: bool
+
+
 class MessageCreate(BaseModel):
     recipient_id: int | None = None
     recipient_ids: list[int] = Field(default_factory=list, max_length=20)
@@ -317,7 +349,7 @@ def user_view(row: sqlite3.Row, relationship: str = "none") -> dict:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "version": "3.0.0"}
+    return {"status": "ok", "version": "3.1.0"}
 
 
 @app.post("/api/register", response_model=AuthResponse)
@@ -614,6 +646,92 @@ def list_groups(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
             result.append({"id": group["id"], "name": group["name"], "owner_id": group["owner_id"],
                            "members": [dict(m) for m in members]})
     return result
+
+
+def topic_view(row: sqlite3.Row, user_id: int) -> dict:
+    if row["group_id"] is not None:
+        target_type, target_name = "group", row["group_name"]
+    elif row["peer_user_id"] is not None:
+        target_type = "friend"
+        target_name = row["peer_name"] if row["creator_id"] == user_id else row["creator_name"]
+    else:
+        target_type, target_name = "personal", "Nur für mich"
+    return {
+        "id": row["id"], "creator_id": row["creator_id"], "creator_name": row["creator_name"],
+        "target_type": target_type, "target_name": target_name,
+        "ciphertext": row["ciphertext"], "nonce": row["nonce"], "encryption_key": row["encryption_key"],
+        "created_at": row["created_at"], "completed_at": row["completed_at"],
+        "completed_by_name": row["completed_by_name"], "can_delete": row["creator_id"] == user_id,
+    }
+
+
+def topic_rows(conn: sqlite3.Connection, user_id: int, topic_id: int | None = None) -> list[sqlite3.Row]:
+    topic_filter = "AND t.id=?" if topic_id is not None else ""
+    params: tuple[int, ...] = (user_id, user_id, user_id) + ((topic_id,) if topic_id is not None else ())
+    return conn.execute(f"""SELECT t.*,creator.name creator_name,peer.name peer_name,g.name group_name,
+                         completed.name completed_by_name
+                         FROM topics t
+                         JOIN users creator ON creator.id=t.creator_id
+                         LEFT JOIN users peer ON peer.id=t.peer_user_id
+                         LEFT JOIN groups g ON g.id=t.group_id
+                         LEFT JOIN users completed ON completed.id=t.completed_by_id
+                         WHERE (t.creator_id=? OR t.peer_user_id=? OR EXISTS(
+                             SELECT 1 FROM group_members gm WHERE gm.group_id=t.group_id AND gm.user_id=?
+                         )) {topic_filter}
+                         ORDER BY (t.completed_at IS NOT NULL),t.created_at DESC,t.id DESC""", params).fetchall()
+
+
+@app.get("/api/topics")
+def list_topics(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
+    with db() as conn:
+        return [topic_view(row, user["id"]) for row in topic_rows(conn, user["id"])]
+
+
+@app.post("/api/topics", status_code=201)
+def create_topic(payload: TopicCreate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    if payload.peer_user_id is not None and payload.group_id is not None:
+        raise HTTPException(422, "Wähle entweder einen Freund oder eine Gruppe")
+    if payload.peer_user_id == user["id"]:
+        raise HTTPException(422, "Nutze für eigene Themen die persönliche Liste")
+    with db() as conn:
+        if payload.peer_user_id is not None:
+            if blocked(conn, user["id"], payload.peer_user_id) or not are_friends(conn, user["id"], payload.peer_user_id):
+                raise HTTPException(403, "Gemeinsame Themen sind nur unter Freunden möglich")
+        if payload.group_id is not None and not conn.execute(
+            "SELECT 1 FROM group_members WHERE group_id=? AND user_id=?", (payload.group_id, user["id"]),
+        ).fetchone():
+            raise HTTPException(403, "Du bist nicht Mitglied dieser Gruppe")
+        cur = conn.execute("""INSERT INTO topics(
+            creator_id,peer_user_id,group_id,ciphertext,nonce,encryption_key,created_at
+        ) VALUES (?,?,?,?,?,?,?)""", (
+            user["id"], payload.peer_user_id, payload.group_id, payload.ciphertext,
+            payload.nonce, payload.encryption_key, now_ts(),
+        ))
+    return {"id": int(cur.lastrowid)}
+
+
+@app.patch("/api/topics/{topic_id}")
+def update_topic(topic_id: int, payload: TopicUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        if not topic_rows(conn, user["id"], topic_id):
+            raise HTTPException(404, "Thema nicht gefunden")
+        if payload.completed:
+            conn.execute("UPDATE topics SET completed_at=?,completed_by_id=? WHERE id=?", (now_ts(), user["id"], topic_id))
+        else:
+            conn.execute("UPDATE topics SET completed_at=NULL,completed_by_id=NULL WHERE id=?", (topic_id,))
+    return {"ok": True}
+
+
+@app.delete("/api/topics/{topic_id}")
+def delete_topic(topic_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        visible = topic_rows(conn, user["id"], topic_id)
+        if not visible:
+            raise HTTPException(404, "Thema nicht gefunden")
+        if visible[0]["creator_id"] != user["id"]:
+            raise HTTPException(403, "Nur der Ersteller kann das Thema löschen")
+        conn.execute("DELETE FROM topics WHERE id=?", (topic_id,))
+    return {"ok": True}
 
 
 def message_recipients(conn: sqlite3.Connection, payload: MessageCreate, sender_id: int) -> tuple[list[int], int | None]:

@@ -82,6 +82,11 @@ class ApiClient(
         val attachmentCiphertext: String?, val attachmentNonce: String?,
     )
     data class Group(val id: Long, val name: String, val ownerId: Long, val members: List<UserSummary>)
+    data class Topic(
+        val id: Long, val title: String, val details: String, val creatorName: String,
+        val targetType: String, val targetName: String, val createdAt: Long, val completedAt: Long?,
+        val completedByName: String?, val canDelete: Boolean,
+    )
     data class Session(val id: Long, val deviceName: String, val createdAt: Long, val lastSeenAt: Long, val current: Boolean)
     data class EncryptedAttachment(val name: String, val mime: String, val ciphertext: String, val nonce: String)
     data class SendRequest(
@@ -171,6 +176,20 @@ class ApiClient(
         authorized(token, "api/groups").post(JSONObject().put("name", name).put("member_ids", JSONArray(ids)).body()).build()
     )
 
+    suspend fun topics(token: String): List<Topic> = array(token, "api/topics", ::parseTopic)
+    suspend fun createTopic(token: String, title: String, details: String, peerId: Long?, groupId: Long?) = io {
+        val encrypted = CryptoBox.encrypt(JSONObject().put("title", title.trim()).put("details", details.trim()).toString())
+        val body = JSONObject().put("ciphertext", encrypted.ciphertext).put("nonce", encrypted.nonce)
+            .put("encryption_key", encrypted.key)
+        peerId?.let { body.put("peer_user_id", it) }
+        groupId?.let { body.put("group_id", it) }
+        execute(authorized(token, "api/topics").post(body.body()).build()).getLong("id")
+    }
+    suspend fun setTopicCompleted(token: String, id: Long, completed: Boolean) = unitCall(
+        authorized(token, "api/topics/$id").patch(JSONObject().put("completed", completed).body()).build()
+    )
+    suspend fun deleteTopic(token: String, id: Long) = unitCall(authorized(token, "api/topics/$id").delete().build())
+
     suspend fun send(token: String, payload: SendRequest): List<Long> = io {
         val body = JSONObject().put("recipient_ids", JSONArray(payload.recipientIds))
             .put("ciphertext", payload.encrypted.ciphertext).put("nonce", payload.encrypted.nonce)
@@ -209,6 +228,16 @@ class ApiClient(
     private fun parseAuth(json: JSONObject) = Auth(json.getString("token"), json.getLong("user_id"), json.getString("name"), json.nullableString("recovery_code"))
     private fun parseUser(json: JSONObject) = UserSummary(json.getLong("id"), json.getString("name"), json.optString("relationship", "none"),
         json.optString("avatar_emoji", "🔐"), json.optString("display_color", "#6750A4"))
+    private fun parseTopic(json: JSONObject): Topic {
+        val clear = JSONObject(CryptoBox.decrypt(json.getString("ciphertext"), json.getString("nonce"), json.getString("encryption_key")))
+        return Topic(
+            id = json.getLong("id"), title = clear.optString("title"), details = clear.optString("details"),
+            creatorName = json.getString("creator_name"), targetType = json.getString("target_type"),
+            targetName = json.getString("target_name"), createdAt = json.getLong("created_at"),
+            completedAt = json.nullableLong("completed_at"), completedByName = json.nullableString("completed_by_name"),
+            canDelete = json.getBoolean("can_delete"),
+        )
+    }
     private fun parseMessage(json: JSONObject, incoming: Boolean): Message = Message(
         id = json.getLong("id"), peerName = json.getString(if (incoming) "sender_name" else "recipient_name"), incoming = incoming,
         title = json.optString("title"), createdAt = json.getLong("created_at"), mode = json.optString("mode", if (json.optBoolean("manual_release")) "manual" else "timed"),

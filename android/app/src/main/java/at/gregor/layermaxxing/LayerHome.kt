@@ -85,8 +85,9 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
-private enum class HomeTab(val icon: String, val label: String) {
-    INBOX("✉", "Nachrichten"), SEND("＋", "Neu"), FRIENDS("●", "Kontakte"), ACCOUNT("⚙", "Mehr")
+private enum class HomeTab(val icon: String, val label: String, val title: String) {
+    INBOX("✉", "Post", "Nachrichten"), SEND("＋", "Neu", "Neue Nachricht"), TOPICS("☷", "Themen", "Gesprächsthemen"),
+    FRIENDS("●", "Leute", "Kontakte"), ACCOUNT("⚙", "Mehr", "Mehr")
 }
 private enum class ComposeMode(val label: String, val api: String) {
     DURATION("Nach einer Dauer", "timed"), DATE_TIME("Zu einem Zeitpunkt", "timed"), MANUAL("Von mir freigeben", "manual"),
@@ -109,6 +110,7 @@ fun LayerHome(
     var incoming by remember { mutableStateOf<List<ApiClient.IncomingRequest>>(emptyList()) }
     var outgoing by remember { mutableStateOf<List<ApiClient.OutgoingRequest>>(emptyList()) }
     var groups by remember { mutableStateOf<List<ApiClient.Group>>(emptyList()) }
+    var topics by remember { mutableStateOf<List<ApiClient.Topic>>(emptyList()) }
     var messages by remember { mutableStateOf<List<ApiClient.Message>>(emptyList()) }
     var outbox by remember { mutableStateOf<List<ApiClient.Message>>(emptyList()) }
     var sessions by remember { mutableStateOf<List<ApiClient.Session>>(emptyList()) }
@@ -125,7 +127,7 @@ fun LayerHome(
                     async { status = api.status(token) }, async { users = api.users(token) },
                     async { friends = api.friends(token) }, async { blocked = api.blocked(token) },
                     async { incoming = api.incomingRequests(token) }, async { outgoing = api.outgoingRequests(token) },
-                    async { groups = api.groups(token) }, async { messages = api.messages(token) },
+                    async { groups = api.groups(token) }, async { topics = api.topics(token) }, async { messages = api.messages(token) },
                     async { outbox = api.outbox(token) }, async { sessions = api.sessions(token) },
                 )
                 jobs.awaitAll()
@@ -149,7 +151,7 @@ fun LayerHome(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Image(painterResource(R.drawable.brand_logo), "GS Layermaxxing", Modifier.size(38.dp))
                     Column {
-                        Text(tab.label, fontWeight = FontWeight.Bold)
+                        Text(tab.title, fontWeight = FontWeight.Bold)
                         Text("${status?.avatarEmoji ?: "🔐"} ${status?.name ?: "GS Layermaxxing"}", fontSize = 12.sp,
                             color = status?.displayColor?.let(::profileColor) ?: MaterialTheme.colorScheme.primary)
                     }
@@ -159,16 +161,25 @@ fun LayerHome(
         bottomBar = {
             NavigationBar {
                 HomeTab.entries.forEach { item -> NavigationBarItem(
-                    selected = tab == item, onClick = { tab = item }, icon = { Text(item.icon, fontSize = 20.sp) },
-                    label = { Text(if (item == HomeTab.FRIENDS && incoming.isNotEmpty()) "${item.label} (${incoming.size})" else item.label) },
+                    selected = tab == item, onClick = { tab = item }, icon = {
+                        val count = when (item) {
+                            HomeTab.TOPICS -> topics.count { it.completedAt == null }
+                            HomeTab.FRIENDS -> incoming.size
+                            else -> 0
+                        }
+                        Text(if (count > 0) "${item.icon}${if (count > 9) "9+" else count}" else item.icon, fontSize = 19.sp)
+                    },
+                    label = { Text(item.label) },
                 ) }
             }
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
-                HomeTab.INBOX -> InboxScreen(messages, outbox, opened, token, api, ::act) { tab = HomeTab.SEND }
+                HomeTab.INBOX -> InboxScreen(messages, outbox, opened, token, api, ::act,
+                    onCompose = { tab = HomeTab.SEND }, openTopics = topics.count { it.completedAt == null }, onTopics = { tab = HomeTab.TOPICS })
                 HomeTab.SEND -> SendScreen(token, api, friends, groups) { tab = HomeTab.INBOX; act {} }
+                HomeTab.TOPICS -> TopicsScreen(topics, friends, groups, token, api, ::act)
                 HomeTab.FRIENDS -> FriendsScreen(token, api, users, friends, incoming, outgoing, groups, ::act)
                 HomeTab.ACCOUNT -> AccountScreen(token, api, store, status, sessions, blocked,
                     onTheme, onLogout, onRecovery = { recoveryCode = it }, act = ::act)
@@ -189,6 +200,7 @@ fun LayerHome(
 private fun InboxScreen(
     messages: List<ApiClient.Message>, outbox: List<ApiClient.Message>, opened: MutableMap<Long, OpenedMessage>,
     token: String, api: ApiClient, act: ((suspend () -> Unit) -> Unit), onCompose: () -> Unit,
+    openTopics: Int, onTopics: () -> Unit,
 ) {
     var showSent by remember { mutableStateOf(false) }
     var now by remember { mutableStateOf(Instant.now().epochSecond) }
@@ -210,6 +222,9 @@ private fun InboxScreen(
                         else -> "Alles ruhig – schreibe jemandem eine Nachricht."
                     }, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Button(onClick = onCompose, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("＋  Neue Nachricht") }
+                    if (openTopics > 0) TextButton(onClick = onTopics, modifier = Modifier.align(Alignment.End)) {
+                        Text("☷ $openTopics offene${if (openTopics == 1) "s Thema" else " Themen"}")
+                    }
                 }
             }
         }
