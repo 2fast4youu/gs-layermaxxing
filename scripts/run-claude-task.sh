@@ -24,7 +24,7 @@ else
 fi
 
 exec claude -p "$prompt" \
-  --model claude-fable-5 \
+  --model "${CLAUDE_MODEL:-sonnet}" \
   --effort high \
   --max-turns "${CLAUDE_MAX_TURNS:-30}" \
   --permission-mode acceptEdits \

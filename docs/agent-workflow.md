@@ -7,7 +7,7 @@ Dieses Repository wird von Hermes koordiniert. Claude Code implementiert; DeepSe
 ### Claude Code — Implementierung
 
 - CLI: `claude`
-- Modell: `claude-fable-5`
+- Modell: standardmäßig `sonnet` (im aktuell angemeldeten Pro-Konto verifiziert). Mit `CLAUDE_MODEL=claude-fable-5` kann Fable genutzt werden, sobald Usage Credits vorhanden sind.
 - Lädt automatisch `CLAUDE.md`.
 - Darf nach konkretem Auftrag lesen, ändern und Tests ausführen.
 - Arbeitet nur auf Branch `gerfried`.
