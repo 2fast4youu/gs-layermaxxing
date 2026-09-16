@@ -8,7 +8,7 @@ This document defines the requested test build on branch `gerfried`. Implement t
 - Add two runtime-selectable server profiles:
   - `Gregor (Original)` using BuildConfig URL `GREGOR_API_BASE_URL`.
   - `Gerfried (Testserver)` using BuildConfig URL `GERFRIED_API_BASE_URL`.
-- Build URLs come from environment variables `LAYERMAXXING_GREGOR_URL` and `LAYERMAXXING_GERFRIED_URL`. The Gerfried build defaults to `https://headless.tail586ff8.ts.net/layermaxxing/`. The production URL may remain `https://example.invalid/` when no production URL is supplied; show it as not configured rather than silently connecting.
+- Build URLs come from environment variables `LAYERMAXXING_GREGOR_URL` and `LAYERMAXXING_GERFRIED_URL`. The Gerfried build defaults to `https://layermaxxing.derkellner.duckdns.org/`. The production URL may remain `https://example.invalid/` when no production URL is supplied; show it as not configured rather than silently connecting.
 - Store the selected profile in SharedPreferences. A profile change clears the bearer token and returns to login.
 - When Gerfried/test is selected, show an unmistakable persistent red/orange banner on authentication and app screens: `⚠ TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN`. Show a confirmation dialog once per selection. Do not show this warning for a verified production-role server.
 - Backend: add `GET /api/server-info` returning name, role (`production` or `test`), version, warning and supported feature flags. Add `X-Layermaxxing-Role` response header. Environment: `SERVER_NAME`, `SERVER_ROLE`.
