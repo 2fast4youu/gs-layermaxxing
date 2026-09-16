@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
@@ -87,6 +88,7 @@ class MainActivity : FragmentActivity() {
                 var profile by remember { mutableStateOf(store.serverProfile) }
                 val api = remember(profile) { ApiClient(profile.baseUrl) }
                 var token by remember { mutableStateOf(store.token) }
+                var accounts by remember { mutableStateOf(store.savedAccounts()) }
                 var recoveryCode by remember { mutableStateOf<String?>(null) }
                 var biometricPassed by remember { mutableStateOf(!store.biometricEnabled) }
                 var verifiedRole by remember(profile) { mutableStateOf<String?>(null) }
@@ -128,6 +130,8 @@ class MainActivity : FragmentActivity() {
                         Box(Modifier.weight(1f)) { when {
                         token == null -> AuthScreen(api, profile, ::selectProfile) { auth ->
                             store.token = auth.token; store.name = auth.name
+                            store.saveAccount(auth.name, auth.token)
+                            accounts = store.savedAccounts()
                             token = auth.token; recoveryCode = auth.recoveryCode
                             biometricPassed = !store.biometricEnabled
                         }
@@ -136,6 +140,11 @@ class MainActivity : FragmentActivity() {
                             token = token!!, api = api, store = store, initialRecoveryCode = recoveryCode,
                             onRecoveryCodeSeen = { recoveryCode = null },
                             onTheme = { store.theme = it; theme = it },
+                            accounts = accounts,
+                            onSwitchAccount = { account ->
+                                store.token = account.token; store.name = account.name
+                                recoveryCode = null; token = account.token
+                            },
                             serverProfile = profile,
                             onServerProfile = ::selectProfile,
                             onLogout = {
@@ -257,7 +266,7 @@ private fun TestServerBanner() {
     Surface(color = Color(0xFFD84315), contentColor = Color.White) {
         Text(
             ServerProfilePolicy.TEST_WARNING,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 9.dp),
             fontWeight = FontWeight.ExtraBold,
         )
     }

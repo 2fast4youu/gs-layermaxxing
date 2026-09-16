@@ -18,7 +18,7 @@ val gregorApiBaseUrl = normalizedUrl(
 val gerfriedApiBaseUrl = normalizedUrl(
     localProperties.getProperty("layermaxxing.gerfriedApiBaseUrl")
         ?: System.getenv("LAYERMAXXING_GERFRIED_URL")
-        ?: "https://headless.tail586ff8.ts.net/layermaxxing/"
+        ?: "https://layermaxxing.derkellner.duckdns.org/"
 )
 
 android {
@@ -29,8 +29,8 @@ android {
         applicationId = "at.gregor.layermaxxing.gerfried"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "4.0"
+        versionCode = 14
+        versionName = "4.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GREGOR_API_BASE_URL", "\"$gregorApiBaseUrl\"")
         buildConfigField("String", "GERFRIED_API_BASE_URL", "\"$gerfriedApiBaseUrl\"")

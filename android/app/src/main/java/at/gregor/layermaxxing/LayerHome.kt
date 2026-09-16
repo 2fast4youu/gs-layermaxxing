@@ -110,6 +110,7 @@ data class EpPrompt(val friendId: Long, val letterId: Long?)
 fun LayerHome(
     token: String, api: ApiClient, store: SessionStore, initialRecoveryCode: String?,
     onRecoveryCodeSeen: () -> Unit, onTheme: (String) -> Unit, onLogout: () -> Unit,
+    accounts: List<SavedAccount>, onSwitchAccount: (SavedAccount) -> Unit,
     serverProfile: ServerProfile, onServerProfile: (ServerProfile) -> Unit,
 ) {
     var tab by remember { mutableStateOf(HomeTab.INBOX) }
@@ -137,6 +138,7 @@ fun LayerHome(
     var recoveryCode by remember { mutableStateOf(initialRecoveryCode) }
     val opened = remember { mutableStateMapOf<Long, OpenedMessage>() }
     val scope = rememberCoroutineScope()
+    var accountMenu by remember { mutableStateOf(false) }
 
     suspend fun refresh() {
         runCatching {
@@ -161,6 +163,8 @@ fun LayerHome(
     }
 
     LaunchedEffect(token) {
+        // Switching accounts must not leak the previous account's transient state.
+        opened.clear(); epPrompt = null; epDraft = null; composeRecipient = null; chatFriend = null
         while (true) { refresh(); delay(30_000) }
     }
     if (recoveryCode != null) RecoveryDialog(recoveryCode!!) { recoveryCode = null; onRecoveryCodeSeen() }
@@ -177,7 +181,23 @@ fun LayerHome(
                             color = status?.displayColor?.let(::profileColor) ?: MaterialTheme.colorScheme.primary)
                     }
                 }
-            }, actions = { TextButton(onClick = { scope.launch { refresh() } }) { Text("Aktualisieren") } })
+            }, actions = {
+                if (accounts.isNotEmpty()) Box {
+                    TextButton(onClick = { accountMenu = true }) { Text("⇄ " + store.name.ifBlank { "Konto" }, fontSize = 13.sp) }
+                    DropdownMenu(expanded = accountMenu, onDismissRequest = { accountMenu = false }) {
+                        accounts.forEach { account ->
+                            DropdownMenuItem(
+                                text = { Text(if (account.name == store.name) "${account.name} ✓" else account.name) },
+                                onClick = {
+                                    accountMenu = false
+                                    if (account.name != store.name) onSwitchAccount(account)
+                                },
+                            )
+                        }
+                    }
+                }
+                TextButton(onClick = { scope.launch { refresh() } }) { Text("Aktualisieren") }
+            })
         },
         bottomBar = {
             NavigationBar {

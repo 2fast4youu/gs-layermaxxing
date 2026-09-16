@@ -1,6 +1,10 @@
 package at.gregor.layermaxxing
 
 import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+
+data class SavedAccount(val name: String, val token: String)
 
 class SessionStore(context: Context) {
     private val prefs = context.getSharedPreferences("layermaxxing_session", Context.MODE_PRIVATE)
@@ -43,19 +47,52 @@ class SessionStore(context: Context) {
         prefs.edit().putStringSet(ledgerKey("messages"), messages)
             .putStringSet(ledgerKey("requests"), requests).apply()
     }
+    // Fast account switching for testing: logins are remembered per server
+    // profile and survive a logout, so rehearsing a flow between two accounts
+    // never asks for the password twice.
+    private fun accountKey() = "accounts_${serverProfile.key}"
+
+    fun savedAccounts(): List<SavedAccount> {
+        val raw = prefs.getString(accountKey(), null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                val entry = array.optJSONObject(index) ?: return@mapNotNull null
+                val name = entry.optString("name")
+                val token = entry.optString("token")
+                if (name.isBlank() || token.isBlank()) null else SavedAccount(name, token)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveAccount(name: String, token: String) {
+        val ordered = listOf(SavedAccount(name, token)) + savedAccounts().filterNot { it.name == name }
+        prefs.edit().putString(accountKey(), accountsJson(ordered.take(8))).apply()
+    }
+
+    private fun accountsJson(accounts: List<SavedAccount>): String {
+        val array = JSONArray()
+        accounts.forEach { array.put(JSONObject().put("name", it.name).put("token", it.token)) }
+        return array.toString()
+    }
+
     fun clear() {
         val preservedTheme = theme
         val preservedProfile = serverProfile.key
         val warningAcknowledged = !warningConfirmationRequired
         val preservedBiometric = biometricEnabled
-        // Remove only session data; the per-profile notification ledger and the
-        // user preferences above must survive a logout.
-        prefs.edit().clear().putString("theme", preservedTheme)
+        val preservedAccounts = prefs.all.filterKeys { it.startsWith("accounts_") }
+        // Remove only session data; preferences, the per-profile notification
+        // ledger and the saved test accounts must survive a logout.
+        val editor = prefs.edit().clear()
+            .putString("theme", preservedTheme)
             .putString("server_profile", preservedProfile)
             .putBoolean("biometric", preservedBiometric)
             .putString("test_warning_acknowledged", warningAcknowledged.toString())
             .putStringSet(ledgerKey("messages"), notifiedMessages())
             .putStringSet(ledgerKey("requests"), notifiedRequests())
-            .putBoolean(ledgerKey("seeded"), notifiedMessagesSeeded()).apply()
+            .putBoolean(ledgerKey("seeded"), notifiedMessagesSeeded())
+        preservedAccounts.forEach { (key, value) -> if (value is String) editor.putString(key, value) }
+        editor.apply()
     }
 }
