@@ -24,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -83,10 +84,26 @@ class MainActivity : FragmentActivity() {
             val store = remember { SessionStore(this) }
             var theme by remember { mutableStateOf(store.theme) }
             LayermaxxingTheme(theme) {
-                val api = remember { ApiClient() }
+                var profile by remember { mutableStateOf(store.serverProfile) }
+                val api = remember(profile) { ApiClient(profile.baseUrl) }
                 var token by remember { mutableStateOf(store.token) }
                 var recoveryCode by remember { mutableStateOf<String?>(null) }
                 var biometricPassed by remember { mutableStateOf(!store.biometricEnabled) }
+                var verifiedRole by remember(profile) { mutableStateOf<String?>(null) }
+                var confirmTestServer by remember(profile) { mutableStateOf(store.warningConfirmationRequired) }
+
+                LaunchedEffect(profile) {
+                    verifiedRole = if (profile.isConfigured()) runCatching { api.serverInfo().role }.getOrNull() else null
+                }
+
+                fun selectProfile(selected: ServerProfile) {
+                    if (selected == profile) return
+                    store.selectServerProfile(selected)
+                    profile = selected
+                    token = store.token
+                    recoveryCode = null
+                    biometricPassed = !store.biometricEnabled
+                }
 
                 LaunchedEffect(token) {
                     if (token != null) {
@@ -96,9 +113,20 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
+                if (confirmTestServer) AlertDialog(
+                    onDismissRequest = {},
+                    title = { Text("Testserver ausgewählt") },
+                    text = { Text("Dieser Server ist nur zum Ausprobieren. Verwende hier keine vertraulichen Produktionsdaten.") },
+                    confirmButton = { Button(onClick = {
+                        store.acknowledgeTestWarning(); confirmTestServer = false
+                    }) { Text("Verstanden") } },
+                )
+
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    when {
-                        token == null -> AuthScreen { auth ->
+                    Column {
+                        if (ServerProfilePolicy.showTestWarning(profile, verifiedRole)) TestServerBanner()
+                        Box(Modifier.weight(1f)) { when {
+                        token == null -> AuthScreen(api, profile, ::selectProfile) { auth ->
                             store.token = auth.token; store.name = auth.name
                             token = auth.token; recoveryCode = auth.recoveryCode
                             biometricPassed = !store.biometricEnabled
@@ -108,12 +136,15 @@ class MainActivity : FragmentActivity() {
                             token = token!!, api = api, store = store, initialRecoveryCode = recoveryCode,
                             onRecoveryCodeSeen = { recoveryCode = null },
                             onTheme = { store.theme = it; theme = it },
+                            serverProfile = profile,
+                            onServerProfile = ::selectProfile,
                             onLogout = {
                                 val active = token
                                 store.clear(); token = null; recoveryCode = null
                                 if (active != null) kotlinx.coroutines.MainScope().launch { runCatching { api.logout(active) } }
                             },
                         )
+                    } }
                     }
                 }
             }
@@ -124,8 +155,10 @@ class MainActivity : FragmentActivity() {
 private enum class AuthMode { LOGIN, REGISTER, RECOVER }
 
 @Composable
-private fun AuthScreen(onAuthenticated: (ApiClient.Auth) -> Unit) {
-    val api = remember { ApiClient() }
+private fun AuthScreen(
+    api: ApiClient, profile: ServerProfile, onProfile: (ServerProfile) -> Unit,
+    onAuthenticated: (ApiClient.Auth) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var mode by remember { mutableStateOf(AuthMode.LOGIN) }
     var name by remember { mutableStateOf("") }
@@ -151,6 +184,11 @@ private fun AuthScreen(onAuthenticated: (ApiClient.Auth) -> Unit) {
                 "Geheime Nachrichten – sichtbar, wenn die Zeit reif ist.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
+            ServerProfileSelector(profile, onProfile)
+            if (!profile.isConfigured()) Text(
+                "${profile.label} ist in diesem Build nicht konfiguriert.",
+                color = MaterialTheme.colorScheme.error,
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (mode == AuthMode.LOGIN) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text("Anmelden") }
@@ -190,13 +228,38 @@ private fun AuthScreen(onAuthenticated: (ApiClient.Auth) -> Unit) {
                         busy = false
                     }
                 },
-                enabled = name.isNotBlank() && password.length >= 8 && (mode != AuthMode.RECOVER || code.isNotBlank()) && !busy,
+                enabled = profile.isConfigured() && name.isNotBlank() && password.length >= 8 &&
+                    (mode != AuthMode.RECOVER || code.isNotBlank()) && !busy,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 if (busy) CircularProgressIndicator(strokeWidth = 2.dp)
                 else Text(when (mode) { AuthMode.REGISTER -> "Konto erstellen"; AuthMode.LOGIN -> "Anmelden"; AuthMode.RECOVER -> "Konto wiederherstellen" })
             }
         }
+    }
+}
+
+@Composable
+fun ServerProfileSelector(selected: ServerProfile, onSelected: (ServerProfile) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Server", fontWeight = FontWeight.SemiBold)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ServerProfile.entries.forEach { profile ->
+                if (selected == profile) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(profile.label) }
+                else OutlinedButton(onClick = { onSelected(profile) }, modifier = Modifier.weight(1f)) { Text(profile.label) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TestServerBanner() {
+    Surface(color = Color(0xFFD84315), contentColor = Color.White) {
+        Text(
+            ServerProfilePolicy.TEST_WARNING,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+            fontWeight = FontWeight.ExtraBold,
+        )
     }
 }
 

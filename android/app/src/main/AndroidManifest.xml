@@ -6,7 +6,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="GS Layermaxxing"
+        android:label="GS Layermaxxing Gerfried"
         android:theme="@style/Theme.Layermaxxing"
         android:usesCleartextTraffic="false">
         <activity

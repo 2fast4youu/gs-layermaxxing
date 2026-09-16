@@ -17,7 +17,13 @@ import java.io.IOException
 import java.net.InetAddress
 import java.net.URLEncoder
 import java.net.UnknownHostException
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
+
+private val proofTimestampFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy, HH:mm").withZone(ZoneId.systemDefault())
+private fun formatEpoch(epoch: Long): String = proofTimestampFormat.format(Instant.ofEpochSecond(epoch))
 
 private object ResilientDns : Dns {
     private val cloudflare = listOf(
@@ -50,13 +56,18 @@ private object ResilientDns : Dns {
 }
 
 class ApiClient(
-    private val baseUrl: String = BuildConfig.API_BASE_URL,
+    private val baseUrl: String = ServerProfile.GERFRIED.baseUrl,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .dns(ResilientDns)
         .protocols(listOf(Protocol.HTTP_1_1))
         .retryOnConnectionFailure(true)
-        .connectTimeout(20, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build(),
+        .connectTimeout(20, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS).build(),
 ) {
+    data class ServerInfo(
+        val name: String, val role: String, val version: String, val warning: String,
+        val features: List<String>,
+    )
     data class Auth(val token: String, val userId: Long, val name: String, val recoveryCode: String?)
     data class Status(
         val userId: Long, val name: String, val needsPassword: Boolean, val avatarEmoji: String,
@@ -70,7 +81,8 @@ class ApiClient(
     data class OutgoingRequest(val id: Long, val recipientId: Long, val recipientName: String, val createdAt: Long)
     data class Reaction(val userId: Long, val name: String, val emoji: String)
     data class Message(
-        val id: Long, val peerName: String, val incoming: Boolean, val title: String, val createdAt: Long,
+        val id: Long, val peerId: Long, val peerName: String, val incoming: Boolean, val title: String,
+        val coverNote: String, val proofStatus: String, val createdAt: Long,
         val mode: String, val releaseAt: Long?, val randomFrom: Long?, val randomTo: Long?, val unlocked: Boolean,
         val oneTime: Boolean, val readAt: Long?, val senderApproved: Boolean, val recipientApproved: Boolean,
         val attachmentName: String?, val attachmentMime: String?, val groupId: Long?, val reactions: List<Reaction>,
@@ -79,7 +91,7 @@ class ApiClient(
     data class MessageContent(
         val ciphertext: String, val nonce: String, val encryptionKey: String,
         val attachmentName: String?, val attachmentMime: String?,
-        val attachmentCiphertext: String?, val attachmentNonce: String?,
+        val attachmentCiphertext: String?, val attachmentNonce: String?, val canonicalMetadata: String?,
     )
     data class Group(val id: Long, val name: String, val ownerId: Long, val members: List<UserSummary>)
     data class Topic(
@@ -93,10 +105,50 @@ class ApiClient(
         val recipientIds: List<Long> = emptyList(), val groupId: Long? = null, val encrypted: CryptoBox.Encrypted,
         val title: String, val mode: String, val releaseAt: Long? = null, val randomFrom: Long? = null,
         val randomTo: Long? = null, val oneTime: Boolean = false, val attachment: EncryptedAttachment? = null,
+        val coverNote: String = "", val evidence: LetterEvidence? = null,
+    )
+    data class SettingsProposal(
+        val id: Long, val friendId: Long, val friendName: String, val proposerId: Long,
+        val lettersEnabled: Boolean, val chatsEnabled: Boolean, val epEnabled: Boolean,
+        val minLetterDelaySeconds: Long,
+    )
+    data class FriendshipSettings(
+        val friendId: Long, val friendName: String, val lettersEnabled: Boolean,
+        val chatsEnabled: Boolean, val epEnabled: Boolean, val minLetterDelaySeconds: Long,
+        val incomingProposal: SettingsProposal?, val outgoingProposal: SettingsProposal?,
+    )
+    data class EpProposal(
+        val id: Long, val proposerId: Long, val proposerName: String, val beneficiaryId: Long,
+        val beneficiaryName: String, val points: Int, val title: String, val description: String?,
+        val letterId: Long?, val status: String, val createdAt: Long,
+    )
+    data class EpOverview(
+        val incoming: List<EpProposal>, val outgoing: List<EpProposal>, val history: List<EpProposal>,
+        val given: Int, val received: Int, val levelName: String,
+    )
+    data class ChatThread(
+        val friendId: Long, val friendName: String, val avatarEmoji: String,
+        val displayColor: String, val lastMessageAt: Long, val unreadCount: Int,
+    )
+    data class ChatMessage(
+        val id: Long, val senderId: Long, val recipientId: Long, val text: String,
+        val createdAt: Long, val readAt: Long?,
+    )
+    data class ProofDetails(
+        val messageId: Long, val title: String, val legacy: Boolean, val releaseRule: String,
+        val evidence: VerificationEvidence?, val rawExport: String,
     )
 
     private val jsonType = "application/json; charset=utf-8".toMediaType()
     private val deviceName get() = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
+
+    suspend fun serverInfo(): ServerInfo = io {
+        val json = execute(request("api/server-info").get().build())
+        ServerInfo(
+            json.getString("name"), json.getString("role"), json.getString("version"),
+            json.optString("warning"), json.getJSONArray("features").strings(),
+        )
+    }
 
     suspend fun register(name: String, password: String): Auth = authCall("api/register", name, password)
     suspend fun login(name: String, password: String): Auth = authCall("api/login", name, password)
@@ -168,6 +220,48 @@ class ApiClient(
     suspend fun block(token: String, id: Long) = unitCall(authorized(token, "api/blocks/$id").post(emptyBody()).build())
     suspend fun unblock(token: String, id: Long) = unitCall(authorized(token, "api/blocks/$id").delete().build())
 
+    suspend fun friendshipSettings(token: String): List<FriendshipSettings> = array(token, "api/friendship-settings") {
+        FriendshipSettings(
+            friendId = it.getLong("friend_id"), friendName = it.getString("friend_name"),
+            lettersEnabled = it.getBoolean("letters_enabled"), chatsEnabled = it.getBoolean("chats_enabled"),
+            epEnabled = it.getBoolean("ep_enabled"), minLetterDelaySeconds = it.getLong("min_letter_delay_seconds"),
+            incomingProposal = it.optJSONObject("incoming_proposal")?.let(::parseSettingsProposal),
+            outgoingProposal = it.optJSONObject("outgoing_proposal")?.let(::parseSettingsProposal),
+        )
+    }
+    suspend fun proposeFriendshipSettings(token: String, settings: FriendshipSettings) = unitCall(
+        authorized(token, "api/friendship-settings/proposals").post(JSONObject()
+            .put("friend_id", settings.friendId).put("letters_enabled", settings.lettersEnabled)
+            .put("chats_enabled", settings.chatsEnabled).put("ep_enabled", settings.epEnabled)
+            .put("min_letter_delay_seconds", settings.minLetterDelaySeconds).body()).build()
+    )
+    suspend fun respondFriendshipSettings(token: String, id: Long, accept: Boolean) = unitCall(
+        authorized(token, "api/friendship-settings/proposals/$id/respond")
+            .post(JSONObject().put("accept", accept).body()).build()
+    )
+    suspend fun withdrawFriendshipSettings(token: String, id: Long) = unitCall(
+        authorized(token, "api/friendship-settings/proposals/$id").delete().build()
+    )
+
+    suspend fun ep(token: String): EpOverview = io {
+        val json = execute(authorized(token, "api/ep").get().build())
+        val totals = json.getJSONObject("totals")
+        EpOverview(
+            json.getJSONArray("incoming_pending").objects().map(::parseEp),
+            json.getJSONArray("outgoing_pending").objects().map(::parseEp),
+            json.getJSONArray("history").objects().map(::parseEp),
+            totals.getInt("given"), totals.getInt("received"), json.getJSONObject("level").getString("name"),
+        )
+    }
+    suspend fun proposeEp(
+        token: String, beneficiaryId: Long, points: Int, title: String, description: String?, letterId: Long?,
+    ) = unitCall(authorized(token, "api/ep/proposals").post(JSONObject()
+        .put("beneficiary_id", beneficiaryId).put("points", points).put("title", title)
+        .put("description", description).put("letter_id", letterId).body()).build())
+    suspend fun respondEp(token: String, id: Long, accept: Boolean) = unitCall(
+        authorized(token, "api/ep/proposals/$id/respond").post(JSONObject().put("accept", accept).body()).build()
+    )
+
     suspend fun groups(token: String): List<Group> = array(token, "api/groups") { json ->
         Group(json.getLong("id"), json.getString("name"), json.getLong("owner_id"),
             json.getJSONArray("members").objects().map(::parseUser))
@@ -175,6 +269,28 @@ class ApiClient(
     suspend fun createGroup(token: String, name: String, ids: List<Long>) = unitCall(
         authorized(token, "api/groups").post(JSONObject().put("name", name).put("member_ids", JSONArray(ids)).body()).build()
     )
+
+    suspend fun chatThreads(token: String): List<ChatThread> = array(token, "api/chats") {
+        ChatThread(
+            it.getLong("friend_id"), it.getString("friend_name"), it.optString("avatar_emoji", "🔐"),
+            it.optString("display_color", "#6750A4"), it.getLong("last_message_at"), it.getInt("unread_count"),
+        )
+    }
+    suspend fun chatMessages(token: String, friendId: Long): List<ChatMessage> = array(
+        token, "api/chats/$friendId/messages",
+    ) {
+        ChatMessage(
+            it.getLong("id"), it.getLong("sender_id"), it.getLong("recipient_id"),
+            CryptoBox.decrypt(it.getString("ciphertext"), it.getString("nonce"), it.getString("encryption_key")),
+            it.getLong("created_at"), it.nullableLong("read_at"),
+        )
+    }
+    suspend fun sendChat(token: String, friendId: Long, text: String) = io {
+        val encrypted = CryptoBox.encrypt(text)
+        execute(authorized(token, "api/chats/$friendId/messages").post(JSONObject()
+            .put("ciphertext", encrypted.ciphertext).put("nonce", encrypted.nonce)
+            .put("encryption_key", encrypted.key).body()).build()).getLong("id")
+    }
 
     suspend fun topics(token: String): List<Topic> = array(token, "api/topics", ::parseTopic)
     suspend fun createTopic(token: String, title: String, details: String, peerId: Long?, groupId: Long?) = io {
@@ -194,7 +310,7 @@ class ApiClient(
         val body = JSONObject().put("recipient_ids", JSONArray(payload.recipientIds))
             .put("ciphertext", payload.encrypted.ciphertext).put("nonce", payload.encrypted.nonce)
             .put("encryption_key", payload.encrypted.key).put("title", payload.title)
-            .put("mode", payload.mode).put("one_time", payload.oneTime)
+            .put("cover_note", payload.coverNote).put("mode", payload.mode).put("one_time", payload.oneTime)
         payload.groupId?.let { body.put("group_id", it) }
         payload.releaseAt?.let { body.put("release_at", it) }
         payload.randomFrom?.let { body.put("random_from", it) }
@@ -202,6 +318,12 @@ class ApiClient(
         payload.attachment?.let {
             body.put("attachment_name", it.name).put("attachment_mime", it.mime)
                 .put("attachment_ciphertext", it.ciphertext).put("attachment_nonce", it.nonce)
+        }
+        payload.evidence?.let {
+            body.put("commitment_salt", it.commitmentSalt).put("plaintext_sha256", it.plaintextSha256)
+                .put("commitment", it.commitment).put("public_signing_key", it.publicSigningKey)
+                .put("signature", it.signature).put("protocol_version", it.protocolVersion)
+                .put("canonical_metadata", it.canonicalMetadata)
         }
         execute(authorized(token, "api/messages").post(body.body()).build()).getJSONArray("ids").longs()
     }
@@ -212,7 +334,27 @@ class ApiClient(
         val json = execute(authorized(token, "api/messages/$id/content").get().build())
         MessageContent(json.getString("ciphertext"), json.getString("nonce"), json.getString("encryption_key"),
             json.nullableString("attachment_name"), json.nullableString("attachment_mime"),
-            json.nullableString("attachment_ciphertext"), json.nullableString("attachment_nonce"))
+            json.nullableString("attachment_ciphertext"), json.nullableString("attachment_nonce"),
+            json.nullableString("canonical_metadata"))
+    }
+    suspend fun proof(token: String, id: Long): ProofDetails = io {
+        val raw = executeRaw(authorized(token, "api/messages/$id/proof").get().build())
+        val message = JSONObject(raw).getJSONArray("messages").getJSONObject(0)
+        val rule = message.getJSONObject("release_rule")
+        ProofDetails(
+            messageId = message.getLong("id"), title = message.optString("title"),
+            legacy = message.getBoolean("legacy"),
+            releaseRule = buildString {
+                append(rule.getString("mode"))
+                rule.nullableLong("release_at")?.let { append(" · ").append(formatEpoch(it)) }
+                rule.nullableLong("random_from")?.let { append(" · ").append(formatEpoch(it)) }
+                rule.nullableLong("random_to")?.let { append("–").append(formatEpoch(it)) }
+            },
+            evidence = message.optJSONObject("evidence")?.let(::parseVerificationEvidence), rawExport = raw,
+        )
+    }
+    suspend fun pendingProofExport(token: String): String = io {
+        executeRaw(authorized(token, "api/proofs/pending").get().build())
     }
     suspend fun release(token: String, id: Long) = unitCall(authorized(token, "api/messages/$id/release").post(emptyBody()).build())
     suspend fun approve(token: String, id: Long) = unitCall(authorized(token, "api/messages/$id/approve").post(emptyBody()).build())
@@ -238,9 +380,36 @@ class ApiClient(
             canDelete = json.getBoolean("can_delete"),
         )
     }
+    private fun parseSettingsProposal(json: JSONObject) = SettingsProposal(
+        json.getLong("id"), json.getLong("friend_id"), json.getString("friend_name"),
+        json.getLong("proposer_id"), json.getBoolean("letters_enabled"), json.getBoolean("chats_enabled"),
+        json.getBoolean("ep_enabled"), json.getLong("min_letter_delay_seconds"),
+    )
+    private fun parseEp(json: JSONObject) = EpProposal(
+        json.getLong("id"), json.getLong("proposer_id"), json.getString("proposer_name"),
+        json.getLong("beneficiary_id"), json.getString("beneficiary_name"), json.getInt("points"),
+        json.getString("title"), json.nullableString("description"), json.nullableLong("letter_id"),
+        json.getString("status"), json.getLong("created_at"),
+    )
+    private fun parseVerificationEvidence(json: JSONObject): VerificationEvidence {
+        val attachment = json.optJSONObject("attachment")?.let {
+            SealedAttachment(it.getString("name"), it.getString("mime"), it.getString("ciphertext"), it.getString("nonce"))
+        }
+        return VerificationEvidence(
+            json.getInt("protocol_version"), json.getString("canonical_metadata"),
+            json.getString("commitment_salt"), json.getString("plaintext_sha256"),
+            json.getString("commitment"), json.getString("public_signing_key"),
+            json.getString("public_key_fingerprint"), json.getString("signature"),
+            json.getString("ciphertext"), json.getString("nonce"), json.nullableString("release_key"),
+            json.nullableString("release_key_sha256"), attachment,
+        )
+    }
     private fun parseMessage(json: JSONObject, incoming: Boolean): Message = Message(
-        id = json.getLong("id"), peerName = json.getString(if (incoming) "sender_name" else "recipient_name"), incoming = incoming,
-        title = json.optString("title"), createdAt = json.getLong("created_at"), mode = json.optString("mode", if (json.optBoolean("manual_release")) "manual" else "timed"),
+        id = json.getLong("id"), peerId = json.getLong(if (incoming) "sender_id" else "recipient_id"),
+        peerName = json.getString(if (incoming) "sender_name" else "recipient_name"), incoming = incoming,
+        title = json.optString("title"), coverNote = json.optString("cover_note"),
+        proofStatus = json.optString("proof_status", "legacy"), createdAt = json.getLong("created_at"),
+        mode = json.optString("mode", if (json.optBoolean("manual_release")) "manual" else "timed"),
         releaseAt = json.nullableLong("release_at"), randomFrom = json.nullableLong("random_from"), randomTo = json.nullableLong("random_to"),
         unlocked = json.getBoolean("unlocked"), oneTime = json.optBoolean("one_time"), readAt = json.nullableLong("read_at"),
         senderApproved = json.optBoolean("sender_approved"), recipientApproved = json.optBoolean("recipient_approved"),
@@ -260,17 +429,19 @@ class ApiClient(
     private fun JSONObject.body() = toString().toRequestBody(jsonType)
     private fun emptyBody() = ByteArray(0).toRequestBody(null)
 
-    private fun execute(request: Request): JSONObject {
+    private fun executeRaw(request: Request): String {
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (!response.isSuccessful) throw apiError(response.code, text)
-            return if (text.isBlank()) JSONObject() else JSONObject(text)
+            return text
         }
     }
+    private fun execute(request: Request): JSONObject = executeRaw(request).let { if (it.isBlank()) JSONObject() else JSONObject(it) }
     private fun <T> readArray(request: Request, mapper: (JSONObject) -> T): List<T> {
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (!response.isSuccessful) throw apiError(response.code, text)
+            if (text.isBlank()) return emptyList()
             return JSONArray(text).objects().map(mapper)
         }
     }
@@ -282,4 +453,5 @@ class ApiClient(
     private fun JSONObject.nullableLong(key: String): Long? = if (!has(key) || isNull(key)) null else getLong(key)
     private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
     private fun JSONArray.longs() = (0 until length()).map { getLong(it) }
+    private fun JSONArray.strings() = (0 until length()).map { getString(it) }
 }

@@ -8,24 +8,32 @@ plugins {
 val localProperties = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
 }
-val apiBaseUrl = (
-    localProperties.getProperty("layermaxxing.apiBaseUrl")
-        ?: System.getenv("LAYERMAXXING_API_BASE_URL")
+fun normalizedUrl(value: String) = value.let { if (it.endsWith("/")) it else "$it/" }
+val gregorApiBaseUrl = normalizedUrl(
+    localProperties.getProperty("layermaxxing.gregorApiBaseUrl")
+        ?: localProperties.getProperty("layermaxxing.apiBaseUrl")
+        ?: System.getenv("LAYERMAXXING_GREGOR_URL")
         ?: "https://example.invalid/"
-).let { if (it.endsWith("/")) it else "$it/" }
+)
+val gerfriedApiBaseUrl = normalizedUrl(
+    localProperties.getProperty("layermaxxing.gerfriedApiBaseUrl")
+        ?: System.getenv("LAYERMAXXING_GERFRIED_URL")
+        ?: "https://headless.tail586ff8.ts.net/layermaxxing/"
+)
 
 android {
     namespace = "at.gregor.layermaxxing"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "at.gregor.layermaxxing"
+        applicationId = "at.gregor.layermaxxing.gerfried"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "3.7"
+        versionCode = 13
+        versionName = "4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+        buildConfigField("String", "GREGOR_API_BASE_URL", "\"$gregorApiBaseUrl\"")
+        buildConfigField("String", "GERFRIED_API_BASE_URL", "\"$gerfriedApiBaseUrl\"")
     }
 
     buildTypes {

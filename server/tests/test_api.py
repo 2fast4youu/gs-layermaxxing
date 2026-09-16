@@ -146,3 +146,81 @@ def test_legacy_device_and_token_are_migrated(tmp_path):
             "encryption_key": "Yw==", "release_at": main.now_ts() + 60,
         })
         assert sent.status_code == 201, sent.text
+
+
+def test_v1_devices_fk_upgrade_keeps_v4_message_references_and_endpoints_work(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    clock = 1_900_000_000
+    tokens = {"A": "legacy-a-token", "B": "legacy-b-token"}
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE devices (
+          id INTEGER PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
+          created_at INTEGER NOT NULL
+        );
+        CREATE TABLE friend_requests (
+          id INTEGER PRIMARY KEY, sender_id INTEGER NOT NULL, recipient_id INTEGER NOT NULL,
+          status TEXT NOT NULL, created_at INTEGER NOT NULL, responded_at INTEGER
+        );
+        CREATE TABLE messages (
+          id INTEGER PRIMARY KEY, sender_id INTEGER NOT NULL, recipient_id INTEGER NOT NULL,
+          ciphertext TEXT NOT NULL, nonce TEXT NOT NULL, encryption_key TEXT NOT NULL,
+          release_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
+          FOREIGN KEY(sender_id) REFERENCES devices(id),
+          FOREIGN KEY(recipient_id) REFERENCES devices(id)
+        );
+        INSERT INTO friend_requests VALUES (3,1,2,'accepted',1899999900,1899999901);
+        INSERT INTO messages VALUES (9,1,2,'YQ==','Yg==','Yw==',1900000060,1899999990);
+        """
+    )
+    for user_id, name in enumerate(("A", "B"), start=1):
+        conn.execute(
+            "INSERT INTO devices VALUES (?,?,?,?)",
+            (user_id, name, hashlib.sha256(tokens[name].encode()).hexdigest(), clock - 100),
+        )
+    conn.commit()
+    conn.close()
+
+    main = load_app(tmp_path)
+    monkeypatch.setattr(main, "now_ts", lambda: clock)
+    with TestClient(main.app) as client:
+        with main.db() as upgraded:
+            assert {row[2] for row in upgraded.execute("PRAGMA foreign_key_list(message_reactions)")} == {
+                "messages", "users"
+            }
+            assert {row[2] for row in upgraded.execute("PRAGMA foreign_key_list(ep_proposals)")} == {
+                "messages", "users", "friendships"
+            }
+
+        accounts = {
+            name: {"token": token, "user_id": user_id}
+            for user_id, (name, token) in enumerate(tokens.items(), start=1)
+        }
+        reacted = client.put(
+            "/api/messages/9/reaction", headers=auth(tokens["B"]), json={"emoji": "👍"}
+        )
+        assert reacted.status_code == 200, reacted.text
+
+        proposal = client.post(
+            "/api/friendship-settings/proposals",
+            headers=auth(tokens["A"]),
+            json={
+                "friend_id": accounts["B"]["user_id"],
+                "letters_enabled": True,
+                "chats_enabled": True,
+                "ep_enabled": True,
+                "min_letter_delay_seconds": 0,
+            },
+        )
+        assert proposal.status_code == 201, proposal.text
+        accepted = client.post(
+            f"/api/friendship-settings/proposals/{proposal.json()['id']}/respond",
+            headers=auth(tokens["B"]), json={"accept": True},
+        )
+        assert accepted.status_code == 200, accepted.text
+        ep = client.post(
+            "/api/ep/proposals", headers=auth(tokens["A"]),
+            json={"beneficiary_id": 2, "points": 7, "title": "Altbrief", "letter_id": 9},
+        )
+        assert ep.status_code == 201, ep.text

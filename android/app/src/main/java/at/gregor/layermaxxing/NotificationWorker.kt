@@ -26,11 +26,26 @@ class NotificationWorker(context: Context, params: WorkerParameters) : Coroutine
         val token = store.token ?: return Result.success()
         return runCatching {
             createChannels(applicationContext)
-            val api = ApiClient()
+            val api = ApiClient(store.serverProfile.baseUrl)
             val messages = api.messages(token)
             val requests = api.incomingRequests(token)
+            val seeded = store.notifiedMessagesSeeded()
             val oldMessages = store.notifiedMessages().toMutableSet()
             val oldRequests = store.notifiedRequests().toMutableSet()
+
+            if (!seeded) {
+                // First successful pass for this server profile. Remember what is
+                // already there instead of firing one notification per stored letter.
+                messages.forEach { message ->
+                    oldMessages.add("received:${message.id}")
+                    if (message.unlocked && message.readAt == null) oldMessages.add("open:${message.id}")
+                }
+                requests.forEach { request -> oldRequests.add(request.id.toString()) }
+                store.saveNotified(oldMessages.toList().takeLast(1000).toSet(), oldRequests.toList().takeLast(500).toSet())
+                store.markNotifiedSeeded()
+                scheduleReleaseWork(messages)
+                return@runCatching Result.success()
+            }
 
             requests.forEach { request ->
                 val key = request.id.toString()
@@ -44,13 +59,16 @@ class NotificationWorker(context: Context, params: WorkerParameters) : Coroutine
                 val openKey = "open:${message.id}"
                 if (message.unlocked && message.readAt == null && oldMessages.add(openKey)) notify(applicationContext,
                     (1_000_000 + message.id).toInt(), "Nachricht freigegeben", "Die Nachricht von ${message.peerName} kann jetzt geöffnet werden.", MESSAGE_CHANNEL)
-                if (!message.unlocked && message.mode == "timed" && message.releaseAt != null) {
-                    NotificationScheduler.scheduleAt(applicationContext, message.id, message.releaseAt)
-                }
             }
             store.saveNotified(oldMessages.toList().takeLast(1000).toSet(), oldRequests.toList().takeLast(500).toSet())
+            scheduleReleaseWork(messages)
             Result.success()
         }.getOrElse { Result.retry() }
+    }
+
+    private fun scheduleReleaseWork(messages: List<ApiClient.Message>) {
+        messages.filter { !it.unlocked && it.mode == "timed" && it.releaseAt != null }
+            .forEach { NotificationScheduler.scheduleAt(applicationContext, it.id, it.releaseAt!!) }
     }
 
     private fun notify(context: Context, id: Int, title: String, text: String, channel: String) {
@@ -92,7 +110,9 @@ object NotificationScheduler {
         val delay = (epochSeconds - Instant.now().epochSecond).coerceAtLeast(1)
         val request = OneTimeWorkRequestBuilder<NotificationWorker>().setInitialDelay(delay, TimeUnit.SECONDS).build()
         runCatching {
-            WorkManager.getInstance(context).enqueueUniqueWork("message-release-$messageId", ExistingWorkPolicy.REPLACE, request)
+            // KEEP: re-adding the same release timer must not cancel a work item
+            // that is already waiting (or running) for this message.
+            WorkManager.getInstance(context).enqueueUniqueWork("message-release-$messageId", ExistingWorkPolicy.KEEP, request)
         }
     }
 }

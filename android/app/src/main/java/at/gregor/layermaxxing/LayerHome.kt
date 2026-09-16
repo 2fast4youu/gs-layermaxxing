@@ -13,6 +13,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,8 +31,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -59,6 +63,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -86,21 +91,26 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
 private enum class HomeTab(val icon: String, val label: String, val title: String) {
-    INBOX("✉", "Post", "Nachrichten"), SEND("＋", "Neu", "Neue Nachricht"), TOPICS("☷", "Themen", "Gesprächsthemen"),
+    INBOX("✉", "Briefe", "Briefe"), CHAT("◌", "Chat", "Chat"), SEND("＋", "Neu", "Neuer Brief"),
+    EP("★", "EP", "Ebenen-Punkte"), TOPICS("☷", "Themen", "Gesprächsthemen"),
     FRIENDS("●", "Leute", "Kontakte"), ACCOUNT("⚙", "Mehr", "Mehr")
 }
 private enum class ComposeMode(val label: String, val api: String) {
     DURATION("Nach einer Dauer", "timed"), DATE_TIME("Zu einem Zeitpunkt", "timed"), MANUAL("Von mir freigeben", "manual"),
     MUTUAL("Wenn beide zustimmen", "mutual"), PRESENCE("Wenn beide online sind", "presence"), RANDOM("Zufällig", "random")
 }
-private enum class DelayUnit(val label: String, val seconds: Long) { HOURS("Stunden", 3600), DAYS("Tage", 86400) }
+private enum class DelayUnit(val label: String, val seconds: Long) {
+    MINUTES("Minuten", 60), HOURS("Stunden", 3600), DAYS("Tage", 86400)
+}
 private data class OpenedMessage(val text: String, val attachment: ByteArray?, val name: String?, val mime: String?)
+data class EpPrompt(val friendId: Long, val letterId: Long?)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LayerHome(
     token: String, api: ApiClient, store: SessionStore, initialRecoveryCode: String?,
     onRecoveryCodeSeen: () -> Unit, onTheme: (String) -> Unit, onLogout: () -> Unit,
+    serverProfile: ServerProfile, onServerProfile: (ServerProfile) -> Unit,
 ) {
     var tab by remember { mutableStateOf(HomeTab.INBOX) }
     var status by remember { mutableStateOf<ApiClient.Status?>(null) }
@@ -114,6 +124,14 @@ fun LayerHome(
     var messages by remember { mutableStateOf<List<ApiClient.Message>>(emptyList()) }
     var outbox by remember { mutableStateOf<List<ApiClient.Message>>(emptyList()) }
     var sessions by remember { mutableStateOf<List<ApiClient.Session>>(emptyList()) }
+    var friendshipSettings by remember { mutableStateOf<List<ApiClient.FriendshipSettings>>(emptyList()) }
+    var ep by remember { mutableStateOf<ApiClient.EpOverview?>(null) }
+    var chatThreads by remember { mutableStateOf<List<ApiClient.ChatThread>>(emptyList()) }
+    var composeRecipient by remember { mutableStateOf<Long?>(null) }
+    var chatFriend by remember { mutableStateOf<Long?>(null) }
+    var epPrompt by remember { mutableStateOf<EpPrompt?>(null) }
+    var epDraft by remember { mutableStateOf<EpPrompt?>(null) }
+    var proof by remember { mutableStateOf<ApiClient.ProofDetails?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(true) }
     var recoveryCode by remember { mutableStateOf(initialRecoveryCode) }
@@ -129,6 +147,8 @@ fun LayerHome(
                     async { incoming = api.incomingRequests(token) }, async { outgoing = api.outgoingRequests(token) },
                     async { groups = api.groups(token) }, async { topics = api.topics(token) }, async { messages = api.messages(token) },
                     async { outbox = api.outbox(token) }, async { sessions = api.sessions(token) },
+                    async { friendshipSettings = api.friendshipSettings(token) },
+                    async { ep = api.ep(token) }, async { chatThreads = api.chatThreads(token) },
                 )
                 jobs.awaitAll()
             }
@@ -144,6 +164,7 @@ fun LayerHome(
         while (true) { refresh(); delay(30_000) }
     }
     if (recoveryCode != null) RecoveryDialog(recoveryCode!!) { recoveryCode = null; onRecoveryCodeSeen() }
+    proof?.let { ProofDialog(it, onDismiss = { proof = null }) }
 
     Scaffold(
         topBar = {
@@ -177,14 +198,36 @@ fun LayerHome(
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
                 HomeTab.INBOX -> InboxScreen(messages, outbox, opened, token, api, ::act,
-                    onCompose = { tab = HomeTab.SEND }, openTopics = topics.count { it.completedAt == null }, onTopics = { tab = HomeTab.TOPICS })
-                HomeTab.SEND -> SendScreen(token, api, friends, groups) { tab = HomeTab.INBOX; act {} }
+                    onCompose = { composeRecipient = null; tab = HomeTab.SEND },
+                    onOpened = { epPrompt = EpPrompt(it.peerId, it.id) },
+                    onReleased = { epPrompt = EpPrompt(it.peerId, it.id) },
+                    onProof = { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } },
+                    openTopics = topics.count { it.completedAt == null }, onTopics = { tab = HomeTab.TOPICS })
+                HomeTab.CHAT -> ChatScreen(token, api, status?.userId, friends, friendshipSettings, chatThreads, chatFriend) {
+                    chatFriend = it
+                }
+                HomeTab.SEND -> SendScreen(token, api, friends, groups, friendshipSettings, composeRecipient) { messageId, friendId ->
+                    tab = HomeTab.INBOX; if (friendId != null) epPrompt = EpPrompt(friendId, messageId); act {}
+                }
+                HomeTab.EP -> EpScreen(token, api, friendshipSettings, ep, epDraft, onDraftConsumed = { epDraft = null }, act = ::act)
                 HomeTab.TOPICS -> TopicsScreen(topics, friends, groups, token, api, ::act)
-                HomeTab.FRIENDS -> FriendsScreen(token, api, users, friends, incoming, outgoing, groups, ::act)
+                HomeTab.FRIENDS -> FriendsScreen(token, api, users, friends, incoming, outgoing, groups,
+                    friendshipSettings, onLetter = { composeRecipient = it; tab = HomeTab.SEND },
+                    onChat = { chatFriend = it; tab = HomeTab.CHAT }, act = ::act)
                 HomeTab.ACCOUNT -> AccountScreen(token, api, store, status, sessions, blocked,
-                    onTheme, onLogout, onRecovery = { recoveryCode = it }, act = ::act)
+                    onTheme, onLogout, serverProfile, onServerProfile,
+                    onRecovery = { recoveryCode = it }, act = ::act)
             }
             if (busy) CircularProgressIndicator(Modifier.align(Alignment.Center))
+            epPrompt?.let { suggestion -> Card(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+            ) { Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Hat dieser Brief zu EP geführt?", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                TextButton(onClick = { epDraft = suggestion; epPrompt = null; tab = HomeTab.EP }) { Text("EP vorschlagen") }
+                TextButton(onClick = { epPrompt = null }) { Text("Nicht jetzt") }
+            } }
+            }
             error?.let { message -> Card(
                 Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
@@ -200,8 +243,21 @@ fun LayerHome(
 private fun InboxScreen(
     messages: List<ApiClient.Message>, outbox: List<ApiClient.Message>, opened: MutableMap<Long, OpenedMessage>,
     token: String, api: ApiClient, act: ((suspend () -> Unit) -> Unit), onCompose: () -> Unit,
-    openTopics: Int, onTopics: () -> Unit,
+    onOpened: (ApiClient.Message) -> Unit, onReleased: (ApiClient.Message) -> Unit,
+    onProof: (ApiClient.Message) -> Unit, openTopics: Int, onTopics: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingExport by rememberSaveable { mutableStateOf<String?>(null) }
+    var exportError by remember { mutableStateOf<String?>(null) }
+    val exportPending = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        val content = pendingExport
+        if (uri != null && content != null) runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray()) }
+                ?: error("Exportdatei konnte nicht geschrieben werden")
+        }.onFailure { exportError = it.message ?: "Export fehlgeschlagen" }
+        pendingExport = null
+    }
     var showSent by remember { mutableStateOf(false) }
     var now by remember { mutableStateOf(Instant.now().epochSecond) }
     LaunchedEffect(Unit) { while (true) { now = Instant.now().epochSecond; delay(1000) } }
@@ -222,6 +278,12 @@ private fun InboxScreen(
                         else -> "Alles ruhig – schreibe jemandem eine Nachricht."
                     }, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Button(onClick = onCompose, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("＋  Neue Nachricht") }
+                    OutlinedButton(onClick = { scope.launch {
+                        runCatching { api.pendingProofExport(token) }.onSuccess {
+                            exportError = null; pendingExport = it; exportPending.launch("offene-briefe.gsverify.json")
+                        }.onFailure { exportError = it.message ?: "Export fehlgeschlagen" }
+                    } }, modifier = Modifier.fillMaxWidth()) { Text("Öffentliche Prüfdateien exportieren") }
+                    exportError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                     if (openTopics > 0) TextButton(onClick = onTopics, modifier = Modifier.align(Alignment.End)) {
                         Text("☷ $openTopics offene${if (openTopics == 1) "s Thema" else " Themen"}")
                     }
@@ -245,46 +307,60 @@ private fun InboxScreen(
                     IncomingMessageCard(message, opened[message.id], now,
                         onOpen = { act {
                             val content = api.content(token, message.id)
-                            val text = CryptoBox.decrypt(content.ciphertext, content.nonce, content.encryptionKey)
+                            val aad = content.canonicalMetadata?.toByteArray() ?: byteArrayOf()
+                            val text = CryptoBox.decryptBytes(content.ciphertext, content.nonce, content.encryptionKey, aad).toString(Charsets.UTF_8)
                             val bytes = if (content.attachmentCiphertext != null && content.attachmentNonce != null)
-                                CryptoBox.decryptBytes(content.attachmentCiphertext, content.attachmentNonce, content.encryptionKey) else null
+                                CryptoBox.decryptBytes(
+                                    content.attachmentCiphertext, content.attachmentNonce, content.encryptionKey,
+                                    if (content.canonicalMetadata != null && content.attachmentName != null && content.attachmentMime != null)
+                                        EvidenceProtocol.attachmentAad(content.canonicalMetadata, content.attachmentName, content.attachmentMime)
+                                    else byteArrayOf(),
+                                ) else null
                             opened[message.id] = OpenedMessage(text, bytes, content.attachmentName, content.attachmentMime)
+                            onOpened(message)
                         } },
                         onApprove = { act { api.approve(token, message.id) } },
                         onReact = { emoji -> act { api.react(token, message.id, emoji) } },
+                        onProof = { onProof(message) },
                     )
                 }
             }
         } else items(shown, key = { "out-${it.id}" }) { message ->
             OutboxMessageCard(message, now,
-                onRelease = { act { api.release(token, message.id) } },
+                onRelease = { act { api.release(token, message.id); onReleased(message) } },
                 onApprove = { act { api.approve(token, message.id) } },
                 onRetract = { act { api.retract(token, message.id) } },
+                onProof = { onProof(message) },
             )
         }
         item { Spacer(Modifier.height(16.dp)) }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun IncomingMessageCard(
     message: ApiClient.Message, opened: OpenedMessage?, now: Long,
-    onOpen: () -> Unit, onApprove: () -> Unit, onReact: (String) -> Unit,
+    onOpen: () -> Unit, onApprove: () -> Unit, onReact: (String) -> Unit, onProof: () -> Unit,
 ) {
     val context = LocalContext.current
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         if (uri != null && opened?.attachment != null) context.contentResolver.openOutputStream(uri)?.use { it.write(opened.attachment) }
     }
     val locked = !message.unlocked && opened == null
-    Card(Modifier.fillMaxWidth().then(if (locked) Modifier.clickable { playWhip(context) } else Modifier), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(
+    Card(Modifier.fillMaxWidth().combinedClickable(
+        onClick = { if (locked) playWhip(context) }, onLongClick = onProof,
+    ), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(
         containerColor = if (message.unlocked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row { Text(message.title.ifBlank { "Geheime Nachricht" }, Modifier.weight(1f), fontWeight = FontWeight.Bold); if (message.oneTime) Text("1×") }
             Text("Von ${message.peerName} · ${formatDate(message.createdAt)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (message.coverNote.isNotBlank()) Text("Öffentlicher Umschlagtext: ${message.coverNote}")
+            if (message.proofStatus == "legacy") Text("Legacy – ohne kryptografischen Nachweis", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
             when {
                 opened != null -> {
                     Text(opened.text, fontSize = 17.sp)
-                    if (opened.attachment != null) OutlinedButton(onClick = { save.launch(opened.name ?: "Anhang") }) { Text("📎 ${opened.name ?: "Anhang"} speichern") }
+                    if (opened.attachment != null) OutlinedButton(onClick = { save.launch(safeFileName(opened.name ?: "Anhang")) }) { Text("📎 ${opened.name ?: "Anhang"} speichern") }
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf("❤️", "👍", "😂", "😮").forEach { emoji -> TextButton(onClick = { onReact(emoji) }) { Text(emoji) } } }
                 }
                 message.unlocked -> Button(onClick = onOpen) { Text(if (message.oneTime) "Einmalig öffnen" else "Nachricht öffnen") }
@@ -298,19 +374,26 @@ private fun IncomingMessageCard(
                 else -> Text("🔒 Noch ${formatRemaining(max(0, (message.releaseAt ?: now) - now))}\n${message.releaseAt?.let(::formatDate).orEmpty()}")
             }
             if (message.reactions.isNotEmpty()) Text(message.reactions.joinToString("  ") { "${it.emoji} ${it.name}" }, fontSize = 13.sp)
+            Text("Lange drücken: Versiegelungs-Hash, Prüfschlüssel und Prüfdatei", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun OutboxMessageCard(message: ApiClient.Message, now: Long, onRelease: () -> Unit, onApprove: () -> Unit, onRetract: () -> Unit) {
+private fun OutboxMessageCard(
+    message: ApiClient.Message, now: Long, onRelease: () -> Unit, onApprove: () -> Unit,
+    onRetract: () -> Unit, onProof: () -> Unit,
+) {
     var confirmRelease by remember { mutableStateOf(false) }
     var confirmRetract by remember { mutableStateOf(false) }
     if (confirmRelease) ConfirmDialog("Jetzt wirklich freigeben?", "Der Empfänger kann die Nachricht danach lesen.", { confirmRelease = false; onRelease() }) { confirmRelease = false }
     if (confirmRetract) ConfirmDialog("Nachricht zurückziehen?", "Sie wird für beide Seiten gelöscht.", { confirmRetract = false; onRetract() }) { confirmRetract = false }
-    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Card(Modifier.fillMaxWidth().combinedClickable(onClick = {}, onLongClick = onProof)) { Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(message.title.ifBlank { "An ${message.peerName}" }, fontWeight = FontWeight.Bold)
         Text("An ${message.peerName} · ${formatDate(message.createdAt)}", fontSize = 12.sp)
+        if (message.coverNote.isNotBlank()) Text("Öffentlicher Umschlagtext: ${message.coverNote}")
+        if (message.proofStatus == "legacy") Text("Legacy – ohne kryptografischen Nachweis", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
         when {
             message.unlocked -> Text(if (message.readAt != null) "✓ Gelesen" else "✓ Freigegeben", color = Color(0xFF19703B))
             message.mode == "manual" -> Button(onClick = { confirmRelease = true }) { Text("Jetzt freigeben") }
@@ -327,15 +410,22 @@ private fun OutboxMessageCard(message: ApiClient.Message, now: Long, onRelease: 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SendScreen(token: String, api: ApiClient, friends: List<ApiClient.UserSummary>, groups: List<ApiClient.Group>, onSent: () -> Unit) {
+private fun SendScreen(
+    token: String, api: ApiClient, friends: List<ApiClient.UserSummary>, groups: List<ApiClient.Group>,
+    settings: List<ApiClient.FriendshipSettings>,
+    initialRecipient: Long?, onSent: (Long?, Long?) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var title by remember { mutableStateOf("") }; var text by remember { mutableStateOf("") }
-    var selected by remember { mutableStateOf<Set<Long>>(emptySet()) }; var groupId by remember { mutableStateOf<Long?>(null) }
+    var title by remember { mutableStateOf("") }; var coverNote by remember { mutableStateOf("") }; var text by remember { mutableStateOf("") }
+    var selected by remember(initialRecipient) { mutableStateOf(initialRecipient?.let(::setOf) ?: emptySet()) }; var groupId by remember { mutableStateOf<Long?>(null) }
     var mode by remember { mutableStateOf(ComposeMode.DURATION) }; var amount by remember { mutableStateOf("3") }
     var modeMenu by remember { mutableStateOf(false) }
+    var recipientMenu by remember { mutableStateOf(false) }
     var unit by remember { mutableStateOf(DelayUnit.DAYS) }; var dateTime by remember { mutableStateOf(LocalDateTime.now().plusDays(1).withSecond(0).withNano(0)) }
-    var randomStart by remember { mutableStateOf("1") }; var randomEnd by remember { mutableStateOf("24") }; var oneTime by remember { mutableStateOf(false) }
+    var randomStart by remember { mutableStateOf("1") }; var randomEnd by remember { mutableStateOf("24") }
+    var randomStartUnit by remember { mutableStateOf(DelayUnit.HOURS) }; var randomEndUnit by remember { mutableStateOf(DelayUnit.HOURS) }
+    var oneTime by remember { mutableStateOf(false) }
     var attachment by remember { mutableStateOf<Triple<String, String, ByteArray>?>(null) }; var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }; var confirmManual by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -352,34 +442,63 @@ private fun SendScreen(token: String, api: ApiClient, friends: List<ApiClient.Us
     }
     val now = Instant.now().epochSecond
     val targetValid = groupId != null || selected.isNotEmpty()
+    val minimumDelay = if (groupId == null) selected.mapNotNull { id ->
+        settings.firstOrNull { it.friendId == id }?.minLetterDelaySeconds
+    }.maxOrNull() ?: 0L else 0L
     val scheduleValid = when (mode) {
         ComposeMode.DURATION -> (amount.toLongOrNull() ?: 0) > 0
         ComposeMode.DATE_TIME -> dateTime.atZone(ZoneId.systemDefault()).toEpochSecond() > now
-        ComposeMode.RANDOM -> (randomStart.toLongOrNull() ?: 0) > 0 && (randomEnd.toLongOrNull() ?: 0) > (randomStart.toLongOrNull() ?: 0)
+        ComposeMode.RANDOM -> {
+            val from = (randomStart.toLongOrNull() ?: 0) * randomStartUnit.seconds
+            val to = (randomEnd.toLongOrNull() ?: 0) * randomEndUnit.seconds
+            from >= 60 && to - from >= 60
+        }
         else -> true
     }
     suspend fun send() {
         busy = true; notice = null
         runCatching {
-            val encrypted = CryptoBox.encrypt(text)
-            val encryptedAttachment = attachment?.let {
-                val enc = CryptoBox.encryptBytes(it.third, encrypted.key)
-                ApiClient.EncryptedAttachment(it.first, it.second, enc.ciphertext, enc.nonce)
-            }
             val current = Instant.now().epochSecond
+            // The server tolerates a few seconds of clock skew, but add the same
+            // slack here so an agreed minimum delay never fails by a hair.
+            val minimum = current + minimumDelay + 5
             val release = when (mode) {
-                ComposeMode.DURATION -> current + (amount.toLongOrNull() ?: 0) * unit.seconds
+                ComposeMode.DURATION -> maxOf(current + (amount.toLongOrNull() ?: 0) * unit.seconds, minimum)
                 ComposeMode.DATE_TIME -> dateTime.atZone(ZoneId.systemDefault()).toEpochSecond()
                 else -> null
+            }
+            val randomFrom = if (mode == ComposeMode.RANDOM)
+                maxOf(current + (randomStart.toLongOrNull() ?: 1) * randomStartUnit.seconds, minimum) else null
+            val randomTo = if (mode == ComposeMode.RANDOM) {
+                val requested = current + (randomEnd.toLongOrNull() ?: 24) * randomEndUnit.seconds
+                // Keep at least the one-minute window the server requires, also after
+                // randomFrom was raised to the agreed minimum delay.
+                if (randomFrom != null) maxOf(requested, randomFrom + 60) else requested
+            } else null
+            val metadata = LetterMetadata(
+                title.trim(), coverNote.trim(), if (groupId == null) selected.toList() else emptyList(),
+                groupId, mode.api, release, randomFrom, randomTo, oneTime,
+            )
+            // Sealing runs AES/ECDSA/SHA-256 over the whole body plus an optional
+            // 2 MB attachment; keep it off the Compose main dispatcher.
+            val sealed = withContext(Dispatchers.Default) {
+                EvidenceProtocol.seal(text, metadata, attachment?.first, attachment?.second, attachment?.third)
+            }
+            val encrypted = CryptoBox.Encrypted(sealed.ciphertext, sealed.nonce, sealed.releaseKey)
+            val encryptedAttachment = sealed.attachment?.let {
+                ApiClient.EncryptedAttachment(it.name, it.mime, it.ciphertext, it.nonce)
             }
             api.send(token, ApiClient.SendRequest(
                 recipientIds = if (groupId == null) selected.toList() else emptyList(), groupId = groupId,
                 encrypted = encrypted, title = title.trim(), mode = mode.api, releaseAt = release,
-                randomFrom = if (mode == ComposeMode.RANDOM) current + (randomStart.toLongOrNull() ?: 1) * 3600 else null,
-                randomTo = if (mode == ComposeMode.RANDOM) current + (randomEnd.toLongOrNull() ?: 24) * 3600 else null,
-                oneTime = oneTime, attachment = encryptedAttachment,
+                randomFrom = randomFrom, randomTo = randomTo,
+                oneTime = oneTime, attachment = encryptedAttachment, coverNote = coverNote.trim(), evidence = sealed.evidence,
             ))
-        }.onSuccess { text = ""; title = ""; attachment = null; notice = "✓ Verschlüsselt gesendet"; onSent() }
+        }.onSuccess { ids ->
+            val likelyFriend = if (groupId == null) selected.firstOrNull() else null
+            text = ""; title = ""; coverNote = ""; attachment = null; notice = "✓ Verschlüsselt gesendet"
+            onSent(ids.firstOrNull(), likelyFriend)
+        }
             .onFailure { notice = it.message ?: "Senden fehlgeschlagen" }
         busy = false
     }
@@ -410,16 +529,30 @@ private fun SendScreen(token: String, api: ApiClient, friends: List<ApiClient.Us
     }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { SectionTitle("Neue Nachricht") }
+        item { SectionTitle("Neuer versiegelter Brief") }
         item {
             Card { Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("Empfänger", fontWeight = FontWeight.Bold)
                 if (friends.isEmpty()) Text("Füge zuerst Freunde hinzu.")
-                friends.forEach { friend -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = friend.id in selected && groupId == null, onCheckedChange = { checked ->
-                        groupId = null; selected = if (checked) selected + friend.id else selected - friend.id
-                    }); Text("${friend.avatarEmoji} ${friend.name}")
-                } }
+                else Box {
+                    OutlinedButton(onClick = { recipientMenu = true }, Modifier.fillMaxWidth()) {
+                        Text(
+                            if (selected.isEmpty()) "Empfänger auswählen"
+                            else friends.filter { it.id in selected }.joinToString { "${it.avatarEmoji} ${it.name}" },
+                            Modifier.weight(1f),
+                        )
+                        Text("⌄")
+                    }
+                    DropdownMenu(recipientMenu, { recipientMenu = false }) {
+                        friends.forEach { friend -> DropdownMenuItem(
+                            text = { Text("${if (friend.id in selected) "✓ " else ""}${friend.avatarEmoji} ${friend.name}") },
+                            onClick = {
+                                groupId = null
+                                selected = if (friend.id in selected) selected - friend.id else selected + friend.id
+                            },
+                        ) }
+                    }
+                }
                 if (groups.isNotEmpty()) {
                     HorizontalDivider(); Text("Oder Gruppe", fontWeight = FontWeight.SemiBold)
                     groups.forEach { group -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -427,8 +560,18 @@ private fun SendScreen(token: String, api: ApiClient, friends: List<ApiClient.Us
                         Text("👥 ${group.name} (${group.members.size})")
                     } }
                 }
-                OutlinedTextField(title, { title = it.take(100) }, Modifier.fillMaxWidth(), label = { Text("Titel – optional") })
-                OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), label = { Text("Nachricht") }, minLines = 3, maxLines = 8)
+                OutlinedTextField(title, { title = it.take(100) }, Modifier.fillMaxWidth(), label = { Text("Brieftitel – optional") })
+                OutlinedTextField(coverNote, { coverNote = it.take(1000) }, Modifier.fillMaxWidth(),
+                    label = { Text("Öffentlicher Umschlagtext") }, supportingText = { Text("Offen und unverschlüsselt sichtbar") }, minLines = 2)
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Versiegelter Inhalt", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                            Surface(color = Color(0xFFB3261E), shape = RoundedCornerShape(50)) { Text("✦ SIEGEL", Modifier.padding(8.dp), color = Color.White, fontSize = 11.sp) }
+                        }
+                        OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), label = { Text("Geheimer Brieftext") }, minLines = 4, maxLines = 10)
+                    }
+                }
                 OutlinedButton(onClick = { picker.launch("*/*") }) { Text(attachment?.let { "📎 ${it.first}" } ?: "Bild oder Datei anhängen") }
                 attachment?.let { Text("${it.third.size / 1024} KB · verschlüsselt", fontSize = 12.sp) }
             } }
@@ -451,16 +594,25 @@ private fun SendScreen(token: String, api: ApiClient, friends: List<ApiClient.Us
                         ComposeMode.PRESENCE -> Text(modeDescription(mode))
                         ComposeMode.RANDOM -> {
                             Text("Zufällig innerhalb dieses Fensters:")
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(randomStart, { randomStart = it.filter(Char::isDigit).take(3) }, Modifier.weight(1f), label = { Text("ab Stunden") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                                OutlinedTextField(randomEnd, { randomEnd = it.filter(Char::isDigit).take(3) }, Modifier.weight(1f), label = { Text("bis Stunden") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                            }
+                            NumberAndUnit(randomStart, { randomStart = it }, randomStartUnit, { randomStartUnit = it }, "Frühestens")
+                            NumberAndUnit(randomEnd, { randomEnd = it }, randomEndUnit, { randomEndUnit = it }, "Spätestens")
+                            Text("Das Fenster muss mindestens 1 Minute groß sein. Den tatsächlichen Zeitpunkt wählt der Server.", fontSize = 12.sp)
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) { Switch(oneTime, { oneTime = it }); Spacer(Modifier.width(8.dp)); Text("Nur einmal lesbar") }
+                    if (minimumDelay > 0) Text(
+                        "Diese Freundschaft verlangt mindestens ${formatRemaining(minimumDelay)} bis zur Freigabe; kürzere Zeiten werden automatisch angehoben.",
+                        fontSize = 12.sp,
+                    )
                 }
             }
         }
+        item { InfoCard(
+            "AES-256-GCM schützt Vertraulichkeit und Integrität in Speicherung und Übertragung. " +
+                "Der Server hält den AES-Schlüssel bis zur Freigabe und kann technisch auf gesperrte Inhalte zugreifen. " +
+                "Zeit, Zufall, manuell, gegenseitig und Präsenz unterscheiden nur das serverseitige Freigabe-Gate. " +
+                "Präsenz ist serverbestätigte Aktivität, keine ausdrückliche Zustimmung. Einmal-Lesen ist App-/Server-Regel und verhindert keine Screenshots oder Caches."
+        ) }
         notice?.let { item { Text(it, color = if (it.startsWith("✓")) Color(0xFF19703B) else MaterialTheme.colorScheme.error) } }
         item { Button(
             onClick = { if (mode == ComposeMode.MANUAL) confirmManual = true else scope.launch { send() } },
@@ -474,12 +626,14 @@ private fun SendScreen(token: String, api: ApiClient, friends: List<ApiClient.Us
 private fun FriendsScreen(
     token: String, api: ApiClient, users: List<ApiClient.UserSummary>, friends: List<ApiClient.UserSummary>,
     incoming: List<ApiClient.IncomingRequest>, outgoing: List<ApiClient.OutgoingRequest>, groups: List<ApiClient.Group>,
+    settings: List<ApiClient.FriendshipSettings>, onLetter: (Long) -> Unit, onChat: (Long) -> Unit,
     act: ((suspend () -> Unit) -> Unit),
 ) {
     val scope = rememberCoroutineScope(); var search by remember { mutableStateOf("") }; var result by remember { mutableStateOf<List<ApiClient.UserSummary>>(emptyList()) }
     var groupName by remember { mutableStateOf("") }; var groupMembers by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var creatingGroup by remember { mutableStateOf(false) }
     var friendMenu by remember { mutableStateOf<Long?>(null) }
+    var expandedSettings by remember { mutableStateOf<Long?>(null) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
         if (incoming.isNotEmpty()) { item { SectionTitle("Offene Anfragen") }; items(incoming, key = { "req-${it.id}" }) { request ->
             ActionCard("${request.senderName} möchte mit dir befreundet sein") {
@@ -493,15 +647,54 @@ private fun FriendsScreen(
         item { SectionTitle("Freunde") }
         if (friends.isEmpty()) item { InfoCard("Noch keine bestätigten Freunde.") }
         else items(friends, key = { "friend-${it.id}" }) { friend ->
-            ActionCard("${friend.avatarEmoji} ${friend.name}") {
-                Box {
-                    TextButton(onClick = { friendMenu = friend.id }) { Text("⋮", fontSize = 22.sp) }
-                    DropdownMenu(expanded = friendMenu == friend.id, onDismissRequest = { friendMenu = null }) {
-                        DropdownMenuItem(text = { Text("Freund entfernen") }, onClick = { friendMenu = null; act { api.removeFriend(token, friend.id) } })
-                        DropdownMenuItem(text = { Text("Blockieren", color = MaterialTheme.colorScheme.error) }, onClick = { friendMenu = null; act { api.block(token, friend.id) } })
+            val current = settings.firstOrNull { it.friendId == friend.id }
+            var draft by remember(current) { mutableStateOf(current) }
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${friend.avatarEmoji} ${friend.name}", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                    Box {
+                        TextButton(onClick = { friendMenu = friend.id }) { Text("⋮", fontSize = 22.sp) }
+                        DropdownMenu(expanded = friendMenu == friend.id, onDismissRequest = { friendMenu = null }) {
+                            DropdownMenuItem(text = { Text("Freund entfernen") }, onClick = { friendMenu = null; act { api.removeFriend(token, friend.id) } })
+                            DropdownMenuItem(text = { Text("Blockieren", color = MaterialTheme.colorScheme.error) }, onClick = { friendMenu = null; act { api.block(token, friend.id) } })
+                        }
                     }
                 }
-            }
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Button(onClick = { onLetter(friend.id) }, enabled = current?.lettersEnabled != false) { Text("Brief") }
+                    OutlinedButton(onClick = { onChat(friend.id) }, enabled = current?.chatsEnabled != false) { Text("Chat") }
+                    TextButton(onClick = { expandedSettings = if (expandedSettings == friend.id) null else friend.id }) { Text("Einstellungen") }
+                }
+                current?.let { value -> Text(
+                    "Briefe ${yesNo(value.lettersEnabled)} · Chats ${yesNo(value.chatsEnabled)} · EP ${yesNo(value.epEnabled)} · Mindestdauer ${formatRemaining(value.minLetterDelaySeconds)}",
+                    fontSize = 12.sp,
+                ) }
+                if (expandedSettings == friend.id && current != null && draft != null) {
+                    val proposal = current.incomingProposal
+                    if (proposal != null) {
+                        Text("Eingehender Einstellungsvorschlag", fontWeight = FontWeight.Bold)
+                        Text(settingsSummary(proposal.lettersEnabled, proposal.chatsEnabled, proposal.epEnabled, proposal.minLetterDelaySeconds))
+                        Row { Button(onClick = { act { api.respondFriendshipSettings(token, proposal.id, true) } }) { Text("Annehmen") }
+                            TextButton(onClick = { act { api.respondFriendshipSettings(token, proposal.id, false) } }) { Text("Ablehnen") } }
+                    } else current.outgoingProposal?.let { proposal ->
+                        Text("Ausgehender Vorschlag: ${settingsSummary(proposal.lettersEnabled, proposal.chatsEnabled, proposal.epEnabled, proposal.minLetterDelaySeconds)}")
+                        TextButton(onClick = { act { api.withdrawFriendshipSettings(token, proposal.id) } }) { Text("Vorschlag zurückziehen") }
+                    } ?: run {
+                        Text("Änderungen werden als Vorschlag gesendet und gelten erst nach Zustimmung von ${friend.name}.")
+                        val value = draft!!
+                        ToggleSetting("Briefe", value.lettersEnabled) { draft = value.copy(lettersEnabled = it) }
+                        ToggleSetting("Chats", value.chatsEnabled) { draft = value.copy(chatsEnabled = it) }
+                        ToggleSetting("EP", value.epEnabled) { draft = value.copy(epEnabled = it) }
+                        OutlinedTextField(
+                            value.minLetterDelaySeconds.toString(),
+                            { entered -> draft = value.copy(minLetterDelaySeconds = entered.filter(Char::isDigit).toLongOrNull() ?: 0) },
+                            Modifier.fillMaxWidth(), label = { Text("Mindest-Briefverzögerung in Sekunden") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        )
+                        Button(onClick = { act { api.proposeFriendshipSettings(token, draft!!) } }) { Text("Einstellungsvorschlag wie einen Brief senden") }
+                    }
+                }
+            } }
         }
         item { SectionTitle("Nutzer finden") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -538,6 +731,7 @@ private fun FriendsScreen(
 private fun AccountScreen(
     token: String, api: ApiClient, store: SessionStore, status: ApiClient.Status?, sessions: List<ApiClient.Session>,
     blocked: List<ApiClient.UserSummary>, onTheme: (String) -> Unit, onLogout: () -> Unit,
+    serverProfile: ServerProfile, onServerProfile: (ServerProfile) -> Unit,
     onRecovery: (String) -> Unit, act: ((suspend () -> Unit) -> Unit),
 ) {
     val context = LocalContext.current
@@ -550,6 +744,11 @@ private fun AccountScreen(
     var biometric by remember { mutableStateOf(store.biometricEnabled) }
     var advanced by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { SectionTitle("Server") }
+        item { Card { Column(Modifier.padding(15.dp)) {
+            ServerProfileSelector(serverProfile, onServerProfile)
+            if (!serverProfile.isConfigured()) Text("Nicht konfiguriert", color = MaterialTheme.colorScheme.error)
+        } } }
         if (status?.needsPassword == true) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
             Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("Bestehendes Profil absichern", fontWeight = FontWeight.Bold)
@@ -621,10 +820,13 @@ private fun AccountScreen(
 }
 
 @Composable
-private fun NumberAndUnit(amount: String, onAmount: (String) -> Unit, unit: DelayUnit, onUnit: (DelayUnit) -> Unit) {
+private fun NumberAndUnit(
+    amount: String, onAmount: (String) -> Unit, unit: DelayUnit, onUnit: (DelayUnit) -> Unit,
+    label: String = "Nach",
+) {
     var menu by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(amount, { onAmount(it.filter(Char::isDigit).take(3)) }, Modifier.width(120.dp), label = { Text("Nach") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        OutlinedTextField(amount, { onAmount(it.filter(Char::isDigit).take(4)) }, Modifier.width(140.dp), label = { Text(label) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         Box { OutlinedButton(onClick = { menu = true }) { Text(unit.label) }; DropdownMenu(menu, { menu = false }) {
             DelayUnit.entries.forEach { choice -> DropdownMenuItem({ Text(choice.label) }, { onUnit(choice); menu = false }) }
         } }
@@ -649,6 +851,51 @@ private fun RecoveryDialog(code: String, onDismiss: () -> Unit) = AlertDialog(
 )
 
 @Composable
+private fun ProofDialog(proof: ApiClient.ProofDetails, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) context.contentResolver.openOutputStream(uri)?.use { it.write(proof.rawExport.toByteArray()) }
+    }
+    val evidence = proof.evidence
+    val verification = remember(evidence) { evidence?.let(EvidenceProtocol::verify) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Kryptografischer Nachweis") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (proof.legacy || evidence == null) {
+                Text("Legacy – ohne kryptografischen Nachweis", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+            } else {
+                Text("Protokollversion ${evidence.protocolVersion}")
+                Text("Versiegelungs-Hash", fontWeight = FontWeight.Bold)
+                SelectionContainer { Text(evidence.commitment, fontSize = 12.sp) }
+                Text("Klartext-Hash (bei kurzen Nachrichten möglicherweise erratbar)", fontWeight = FontWeight.Bold)
+                SelectionContainer { Text(evidence.plaintextSha256, fontSize = 12.sp) }
+                Text("Fingerabdruck des öffentlichen Prüfschlüssels", fontWeight = FontWeight.Bold)
+                SelectionContainer { Text(evidence.publicKeyFingerprint, fontSize = 12.sp) }
+                Text("Öffentlicher Prüfschlüssel (kopierbar)", fontWeight = FontWeight.Bold)
+                SelectionContainer { Text(evidence.publicSigningKey, fontSize = 11.sp) }
+                Text("Signatur", fontWeight = FontWeight.Bold)
+                SelectionContainer { Text(evidence.signature, fontSize = 11.sp) }
+                Text("Freigaberegel/Zeitstempel: ${proof.releaseRule}")
+                if (evidence.releaseKey != null) {
+                    Text("Fingerabdruck des offengelegten AES-Freigabeschlüssels", fontWeight = FontWeight.Bold)
+                    SelectionContainer { Text(evidence.releaseKeyFingerprint.orEmpty(), fontSize = 12.sp) }
+                    Text(
+                        if (verification?.valid == true && verification.status == "verified") "✓ Lokale Prüfung erfolgreich"
+                        else "⚠ Lokale Prüfung fehlgeschlagen: ${verification?.status}",
+                        color = if (verification?.valid == true) Color(0xFF19703B) else MaterialTheme.colorScheme.error,
+                    )
+                } else Text("Der AES-Freigabeschlüssel ist noch nicht offengelegt.")
+            }
+            OutlinedButton(onClick = { export.launch("brief-${proof.messageId}.gsverify.json") }) {
+                Text("Öffentliche Prüfdatei exportieren")
+            }
+        } },
+        confirmButton = { Button(onClick = onDismiss) { Text("Schließen") } },
+    )
+}
+
+@Composable
 private fun ConfirmDialog(title: String, text: String, confirm: () -> Unit, dismiss: () -> Unit) = AlertDialog(
     onDismissRequest = dismiss, title = { Text(title) }, text = { Text(text) },
     confirmButton = { Button(onClick = confirm) { Text("Bestätigen") } }, dismissButton = { TextButton(onClick = dismiss) { Text("Abbrechen") } },
@@ -665,9 +912,18 @@ private fun ActionCard(text: String, actions: @Composable RowScope.() -> Unit) {
 private fun SectionTitle(text: String) = Text(text, fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
 @Composable
 private fun InfoCard(text: String) = Card(Modifier.fillMaxWidth()) { Text(text, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+@Composable
+private fun ToggleSetting(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) =
+    Row(verticalAlignment = Alignment.CenterVertically) { Switch(checked, onChecked); Spacer(Modifier.width(8.dp)); Text(label) }
+private fun yesNo(value: Boolean) = if (value) "an" else "aus"
+private fun settingsSummary(letters: Boolean, chats: Boolean, ep: Boolean, delay: Long) =
+    "Briefe ${yesNo(letters)}, Chats ${yesNo(chats)}, EP ${yesNo(ep)}, Mindestverzögerung ${delay}s"
 private fun formatDate(epoch: Long): String = DateTimeFormatter.ofPattern("dd.MM.yyyy, HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(epoch))
 private fun profileColor(value: String): Color = runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(Color(0xFF5B3FD6))
 private fun formatRemaining(seconds: Long): String { val d=seconds/86400; val h=seconds%86400/3600; val m=seconds%3600/60; val s=seconds%60; return when { d>0 -> "$d T $h Std"; h>0 -> "$h Std $m Min"; m>0 -> "$m Min $s Sek"; else -> "$s Sek" } }
+private fun safeFileName(name: String): String =
+    name.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[\\p{Cntrl}]"), "").trim()
+        .trimStart('.').take(120).ifBlank { "Anhang" }
 private var nextWhipSound = 0
 private val whipSounds = intArrayOf(R.raw.whip, R.raw.whip_2, R.raw.whip_3, R.raw.whip_4, R.raw.whip_5)
 
@@ -691,6 +947,6 @@ private fun modeDescription(mode: ComposeMode): String = when (mode) {
     ComposeMode.DATE_TIME -> "Öffnet an einem bestimmten Datum und zu einer Uhrzeit."
     ComposeMode.MANUAL -> "Bleibt gesperrt, bis du sie selbst freigibst."
     ComposeMode.MUTUAL -> "Öffnet erst, nachdem beide zugestimmt haben."
-    ComposeMode.PRESENCE -> "Öffnet, sobald beide Geräte gleichzeitig online sind."
-    ComposeMode.RANDOM -> "Öffnet irgendwann innerhalb deines Zeitfensters."
+    ComposeMode.PRESENCE -> "Öffnet bei serverbestätigter gleichzeitiger Aktivität; das ist keine ausdrückliche Zustimmung."
+    ComposeMode.RANDOM -> "Der Server wählt den Freigabezeitpunkt innerhalb deines Zeitfensters."
 }
