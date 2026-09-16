@@ -70,6 +70,10 @@ class SessionStore(context: Context) {
         prefs.edit().putString(accountKey(), accountsJson(ordered.take(8))).apply()
     }
 
+    fun removeAccount(name: String) {
+        prefs.edit().putString(accountKey(), accountsJson(savedAccounts().filterNot { it.name == name })).apply()
+    }
+
     private fun accountsJson(accounts: List<SavedAccount>): String {
         val array = JSONArray()
         accounts.forEach { array.put(JSONObject().put("name", it.name).put("token", it.token)) }

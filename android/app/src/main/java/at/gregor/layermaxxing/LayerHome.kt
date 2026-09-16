@@ -69,8 +69,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -110,7 +112,7 @@ data class EpPrompt(val friendId: Long, val letterId: Long?)
 fun LayerHome(
     token: String, api: ApiClient, store: SessionStore, initialRecoveryCode: String?,
     onRecoveryCodeSeen: () -> Unit, onTheme: (String) -> Unit, onLogout: () -> Unit,
-    accounts: List<SavedAccount>, onSwitchAccount: (SavedAccount) -> Unit,
+    accounts: List<SavedAccount>, onAddAccount: () -> Unit, onSwitchAccount: (SavedAccount) -> Unit,
     serverProfile: ServerProfile, onServerProfile: (ServerProfile) -> Unit,
 ) {
     var tab by remember { mutableStateOf(HomeTab.INBOX) }
@@ -194,6 +196,11 @@ fun LayerHome(
                                 },
                             )
                         }
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("＋ Konto hinzufügen") },
+                            onClick = { accountMenu = false; onAddAccount() },
+                        )
                     }
                 }
                 TextButton(onClick = { scope.launch { refresh() } }) { Text("Aktualisieren") }
@@ -864,11 +871,21 @@ private fun DateTimeChooser(value: LocalDateTime, onChange: (LocalDateTime) -> U
 }
 
 @Composable
-private fun RecoveryDialog(code: String, onDismiss: () -> Unit) = AlertDialog(
-    onDismissRequest = {}, title = { Text("Wiederherstellungscode sichern") },
-    text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("Notiere diesen Code. Er wird nur einmal angezeigt:"); Text(code, fontWeight = FontWeight.Bold, fontSize = 20.sp); Text("Ein neuer Code macht den vorherigen ungültig.") } },
-    confirmButton = { Button(onClick = onDismiss) { Text("Ich habe ihn notiert") } },
-)
+private fun RecoveryDialog(code: String, onDismiss: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Sicherheitscode sichern") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Notiere diesen Code. Er wird nur einmal angezeigt:")
+            SelectionContainer { Text(code, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
+            Text("Ein neuer Code macht den vorherigen ungültig.")
+        } },
+        confirmButton = { Button(onClick = onDismiss) { Text("Ich habe ihn notiert") } },
+        dismissButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(code)); copied = true }) { Text(if (copied) "✓ Kopiert" else "Code kopieren") } },
+    )
+}
 
 @Composable
 private fun ProofDialog(proof: ApiClient.ProofDetails, onDismiss: () -> Unit) {

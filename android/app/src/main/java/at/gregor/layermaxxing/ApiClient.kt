@@ -55,6 +55,8 @@ private object ResilientDns : Dns {
     }
 }
 
+class ApiException(val code: Int, message: String) : IOException(message)
+
 class ApiClient(
     private val baseUrl: String = ServerProfile.GERFRIED.baseUrl,
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -445,9 +447,9 @@ class ApiClient(
             return JSONArray(text).objects().map(mapper)
         }
     }
-    private fun apiError(code: Int, body: String): IOException {
+    private fun apiError(code: Int, body: String): ApiException {
         val detail = runCatching { JSONObject(body).optString("detail") }.getOrNull().orEmpty()
-        return IOException(if (detail.isBlank()) "Serverfehler $code" else detail)
+        return ApiException(code, if (detail.isBlank()) "Serverfehler $code" else detail)
     }
     private fun JSONObject.nullableString(key: String): String? = if (!has(key) || isNull(key)) null else optString(key).ifBlank { null }
     private fun JSONObject.nullableLong(key: String): Long? = if (!has(key) || isNull(key)) null else getLong(key)

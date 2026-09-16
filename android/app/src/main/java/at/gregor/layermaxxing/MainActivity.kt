@@ -89,6 +89,9 @@ class MainActivity : FragmentActivity() {
                 val api = remember(profile) { ApiClient(profile.baseUrl) }
                 var token by remember { mutableStateOf(store.token) }
                 var accounts by remember { mutableStateOf(store.savedAccounts()) }
+                var addingAccount by remember { mutableStateOf(false) }
+                var authNotice by remember { mutableStateOf<String?>(null) }
+                val scope = rememberCoroutineScope()
                 var recoveryCode by remember { mutableStateOf<String?>(null) }
                 var biometricPassed by remember { mutableStateOf(!store.biometricEnabled) }
                 var verifiedRole by remember(profile) { mutableStateOf<String?>(null) }
@@ -128,27 +131,51 @@ class MainActivity : FragmentActivity() {
                     Column {
                         if (ServerProfilePolicy.showTestWarning(profile, verifiedRole)) TestServerBanner()
                         Box(Modifier.weight(1f)) { when {
-                        token == null -> AuthScreen(api, profile, ::selectProfile) { auth ->
+                        token == null -> AuthScreen(api, profile, ::selectProfile, notice = authNotice) { auth ->
+                            store.token = auth.token; store.name = auth.name
+                            store.saveAccount(auth.name, auth.token)
+                            accounts = store.savedAccounts()
+                            authNotice = null
+                            token = auth.token; recoveryCode = auth.recoveryCode
+                            biometricPassed = !store.biometricEnabled
+                        }
+                        !biometricPassed -> BiometricGate(this@MainActivity) { biometricPassed = true }
+                        addingAccount -> AuthScreen(api, profile, ::selectProfile, onCancel = { addingAccount = false }) { auth ->
                             store.token = auth.token; store.name = auth.name
                             store.saveAccount(auth.name, auth.token)
                             accounts = store.savedAccounts()
                             token = auth.token; recoveryCode = auth.recoveryCode
                             biometricPassed = !store.biometricEnabled
+                            addingAccount = false
                         }
-                        !biometricPassed -> BiometricGate(this@MainActivity) { biometricPassed = true }
                         else -> LayerHome(
                             token = token!!, api = api, store = store, initialRecoveryCode = recoveryCode,
                             onRecoveryCodeSeen = { recoveryCode = null },
                             onTheme = { store.theme = it; theme = it },
                             accounts = accounts,
+                            onAddAccount = { addingAccount = true },
                             onSwitchAccount = { account ->
-                                store.token = account.token; store.name = account.name
-                                recoveryCode = null; token = account.token
+                                scope.launch {
+                                    val failure = runCatching { api.status(account.token) }.exceptionOrNull()
+                                    if (failure is ApiException && failure.code == 401) {
+                                        store.removeAccount(account.name)
+                                        accounts = store.savedAccounts()
+                                        authNotice = "Die gespeicherte Anmeldung von ${account.name} ist nicht mehr gültig. Bitte neu anmelden."
+                                        store.token = null; token = null; recoveryCode = null
+                                    } else {
+                                        store.token = account.token; store.name = account.name
+                                        authNotice = null
+                                        recoveryCode = null; token = account.token
+                                    }
+                                }
                             },
                             serverProfile = profile,
                             onServerProfile = ::selectProfile,
                             onLogout = {
                                 val active = token
+                                val activeName = store.name
+                                store.removeAccount(activeName)
+                                accounts = store.savedAccounts()
                                 store.clear(); token = null; recoveryCode = null
                                 if (active != null) kotlinx.coroutines.MainScope().launch { runCatching { api.logout(active) } }
                             },
@@ -166,15 +193,17 @@ private enum class AuthMode { LOGIN, REGISTER, RECOVER }
 @Composable
 private fun AuthScreen(
     api: ApiClient, profile: ServerProfile, onProfile: (ServerProfile) -> Unit,
+    notice: String? = null, onCancel: (() -> Unit)? = null,
     onAuthenticated: (ApiClient.Auth) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var mode by remember { mutableStateOf(AuthMode.LOGIN) }
     var name by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var password2 by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf(notice) }
     Box(
         Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center,
@@ -215,6 +244,14 @@ private fun AuthScreen(
             OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(),
                 label = { Text(if (mode == AuthMode.RECOVER) "Neues Passwort" else "Passwort") },
                 singleLine = true, visualTransformation = PasswordVisualTransformation())
+            if (mode == AuthMode.REGISTER) {
+                OutlinedTextField(password2, { password2 = it }, Modifier.fillMaxWidth(),
+                    label = { Text("Passwort wiederholen") },
+                    singleLine = true, visualTransformation = PasswordVisualTransformation())
+                if (password2.isNotEmpty() && password != password2) Text(
+                    "Die Passwörter stimmen nicht überein.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error,
+                )
+            }
             if (mode != AuthMode.LOGIN) Text("Mindestens 8 Zeichen", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             error?.let {
                 Surface(
@@ -238,11 +275,15 @@ private fun AuthScreen(
                     }
                 },
                 enabled = profile.isConfigured() && name.isNotBlank() && password.length >= 8 &&
-                    (mode != AuthMode.RECOVER || code.isNotBlank()) && !busy,
+                    (mode != AuthMode.RECOVER || code.isNotBlank()) &&
+                    (mode != AuthMode.REGISTER || password == password2) && !busy,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 if (busy) CircularProgressIndicator(strokeWidth = 2.dp)
                 else Text(when (mode) { AuthMode.REGISTER -> "Konto erstellen"; AuthMode.LOGIN -> "Anmelden"; AuthMode.RECOVER -> "Konto wiederherstellen" })
+            }
+            onCancel?.let { cancel ->
+                TextButton(onClick = cancel, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Abbrechen") }
             }
         }
     }
