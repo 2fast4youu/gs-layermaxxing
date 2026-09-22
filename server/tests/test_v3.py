@@ -185,6 +185,7 @@ def test_encrypted_shared_topics_lifecycle_and_permissions(tmp_path, monkeypatch
         shared_id = shared.json()["id"]
         topic_for_b = next(row for row in client.get("/api/topics", headers=auth(b)).json() if row["id"] == shared_id)
         assert topic_for_b["target_type"] == "friend" and topic_for_b["target_name"] == "A"
+        assert topic_for_b["target_id"] == a["user_id"]
         assert topic_for_b["can_delete"] is False
 
         completed = client.patch(f"/api/topics/{shared_id}", headers=auth(b), json={"completed": True})

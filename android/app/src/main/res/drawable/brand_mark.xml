@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The app mark on its plate, for surfaces inside the app.
+
+    Same geometry as the launcher foreground, so the icon on the home screen and
+    the mark on the login screen are demonstrably the same sign.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z"
+        android:fillColor="#051910" />
+
+    <path
+        android:pathData="M79.72,53.5 A17,17 0 1 0 79.72,70.5 L79.72,62 L69.93,62"
+        android:strokeColor="#9FD5B5"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M57.72,37.5 A17,17 0 1 0 57.72,54.5 L57.72,46 L47.93,46"
+        android:strokeColor="#D9A441"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

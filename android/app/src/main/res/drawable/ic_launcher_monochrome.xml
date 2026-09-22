@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The same two Gs for themed icons (Android 13+).
+
+    A monochrome layer is tinted by the launcher, so it carries the shape and
+    nothing else: one colour, the same geometry as the colour version.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="?android:attr/colorControlNormal">
+
+    <path
+        android:pathData="M79.72,53.5 A17,17 0 1 0 79.72,70.5 L79.72,62 L69.93,62"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M57.72,37.5 A17,17 0 1 0 57.72,54.5 L57.72,46 L47.93,46"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

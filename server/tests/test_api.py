@@ -221,6 +221,36 @@ def test_v1_devices_fk_upgrade_keeps_v4_message_references_and_endpoints_work(tm
         assert accepted.status_code == 200, accepted.text
         ep = client.post(
             "/api/ep/proposals", headers=auth(tokens["A"]),
-            json={"beneficiary_id": 2, "points": 7, "title": "Altbrief", "letter_id": 9},
+            json={"beneficiary_id": 2, "points": 1, "title": "Altbrief", "letter_id": 9},
         )
         assert ep.status_code == 201, ep.text
+
+
+def test_unknown_route_returns_stable_error_code(tmp_path):
+    main = load_app(tmp_path)
+    with TestClient(main.app) as client:
+        response = client.get("/api/does-not-exist")
+        assert response.status_code == 404
+        body = response.json()
+        assert body["detail"] == "Not Found"
+        assert body["error_code"] == "LM-HTTP-404"
+
+
+def test_http_exception_returns_stable_error_code(tmp_path):
+    main = load_app(tmp_path)
+    with TestClient(main.app) as client:
+        response = client.get("/api/status", headers=auth("no-such-token"))
+        assert response.status_code == 401
+        body = response.json()
+        assert body["detail"] == "Token ungültig"
+        assert body["error_code"] == "LM-HTTP-401"
+
+
+def test_validation_error_returns_stable_error_code(tmp_path):
+    main = load_app(tmp_path)
+    with TestClient(main.app) as client:
+        response = client.post("/api/register", json={"name": "Anna"})
+        assert response.status_code == 422
+        body = response.json()
+        assert "detail" in body
+        assert body["error_code"] == "LM-HTTP-422"

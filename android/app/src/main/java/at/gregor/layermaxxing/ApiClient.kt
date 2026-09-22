@@ -74,10 +74,13 @@ class ApiClient(
     data class Status(
         val userId: Long, val name: String, val needsPassword: Boolean, val avatarEmoji: String,
         val displayColor: String, val discoverable: Boolean,
+        // Creative-mode signals: role of the server answering this request plus
+        // the account's entitlement. Combined per refresh, never stored locally.
+        val serverRole: String? = null, val creativeEntitled: Boolean = false,
     )
     data class UserSummary(
         val id: Long, val name: String, val relationship: String = "none",
-        val avatarEmoji: String = "🔐", val displayColor: String = "#6750A4",
+        val avatarEmoji: String = "👤", val displayColor: String = "#6750A4",
     )
     data class IncomingRequest(val id: Long, val senderId: Long, val senderName: String, val createdAt: Long)
     data class OutgoingRequest(val id: Long, val recipientId: Long, val recipientName: String, val createdAt: Long)
@@ -98,7 +101,7 @@ class ApiClient(
     data class Group(val id: Long, val name: String, val ownerId: Long, val members: List<UserSummary>)
     data class Topic(
         val id: Long, val title: String, val details: String, val creatorName: String,
-        val targetType: String, val targetName: String, val createdAt: Long, val completedAt: Long?,
+        val targetType: String, val targetName: String, val targetId: Long?, val createdAt: Long, val completedAt: Long?,
         val completedByName: String?, val canDelete: Boolean,
     )
     data class Session(val id: Long, val deviceName: String, val createdAt: Long, val lastSeenAt: Long, val current: Boolean)
@@ -131,6 +134,11 @@ class ApiClient(
     data class ChatThread(
         val friendId: Long, val friendName: String, val avatarEmoji: String,
         val displayColor: String, val lastMessageAt: Long, val unreadCount: Int,
+        // Preview of the newest instant message. Instant messages are released on
+        // creation and their key is already handed out by the thread endpoint, so
+        // showing a preview adds no disclosure. Sealed letters never get one.
+        // lastText is decrypted here; a null means it could not be decrypted.
+        val lastSenderId: Long?, val lastText: String?,
     )
     data class ChatMessage(
         val id: Long, val senderId: Long, val recipientId: Long, val text: String,
@@ -169,7 +177,8 @@ class ApiClient(
     suspend fun status(token: String): Status = io {
         val json = execute(authorized(token, "api/status").get().build())
         Status(json.getLong("user_id"), json.getString("name"), json.getBoolean("needs_password"),
-            json.optString("avatar_emoji", "🔐"), json.optString("display_color", "#6750A4"), json.optBoolean("discoverable", true))
+            json.optString("avatar_emoji", "👤"), json.optString("display_color", "#6750A4"), json.optBoolean("discoverable", true),
+            json.nullableString("server_role"), json.optBoolean("creative_entitled", false))
     }
 
     suspend fun setPassword(token: String, password: String): String = io {
@@ -189,7 +198,8 @@ class ApiClient(
         val body = JSONObject().put("name", name).put("avatar_emoji", emoji).put("display_color", color).put("discoverable", discoverable)
         val json = execute(authorized(token, "api/profile").patch(body.body()).build())
         Status(json.getLong("user_id"), json.getString("name"), json.getBoolean("needs_password"),
-            json.getString("avatar_emoji"), json.getString("display_color"), json.getBoolean("discoverable"))
+            json.getString("avatar_emoji"), json.getString("display_color"), json.getBoolean("discoverable"),
+            json.nullableString("server_role"), json.optBoolean("creative_entitled", false))
     }
 
     suspend fun sessions(token: String): List<Session> = array(token, "api/sessions") {
@@ -273,9 +283,15 @@ class ApiClient(
     )
 
     suspend fun chatThreads(token: String): List<ChatThread> = array(token, "api/chats") {
+        val lastCipher = it.nullableString("last_ciphertext")
+        val lastNonce = it.nullableString("last_nonce")
+        val lastKey = it.nullableString("last_encryption_key")
+        val lastText = if (lastCipher != null && lastNonce != null && lastKey != null)
+            runCatching { CryptoBox.decrypt(lastCipher, lastNonce, lastKey) }.getOrNull() else null
         ChatThread(
-            it.getLong("friend_id"), it.getString("friend_name"), it.optString("avatar_emoji", "🔐"),
+            it.getLong("friend_id"), it.getString("friend_name"), it.optString("avatar_emoji", "👤"),
             it.optString("display_color", "#6750A4"), it.getLong("last_message_at"), it.getInt("unread_count"),
+            it.nullableLong("last_sender_id"), lastText,
         )
     }
     suspend fun chatMessages(token: String, friendId: Long): List<ChatMessage> = array(
@@ -292,6 +308,57 @@ class ApiClient(
         execute(authorized(token, "api/chats/$friendId/messages").post(JSONObject()
             .put("ciphertext", encrypted.ciphertext).put("nonce", encrypted.nonce)
             .put("encryption_key", encrypted.key).body()).build()).getLong("id")
+    }
+
+    // -----------------------------------------------------------------------
+    // Freundesfunke
+    //
+    // The recipient side carries no sender and no timestamp, because the server
+    // never sends either — there is nothing here to hide in the client. The
+    // sender side learns exactly one bit per spark: underway or opened.
+    // -----------------------------------------------------------------------
+
+    suspend fun sparks(token: String): List<SparkItem> = array(token, "api/sparks") {
+        SparkItem(
+            id = it.getLong("id"),
+            text = runCatching {
+                CryptoBox.decrypt(it.getString("ciphertext"), it.getString("nonce"), it.getString("encryption_key"))
+            }.getOrNull(),
+            opened = it.getBoolean("opened"),
+        )
+    }
+    suspend fun sparkOutbox(token: String): List<SparkSent> = array(token, "api/sparks/outbox") {
+        SparkSent(
+            it.getLong("id"), it.getLong("recipient_id"), it.getString("recipient_name"),
+            opened = it.getString("status") == "geöffnet",
+        )
+    }
+    suspend fun sendSpark(token: String, recipientId: Long, text: String) = io {
+        val encrypted = CryptoBox.encrypt(Sparks.clampText(text.trim()))
+        execute(authorized(token, "api/sparks").post(JSONObject()
+            .put("recipient_id", recipientId).put("ciphertext", encrypted.ciphertext)
+            .put("nonce", encrypted.nonce).put("encryption_key", encrypted.key).body()).build()).getLong("id")
+    }
+    suspend fun openSpark(token: String, id: Long) = unitCall(
+        authorized(token, "api/sparks/$id/open").post(JSONObject().body()).build()
+    )
+    suspend fun muteSparkSender(token: String, id: Long) = unitCall(
+        authorized(token, "api/sparks/$id/mute").post(JSONObject().body()).build()
+    )
+    suspend fun reportSpark(token: String, id: Long) = unitCall(
+        authorized(token, "api/sparks/$id/report").post(JSONObject().body()).build()
+    )
+
+    /**
+     * Test-only fast-forward of one letter's release clock.
+     *
+     * Exists on `SERVER_ROLE=test` between creative-entitled accounts only; the
+     * server re-checks both and rejects everything else. The client never
+     * decides this — it just calls and shows what came back.
+     */
+    suspend fun advanceTestLetter(token: String, messageId: Long): Boolean = io {
+        execute(authorized(token, "api/test/letters/$messageId/advance")
+            .post(JSONObject().put("phase", "release").body()).build()).getBoolean("advanced")
     }
 
     suspend fun topics(token: String): List<Topic> = array(token, "api/topics", ::parseTopic)
@@ -371,13 +438,14 @@ class ApiClient(
 
     private fun parseAuth(json: JSONObject) = Auth(json.getString("token"), json.getLong("user_id"), json.getString("name"), json.nullableString("recovery_code"))
     private fun parseUser(json: JSONObject) = UserSummary(json.getLong("id"), json.getString("name"), json.optString("relationship", "none"),
-        json.optString("avatar_emoji", "🔐"), json.optString("display_color", "#6750A4"))
+        json.optString("avatar_emoji", "👤"), json.optString("display_color", "#6750A4"))
     private fun parseTopic(json: JSONObject): Topic {
         val clear = JSONObject(CryptoBox.decrypt(json.getString("ciphertext"), json.getString("nonce"), json.getString("encryption_key")))
         return Topic(
             id = json.getLong("id"), title = clear.optString("title"), details = clear.optString("details"),
             creatorName = json.getString("creator_name"), targetType = json.getString("target_type"),
-            targetName = json.getString("target_name"), createdAt = json.getLong("created_at"),
+            targetName = json.getString("target_name"), targetId = json.nullableLong("target_id"),
+            createdAt = json.getLong("created_at"),
             completedAt = json.nullableLong("completed_at"), completedByName = json.nullableString("completed_by_name"),
             canDelete = json.getBoolean("can_delete"),
         )
@@ -432,24 +500,26 @@ class ApiClient(
     private fun emptyBody() = ByteArray(0).toRequestBody(null)
 
     private fun executeRaw(request: Request): String {
-        client.newCall(request).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw apiError(response.code, text)
+        val response = try {
+            client.newCall(request).execute()
+        } catch (e: IOException) {
+            throw ApiErrors.fromNetworkFailure(e)
+        }
+        response.use {
+            val text = try {
+                it.body?.string().orEmpty()
+            } catch (e: IOException) {
+                throw ApiErrors.fromNetworkFailure(e)
+            }
+            if (!it.isSuccessful) throw ApiErrors.fromHttpResponse(it.code, text)
             return text
         }
     }
     private fun execute(request: Request): JSONObject = executeRaw(request).let { if (it.isBlank()) JSONObject() else JSONObject(it) }
     private fun <T> readArray(request: Request, mapper: (JSONObject) -> T): List<T> {
-        client.newCall(request).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw apiError(response.code, text)
-            if (text.isBlank()) return emptyList()
-            return JSONArray(text).objects().map(mapper)
-        }
-    }
-    private fun apiError(code: Int, body: String): ApiException {
-        val detail = runCatching { JSONObject(body).optString("detail") }.getOrNull().orEmpty()
-        return ApiException(code, if (detail.isBlank()) "Serverfehler $code" else detail)
+        val text = executeRaw(request)
+        if (text.isBlank()) return emptyList()
+        return JSONArray(text).objects().map(mapper)
     }
     private fun JSONObject.nullableString(key: String): String? = if (!has(key) || isNull(key)) null else optString(key).ifBlank { null }
     private fun JSONObject.nullableLong(key: String): Long? = if (!has(key) || isNull(key)) null else getLong(key)

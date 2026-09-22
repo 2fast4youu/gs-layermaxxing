@@ -19,7 +19,16 @@ enum class ServerProfile(val key: String, val label: String, val expectedRole: S
 }
 
 object ServerProfilePolicy {
-    const val TEST_WARNING = "⚠ TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
+    /**
+     * The honest short form for the strip at the very top.
+     *
+     * It has to survive one line on a narrow phone without wrapping, so the full
+     * sentence moved to [TEST_WARNING_DETAIL] on the confirmation dialog and in
+     * "Mehr". What stays here still names the server and still says "test".
+     */
+    const val TEST_WARNING = "⚠ TESTSERVER GERFRIED"
+
+    const val TEST_WARNING_DETAIL = "Testserver von Gerfried – nur zum Ausprobieren."
 
     fun showTestWarning(profile: ServerProfile, verifiedRole: String?): Boolean = when {
         verifiedRole == "test" -> true

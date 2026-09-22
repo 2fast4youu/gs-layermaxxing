@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.Image
@@ -121,7 +124,12 @@ class MainActivity : FragmentActivity() {
                 if (confirmTestServer) AlertDialog(
                     onDismissRequest = {},
                     title = { Text("Testserver ausgewählt") },
-                    text = { Text("Dieser Server ist nur zum Ausprobieren. Verwende hier keine vertraulichen Produktionsdaten.") },
+                    text = {
+                        Text(
+                            ServerProfilePolicy.TEST_WARNING_DETAIL +
+                                " Verwende hier keine vertraulichen Produktionsdaten.",
+                        )
+                    },
                     confirmButton = { Button(onClick = {
                         store.acknowledgeTestWarning(); confirmTestServer = false
                     }) { Text("Verstanden") } },
@@ -129,8 +137,17 @@ class MainActivity : FragmentActivity() {
 
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Column {
-                        if (ServerProfilePolicy.showTestWarning(profile, verifiedRole)) TestServerBanner()
-                        Box(Modifier.weight(1f)) { when {
+                        val warn = ServerProfilePolicy.showTestWarning(profile, verifiedRole)
+                        if (warn) TestServerBanner()
+                        // The strip already sits under the status bar, so everything
+                        // below it must stop reserving that inset a second time —
+                        // otherwise an edge-to-edge screen pushes its own chrome down
+                        // by a full status bar for nothing.
+                        Box(
+                            Modifier.weight(1f).then(
+                                if (warn) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier,
+                            ),
+                        ) { when {
                         token == null -> AuthScreen(api, profile, ::selectProfile, notice = authNotice) { auth ->
                             store.token = auth.token; store.name = auth.name
                             store.saveAccount(auth.name, auth.token)
@@ -213,7 +230,7 @@ private fun AuthScreen(
             verticalArrangement = Arrangement.spacedBy(13.dp),
         ) {
             Image(
-                painter = painterResource(R.drawable.brand_logo),
+                painter = painterResource(R.drawable.brand_mark),
                 contentDescription = "GS Layermaxxing Logo",
                 modifier = Modifier.size(92.dp).clip(RoundedCornerShape(24.dp)).align(Alignment.CenterHorizontally),
             )
@@ -302,13 +319,23 @@ fun ServerProfileSelector(selected: ServerProfile, onSelected: (ServerProfile) -
     }
 }
 
+/**
+ * The test-server strip: one compact line, still unmistakable.
+ *
+ * It is the thinnest thing that can still be honest — a red band with the server
+ * named on it. The full sentence lives on the confirmation dialog and in "Mehr",
+ * so this strip never has to wrap into a second row of chrome.
+ */
 @Composable
 private fun TestServerBanner() {
     Surface(color = Color(0xFFD84315), contentColor = Color.White) {
         Text(
             ServerProfilePolicy.TEST_WARNING,
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 9.dp),
-            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 2.dp),
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            maxLines = 1,
+            letterSpacing = 0.8.sp,
         )
     }
 }

@@ -7,7 +7,7 @@ Dieses Repository wird von Hermes koordiniert. Claude Code implementiert; DeepSe
 ### Claude Code — Implementierung
 
 - CLI: `claude`
-- Modell: standardmäßig `sonnet` (im aktuell angemeldeten Pro-Konto verifiziert). Mit `CLAUDE_MODEL=claude-fable-5` kann Fable genutzt werden, sobald Usage Credits vorhanden sind.
+- Modellrouting wird pro Auftrag gesetzt: `claude-fable-5`/`max` nur für offene Ideen- und Architekturfindung, sofern Usage Credits aktiv sind; `opus`/`high` für risikoreiche Gesamtentscheidungen; `sonnet`/`high` für komplexe Umsetzung; `sonnet`/`medium` für mechanische Änderungen und Tests. Der Launcher akzeptiert dafür `CLAUDE_MODEL`, `CLAUDE_EFFORT` und `CLAUDE_MAX_TURNS`.
 - Lädt automatisch `CLAUDE.md`.
 - Darf nach konkretem Auftrag lesen, ändern und Tests ausführen.
 - Arbeitet nur auf Branch `gerfried`.
@@ -19,7 +19,7 @@ Für einen begrenzten Auftrag:
 printf '%s\n' 'AUFTRAG HIER' | ./scripts/run-claude-task.sh
 ```
 
-Optional kann `CLAUDE_MAX_TURNS` gesetzt werden; Standard ist 30.
+Optional können `CLAUDE_MODEL`, `CLAUDE_EFFORT` und `CLAUDE_MAX_TURNS` gesetzt werden. Ohne Override läuft die kosteneffiziente Alltagsroute `sonnet`/`medium`. Hermes wählt ohne Rückfrage nach Aufgabe: Fable/max (wenn Credits aktiv) nur für offene Ideen-/Architekturfindung, Opus/high für risikoreiche Gesamtentscheidungen, Sonnet/high für komplexe Umsetzung, Sonnet/medium für mechanische Umsetzung und Tests; DeepSeek übernimmt unabhängige Reviews.
 
 ### DeepSeek-Harness — Planung und Review
 

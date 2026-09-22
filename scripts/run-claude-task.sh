@@ -25,7 +25,7 @@ fi
 
 exec claude -p "$prompt" \
   --model "${CLAUDE_MODEL:-sonnet}" \
-  --effort high \
+  --effort "${CLAUDE_EFFORT:-medium}" \
   --max-turns "${CLAUDE_MAX_TURNS:-30}" \
   --permission-mode acceptEdits \
   --allowedTools Read Edit Write Bash

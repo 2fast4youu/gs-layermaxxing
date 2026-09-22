@@ -12,6 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field, field_validator
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -22,7 +26,17 @@ APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
-SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports"]
+SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks"]
+# One-time creative entitlement for the accounts that already exist on the test
+# server when this version first starts. The marker row makes the migration
+# idempotent: later restarts and newly registered accounts stay unentitled.
+CREATIVE_MIGRATION_KEY = "creative_entitlement_migrated_v1"
+# Freundesfunke: a short, anonymous, one-way positive note between friends.
+# The server knows the sender for abuse handling; no recipient-facing response
+# may ever carry a sender field or a timestamp that would allow correlation.
+SPARK_MAX_CIPHERTEXT = 800
+SPARK_PAIR_DAILY_LIMIT = 5
+SPARK_SENDER_DAILY_LIMIT = 20
 MAX_RELEASE_SECONDS = 365 * 24 * 60 * 60
 MANUAL_RELEASE_SENTINEL = 2_147_483_647
 # The client computes a release time from its own clock right before it seals the
@@ -116,7 +130,14 @@ def initialize_database() -> None:
             "avatar_emoji": "TEXT NOT NULL DEFAULT '🔐'", "display_color": "TEXT NOT NULL DEFAULT '#6750A4'",
             "discoverable": "INTEGER NOT NULL DEFAULT 1", "recovery_hash": "TEXT",
             "failed_logins": "INTEGER NOT NULL DEFAULT 0", "locked_until": "INTEGER",
+            "creative_entitled": "INTEGER NOT NULL DEFAULT 0",
         })
+        conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        if SERVER_ROLE == "test" and not conn.execute(
+            "SELECT 1 FROM meta WHERE key=?", (CREATIVE_MIGRATION_KEY,)
+        ).fetchone():
+            conn.execute("UPDATE users SET creative_entitled=1")
+            conn.execute("INSERT INTO meta(key,value) VALUES (?,?)", (CREATIVE_MIGRATION_KEY, str(now_ts())))
         add_columns(conn, "sessions", {
             "device_name": "TEXT NOT NULL DEFAULT 'Unbekanntes Gerät'", "last_seen_at": "INTEGER NOT NULL DEFAULT 0",
             "push_token": "TEXT",
@@ -247,6 +268,45 @@ def initialize_database() -> None:
             FOREIGN KEY(letter_id) REFERENCES messages(id) ON DELETE SET NULL
         );
         CREATE INDEX IF NOT EXISTS idx_ep_participants ON ep_proposals(proposer_id,beneficiary_id,status,created_at DESC);
+        CREATE TABLE IF NOT EXISTS sparks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id INTEGER NOT NULL,
+            recipient_id INTEGER NOT NULL,
+            ciphertext TEXT NOT NULL,
+            nonce TEXT NOT NULL,
+            encryption_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            opened_at INTEGER,
+            FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_sparks_recipient ON sparks(recipient_id,id DESC);
+        CREATE INDEX IF NOT EXISTS idx_sparks_sender ON sparks(sender_id,created_at DESC);
+        CREATE TABLE IF NOT EXISTS spark_mutes (
+            recipient_id INTEGER NOT NULL,
+            sender_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY(recipient_id,sender_id),
+            FOREIGN KEY(recipient_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS spark_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            spark_id INTEGER NOT NULL,
+            reporter_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(spark_id) REFERENCES sparks(id) ON DELETE CASCADE,
+            FOREIGN KEY(reporter_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS test_advances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL,
+            actor_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE,
+            FOREIGN KEY(actor_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         """)
 
         accepted = conn.execute(
@@ -329,6 +389,27 @@ async def server_role_header(request, call_next):
     return response
 
 
+# Stable, machine-readable error codes for every non-2xx response: HTTPException
+# (including the framework's own 404 for unmatched routes) and request
+# validation both get an `error_code` field alongside the existing `detail`, so
+# older/newer client and server builds can be told apart from a bare "Not Found".
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc: StarletteHTTPException) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "error_code": f"LM-HTTP-{exc.status_code}"},
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={"detail": jsonable_encoder(exc.errors()), "error_code": "LM-HTTP-422"},
+    )
+
+
 class Credentials(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     password: str = Field(min_length=8, max_length=128)
@@ -395,7 +476,9 @@ class ProposalRespond(BaseModel):
 
 class EpProposalCreate(BaseModel):
     beneficiary_id: int
-    points: int = Field(ge=1, le=1000)
+    # Product rule for newly created proposals. The database deliberately keeps
+    # its wider historical range so existing multi-point entries stay intact.
+    points: int = Field(ge=1, le=1, strict=True)
     title: str = Field(min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
     letter_id: int | None = None
@@ -438,6 +521,18 @@ class ChatMessageCreate(BaseModel):
     ciphertext: str = Field(min_length=1, max_length=100_000)
     nonce: str = Field(min_length=1, max_length=256)
     encryption_key: str = Field(min_length=1, max_length=256)
+
+
+class SparkCreate(BaseModel):
+    recipient_id: int
+    # Deliberately tight: a spark is one short, kind line, not a channel.
+    ciphertext: str = Field(min_length=1, max_length=SPARK_MAX_CIPHERTEXT)
+    nonce: str = Field(min_length=1, max_length=256)
+    encryption_key: str = Field(min_length=1, max_length=256)
+
+
+class TestAdvance(BaseModel):
+    phase: str = "release"
 
 
 class MessageCreate(BaseModel):
@@ -521,6 +616,10 @@ def friendship_settings_row(conn: sqlite3.Connection, first: int, second: int) -
 
 def materialize_friendship(conn: sqlite3.Connection, first: int, second: int, created_at: int) -> int:
     low, high = sorted((first, second))
+    existing = conn.execute(
+        "SELECT id,active FROM friendships WHERE user_low_id=? AND user_high_id=?", (low, high)
+    ).fetchone()
+    reactivated = existing is not None and not existing["active"]
     conn.execute(
         """INSERT INTO friendships(user_low_id,user_high_id,created_at,active) VALUES (?,?,?,1)
            ON CONFLICT(user_low_id,user_high_id) DO UPDATE SET active=1""",
@@ -533,6 +632,16 @@ def materialize_friendship(conn: sqlite3.Connection, first: int, second: int, cr
         "INSERT OR IGNORE INTO friendship_settings(friendship_id,updated_at) VALUES (?,?)",
         (friendship_id, created_at),
     )
+    if reactivated:
+        # A friendship that was removed or blocked and is then agreed again starts
+        # from the documented defaults. Reviving the stored row would silently
+        # re-enable EP or a relaxed minimum letter delay that nobody confirmed a
+        # second time, which would break the bilateral-only rule.
+        conn.execute(
+            """UPDATE friendship_settings SET letters_enabled=1,chats_enabled=1,ep_enabled=0,
+               min_letter_delay_seconds=0,updated_at=? WHERE friendship_id=?""",
+            (created_at, friendship_id),
+        )
     return int(friendship_id)
 
 
@@ -642,9 +751,13 @@ def reset_password(payload: RecoveryReset) -> AuthResponse:
 
 @app.get("/api/status")
 def api_status(user: sqlite3.Row = Depends(current_user)) -> dict:
+    # Creative mode needs both signals: the role of the server answering this
+    # request and the account's entitlement. The client may only combine them,
+    # never persist them, so a revoked entitlement wins on the next refresh.
     return {"user_id": user["id"], "name": user["name"], "needs_password": user["password_hash"] is None,
             "avatar_emoji": user["avatar_emoji"], "display_color": user["display_color"],
-            "discoverable": bool(user["discoverable"])}
+            "discoverable": bool(user["discoverable"]),
+            "server_role": SERVER_ROLE, "creative_entitled": bool(user["creative_entitled"])}
 
 
 @app.patch("/api/profile")
@@ -663,7 +776,8 @@ def update_profile(payload: ProfileUpdate, user: sqlite3.Row = Depends(current_u
             raise HTTPException(409, "Benutzername bereits vergeben")
         row = conn.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
     return {"user_id": row["id"], "name": row["name"], "needs_password": row["password_hash"] is None,
-            "avatar_emoji": row["avatar_emoji"], "display_color": row["display_color"], "discoverable": bool(row["discoverable"])}
+            "avatar_emoji": row["avatar_emoji"], "display_color": row["display_color"], "discoverable": bool(row["discoverable"]),
+            "server_role": SERVER_ROLE, "creative_entitled": bool(row["creative_entitled"])}
 
 
 @app.get("/api/sessions")
@@ -1106,15 +1220,17 @@ def list_groups(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
 
 def topic_view(row: sqlite3.Row, user_id: int) -> dict:
     if row["group_id"] is not None:
-        target_type, target_name = "group", row["group_name"]
+        target_type, target_name, target_id = "group", row["group_name"], row["group_id"]
     elif row["peer_user_id"] is not None:
         target_type = "friend"
         target_name = row["peer_name"] if row["creator_id"] == user_id else row["creator_name"]
+        target_id = row["peer_user_id"] if row["creator_id"] == user_id else row["creator_id"]
     else:
-        target_type, target_name = "personal", "Nur für mich"
+        target_type, target_name, target_id = "personal", "Nur für mich", None
     return {
         "id": row["id"], "creator_id": row["creator_id"], "creator_name": row["creator_name"],
         "target_type": target_type, "target_name": target_name,
+        "target_id": target_id,
         "ciphertext": row["ciphertext"], "nonce": row["nonce"], "encryption_key": row["encryption_key"],
         "created_at": row["created_at"], "completed_at": row["completed_at"],
         "completed_by_name": row["completed_by_name"], "can_delete": row["creator_id"] == user_id,
@@ -1348,10 +1464,18 @@ def list_chat_threads(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
                 continue
             if friend_id not in threads:
                 friend = conn.execute("SELECT name,avatar_emoji,display_color FROM users WHERE id=?", (friend_id,)).fetchone()
+                # Rows arrive newest first, so the first row of a friend is the
+                # preview for the conversation list. Instant messages are released
+                # on creation and their key is already handed out by
+                # /api/chats/{id}/messages, so this adds no new disclosure.
+                # Sealed letters deliberately get no preview: their key stays
+                # withheld until the release gate opens.
                 threads[friend_id] = {
                     "friend_id": friend_id, "friend_name": friend["name"],
                     "avatar_emoji": friend["avatar_emoji"], "display_color": friend["display_color"],
                     "last_message_at": row["created_at"], "unread_count": 0,
+                    "last_sender_id": row["sender_id"], "last_ciphertext": row["ciphertext"],
+                    "last_nonce": row["nonce"], "last_encryption_key": row["encryption_key"],
                 }
             if row["recipient_id"] == user["id"] and row["read_at"] is None:
                 threads[friend_id]["unread_count"] += 1
@@ -1391,6 +1515,157 @@ def create_chat_message(
              current, current, current, ""),
         )
     return {"id": int(cur.lastrowid)}
+
+
+# ---------------------------------------------------------------------------
+# Freundesfunke: anonymous, one-way, positive. The sender is stored for abuse
+# handling but never appears in any recipient-facing response — and reading
+# never filters on friendship or blocks, because a spark that vanished right
+# after unfriending X would reveal X as its sender. Muting one anonymous
+# sender via one of their sparks is the recipient's only removal tool.
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/sparks", status_code=201)
+def send_spark(payload: SparkCreate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    if payload.recipient_id == user["id"]:
+        raise HTTPException(422, "Ein Funke an dich selbst ist nicht möglich")
+    current = now_ts()
+    with db() as conn:
+        if blocked(conn, user["id"], payload.recipient_id) or not are_friends(conn, user["id"], payload.recipient_id):
+            raise HTTPException(403, "Funken sind nur unter nicht blockierten Freunden möglich")
+        day_ago = current - 86400
+        pair = conn.execute(
+            "SELECT COUNT(*) c FROM sparks WHERE sender_id=? AND recipient_id=? AND created_at>=?",
+            (user["id"], payload.recipient_id, day_ago),
+        ).fetchone()["c"]
+        total = conn.execute(
+            "SELECT COUNT(*) c FROM sparks WHERE sender_id=? AND created_at>=?",
+            (user["id"], day_ago),
+        ).fetchone()["c"]
+        if pair >= SPARK_PAIR_DAILY_LIMIT or total >= SPARK_SENDER_DAILY_LIMIT:
+            raise HTTPException(429, "Zu viele Funken. Bitte später wieder")
+        # A muted sender is accepted silently: a rejection would tell the sender
+        # that exactly this recipient muted them.
+        cur = conn.execute(
+            "INSERT INTO sparks(sender_id,recipient_id,ciphertext,nonce,encryption_key,created_at) VALUES (?,?,?,?,?,?)",
+            (user["id"], payload.recipient_id, payload.ciphertext, payload.nonce, payload.encryption_key, current),
+        )
+    return {"id": int(cur.lastrowid)}
+
+
+@app.get("/api/sparks")
+def list_sparks(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
+    # Anonymity by construction: no sender field, no timestamp. Adding either
+    # would open a correlation channel toward the sender's identity.
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT s.id,s.ciphertext,s.nonce,s.encryption_key,s.opened_at FROM sparks s
+               WHERE s.recipient_id=? AND NOT EXISTS(
+                   SELECT 1 FROM spark_mutes m WHERE m.recipient_id=s.recipient_id AND m.sender_id=s.sender_id
+               ) ORDER BY s.id DESC""",
+            (user["id"],),
+        ).fetchall()
+    return [{"id": r["id"], "ciphertext": r["ciphertext"], "nonce": r["nonce"],
+             "encryption_key": r["encryption_key"], "opened": r["opened_at"] is not None} for r in rows]
+
+
+def recipient_spark(conn: sqlite3.Connection, spark_id: int, user_id: int) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM sparks WHERE id=? AND recipient_id=?", (spark_id, user_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "Funke nicht gefunden")
+    return row
+
+
+@app.post("/api/sparks/{spark_id}/open")
+def open_spark(spark_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        recipient_spark(conn, spark_id, user["id"])
+        conn.execute("UPDATE sparks SET opened_at=? WHERE id=? AND opened_at IS NULL", (now_ts(), spark_id))
+    return {"ok": True, "opened": True}
+
+
+@app.post("/api/sparks/{spark_id}/mute")
+def mute_spark_sender(spark_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    # Mutes the anonymous sender of this spark for this recipient. The response
+    # confirms nothing about who was muted.
+    with db() as conn:
+        row = recipient_spark(conn, spark_id, user["id"])
+        conn.execute(
+            "INSERT OR IGNORE INTO spark_mutes(recipient_id,sender_id,created_at) VALUES (?,?,?)",
+            (user["id"], row["sender_id"], now_ts()),
+        )
+    return {"ok": True}
+
+
+@app.post("/api/sparks/{spark_id}/report")
+def report_spark(spark_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        recipient_spark(conn, spark_id, user["id"])
+        conn.execute(
+            "INSERT INTO spark_reports(spark_id,reporter_id,created_at) VALUES (?,?,?)",
+            (spark_id, user["id"], now_ts()),
+        )
+    return {"ok": True}
+
+
+@app.get("/api/sparks/outbox")
+def spark_outbox(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
+    # The sender learns exactly one bit per spark and no time: underway or opened.
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT s.id,s.recipient_id,u.name recipient_name,s.opened_at FROM sparks s
+               JOIN users u ON u.id=s.recipient_id WHERE s.sender_id=? ORDER BY s.id DESC""",
+            (user["id"],),
+        ).fetchall()
+    return [{"id": r["id"], "recipient_id": r["recipient_id"], "recipient_name": r["recipient_name"],
+             "status": "geöffnet" if r["opened_at"] is not None else "unterwegs"} for r in rows]
+
+
+@app.post("/api/test/letters/{message_id}/advance")
+def advance_test_letter(message_id: int, payload: TestAdvance, user: sqlite3.Row = Depends(current_user)) -> dict:
+    """Test-only fast-forward: pulls a time-gated release into the present.
+
+    Exists only on SERVER_ROLE=test and only between two creative-entitled
+    accounts. It never touches consent gates: mutual, manual and presence
+    letters keep their real flow, and the letter itself stays untouched apart
+    from its release clock. Every use is recorded in test_advances.
+    """
+    if SERVER_ROLE != "test":
+        raise HTTPException(404, "Nicht gefunden")
+    if payload.phase != "release":
+        raise HTTPException(422, "Unbekannte Phase")
+    current = now_ts()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM messages WHERE id=? AND message_class='letter' AND (sender_id=? OR recipient_id=?)",
+            (message_id, user["id"], user["id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Brief nicht gefunden")
+        other = row["recipient_id"] if row["sender_id"] == user["id"] else row["sender_id"]
+        entitled = conn.execute(
+            "SELECT COUNT(*) c FROM users WHERE id IN (?,?) AND creative_entitled=1",
+            (user["id"], other),
+        ).fetchone()["c"]
+        if entitled != 2:
+            raise HTTPException(403, "Vorspulen braucht die Kreativ-Berechtigung beider Konten")
+        if not letter_pair_allowed(conn, user["id"], other):
+            raise HTTPException(403, "Briefe sind in dieser Freundschaft nicht aktiviert")
+        if row["mode"] not in ("timed", "random"):
+            raise HTTPException(422, "Nur zeit- oder zufallsgesteuerte Briefe lassen sich vorspulen")
+        if unlocked(conn, row, current):
+            return {"advanced": False, "unlocked": True}
+        conn.execute(
+            "UPDATE messages SET release_at=?, minimum_release_at=MIN(COALESCE(minimum_release_at,?),?) WHERE id=?",
+            (current, current, current, message_id),
+        )
+        conn.execute(
+            "INSERT INTO test_advances(message_id,actor_id,action,created_at) VALUES (?,?,?,?)",
+            (message_id, user["id"], "release", current),
+        )
+        updated = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
+        return {"advanced": True, "unlocked": unlocked(conn, updated, current)}
 
 
 @app.post("/api/messages", status_code=201)
@@ -1485,9 +1760,12 @@ def message_meta(conn: sqlite3.Connection, row: sqlite3.Row, current: int, incom
 @app.get("/api/messages")
 def list_messages(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
     with db() as conn:
+        # The id tiebreaker keeps the order stable: one letter addressed to several
+        # recipients stores rows with an identical created_at, and a conversation
+        # thread that merges letters with chat needs a deterministic sequence.
         rows = conn.execute("""SELECT m.*,u.name sender_name FROM messages m JOIN users u ON u.id=m.sender_id
                             WHERE m.recipient_id=? AND m.message_class='letter'
-                            ORDER BY m.created_at DESC LIMIT 300""", (user["id"],)).fetchall()
+                            ORDER BY m.created_at DESC,m.id DESC LIMIT 300""", (user["id"],)).fetchall()
         rows = [row for row in rows if letter_pair_allowed(conn, user["id"], row["sender_id"])]
         return [message_meta(conn, row, now_ts(), True) for row in rows]
 
@@ -1497,7 +1775,7 @@ def list_outbox(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
     with db() as conn:
         rows = conn.execute("""SELECT m.*,u.name recipient_name FROM messages m JOIN users u ON u.id=m.recipient_id
                             WHERE m.sender_id=? AND m.message_class='letter'
-                            ORDER BY m.created_at DESC LIMIT 300""", (user["id"],)).fetchall()
+                            ORDER BY m.created_at DESC,m.id DESC LIMIT 300""", (user["id"],)).fetchall()
         rows = [row for row in rows if letter_pair_allowed(conn, user["id"], row["recipient_id"])]
         return [message_meta(conn, row, now_ts(), False) for row in rows]
 

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Two interlocking Gs.
+
+    Both letters are the same shape: a 300 degree ring with a spur and an inward
+    bar. They sit on a diagonal so the rings genuinely hook into one another
+    while each counter and each bar stays clear - a horizontal pair fuses its two
+    bars into a single stroke and stops reading as two letters.
+
+    The whole mark lives inside the 18..90 safe zone of the 108dp adaptive
+    foreground, so no launcher mask can clip a stroke. No text, no padlock.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M79.72,53.5 A17,17 0 1 0 79.72,70.5 L79.72,62 L69.93,62"
+        android:strokeColor="#9FD5B5"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M57.72,37.5 A17,17 0 1 0 57.72,54.5 L57.72,46 L47.93,46"
+        android:strokeColor="#D9A441"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

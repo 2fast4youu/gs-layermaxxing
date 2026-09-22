@@ -29,8 +29,8 @@ android {
         applicationId = "at.gregor.layermaxxing.gerfried"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "4.2"
+        versionCode = 20
+        versionName = "5.0-beta6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GREGOR_API_BASE_URL", "\"$gregorApiBaseUrl\"")
         buildConfigField("String", "GERFRIED_API_BASE_URL", "\"$gerfriedApiBaseUrl\"")
@@ -65,5 +65,6 @@ dependencies {
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.biometric)
     testImplementation(libs.junit)
+    testImplementation(libs.json)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
