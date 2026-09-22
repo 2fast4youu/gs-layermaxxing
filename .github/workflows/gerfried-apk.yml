@@ -1,0 +1,119 @@
+name: Gerfried APK
+
+on:
+  push:
+    branches: [gerfried]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gerfried-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend-Gate (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: server/requirements-dev.txt
+
+      - name: Abhaengigkeiten installieren
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r server/requirements-dev.txt
+
+      - name: pytest
+        run: PYTHONPATH=server .venv/bin/pytest -q server/tests
+
+  android:
+    name: Android-Gate und APK
+    needs: backend
+    runs-on: ubuntu-latest
+    env:
+      DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Debug-Keystore wiederherstellen
+        if: env.DEBUG_KEYSTORE_B64 != ''
+        run: |
+          mkdir -p "$HOME/.android"
+          printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
+          echo "Eigener Debug-Keystore aktiv (Update ohne Deinstallation moeglich)."
+
+      - name: Hinweis ohne Keystore-Secret
+        if: env.DEBUG_KEYSTORE_B64 == ''
+        run: echo "::warning::DEBUG_KEYSTORE_B64 ist nicht gesetzt - die APK wird mit einem neuen Zufallsschluessel signiert und muss vor der Installation deinstalliert werden."
+
+      - name: Gates ausfuehren (Unit-Tests, Lint, Debug-APK)
+        working-directory: android
+        run: |
+          unset LAYERMAXXING_GREGOR_URL LAYERMAXXING_GERFRIED_URL
+          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+
+      - name: APK benennen
+        id: apk
+        run: |
+          VERSION="$(grep -oP 'versionName\s*=\s*"\K[^"]+' android/app/build.gradle.kts)"
+          TAG="${VERSION/.0-/-}"
+          NAME="GS-Layermaxxing-Gerfried-v${TAG}.apk"
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/${NAME}"
+          {
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+            echo "name=${NAME}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gerfried-apk
+          path: dist/${{ steps.apk.outputs.name }}
+          retention-days: 14
+
+      - name: Lint- und Testberichte sichern
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gerfried-reports
+          path: android/app/build/reports/**
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Prerelease veroeffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_TAG="gerfried-v${{ steps.apk.outputs.tag }}-b${{ github.run_number }}"
+          NOTES="Automatischer Testbuild vom Branch gerfried.
+
+          Commit: ${GITHUB_SHA}
+          Gates: pytest (server/tests), testDebugUnitTest, lintDebug, assembleDebug
+          applicationId: at.gregor.layermaxxing.gerfried (parallel installierbar)"
+          gh release create "$RELEASE_TAG" "dist/${{ steps.apk.outputs.name }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "GS Layermaxxing Gerfried ${{ steps.apk.outputs.version }} (Build ${{ github.run_number }})" \
+            --prerelease \
+            --notes "$NOTES"
+          echo "Release: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}" >> "$GITHUB_STEP_SUMMARY"
