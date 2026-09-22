@@ -54,12 +54,19 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Debug-Keystore wiederherstellen
+      - name: Debug-Keystore wiederherstellen und pruefen
         if: env.DEBUG_KEYSTORE_B64 != ''
         run: |
           mkdir -p "$HOME/.android"
           printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
-          echo "Eigener Debug-Keystore aktiv (Update ohne Deinstallation moeglich)."
+          echo "Wiederhergestellt: $(stat -c%s "$HOME/.android/debug.keystore") Bytes nach $HOME/.android/debug.keystore"
+          if FP="$(keytool -list -v -keystore "$HOME/.android/debug.keystore"                      -storepass android -alias androiddebugkey 2>&1                    | grep -oE 'SHA256: [0-9A-F:]+' | head -1 | cut -d' ' -f2 | tr -d ':')"              && [ -n "$FP" ]; then
+            echo "Keystore lesbar, Zertifikat-Fingerprint: $FP"
+            echo "EXPECTED_SIGNER=$FP" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Keystore aus DEBUG_KEYSTORE_B64 ist mit Alias androiddebugkey / Passwort android NICHT lesbar - Gradle wird ihn ersetzen und die Signatur wechselt bei jedem Lauf."
+            keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android 2>&1 | head -20 || true
+          fi
 
       - name: Hinweis ohne Keystore-Secret
         if: env.DEBUG_KEYSTORE_B64 == ''
@@ -84,6 +91,21 @@ jobs:
             echo "tag=${TAG}"
             echo "name=${NAME}"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Signatur der APK pruefen
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "dist/${{ steps.apk.outputs.name }}"                     | grep -oE 'Signer #1 certificate SHA-256 digest: [0-9a-f]+'                     | cut -d' ' -f6 | tr '[:lower:]' '[:upper:]')"
+          echo "APK signiert mit: $ACTUAL"
+          if [ -z "${EXPECTED_SIGNER:-}" ]; then
+            echo "::warning::Kein Referenz-Fingerprint vorhanden - die Signatur kann bei jedem Lauf wechseln. Vor jeder Installation muss dann deinstalliert werden."
+          elif [ "$ACTUAL" = "$EXPECTED_SIGNER" ]; then
+            echo "Signatur stimmt mit DEBUG_KEYSTORE_B64 ueberein - Updates ohne Deinstallation moeglich."
+          else
+            echo "::error::Signatur weicht vom hinterlegten Keystore ab (erwartet $EXPECTED_SIGNER, tatsaechlich $ACTUAL). Gradle hat einen eigenen Schluessel erzeugt."
+            exit 1
+          fi
+          echo "Signatur: $ACTUAL" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
