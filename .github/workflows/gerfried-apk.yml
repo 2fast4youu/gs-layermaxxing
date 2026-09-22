@@ -117,3 +117,30 @@ jobs:
             --prerelease \
             --notes "$NOTES"
           echo "Release: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Latest-Release aktualisieren (feste Download-Adresse)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST_NAME="GS-Layermaxxing-Gerfried-latest.apk"
+          LATEST_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/gerfried-latest/${LATEST_NAME}"
+          cp "dist/${{ steps.apk.outputs.name }}" "dist/${LATEST_NAME}"
+          gh release delete gerfried-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          sleep 3
+          NOTES="Immer der neueste Gerfried-Testbuild vom Branch gerfried.
+
+          Version: ${{ steps.apk.outputs.version }} (Build ${{ github.run_number }})
+          Commit: ${GITHUB_SHA}
+
+          Feste Adresse fuers Handy (aendert sich nie):
+          ${LATEST_URL}"
+          gh release create gerfried-latest "dist/${LATEST_NAME}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Neuester Gerfried-Testbuild (${{ steps.apk.outputs.version }}, Build ${{ github.run_number }})" \
+            --prerelease \
+            --notes "$NOTES"
+          {
+            echo "APK direkt: ${LATEST_URL}"
+            echo "Release-Seite: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/gerfried-latest"
+          } >> "$GITHUB_STEP_SUMMARY"
