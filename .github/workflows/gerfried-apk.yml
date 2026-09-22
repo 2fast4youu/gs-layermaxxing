@@ -123,7 +123,8 @@ jobs:
           elif [ "$ACTUAL" = "$EXPECTED_SIGNER" ]; then
             echo "Signatur stimmt mit DEBUG_KEYSTORE_B64 ueberein - Updates ohne Deinstallation moeglich."
           else
-            echo "::warning::Signatur weicht vom hinterlegten Keystore ab (erwartet $EXPECTED_SIGNER, tatsaechlich $ACTUAL)."
+            echo "::error::Signatur weicht vom hinterlegten Keystore ab (erwartet $EXPECTED_SIGNER, tatsaechlich $ACTUAL). Diese APK liesse sich nur nach Deinstallation installieren - Auslieferung abgebrochen."
+            exit 1
           fi
           echo "Signatur: ${ACTUAL:-unbekannt} (Referenz ${EXPECTED_SIGNER:-keine})" >> "$GITHUB_STEP_SUMMARY"
 
