@@ -76,7 +76,16 @@ jobs:
         working-directory: android
         run: |
           unset LAYERMAXXING_GREGOR_URL LAYERMAXXING_GERFRIED_URL
-          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+          KS="$HOME/.android/debug.keystore"
+          SIGN=""
+          if [ -f "$KS" ]; then
+            SIGN="-Pandroid.injected.signing.store.file=$KS"
+            SIGN="$SIGN -Pandroid.injected.signing.store.password=android"
+            SIGN="$SIGN -Pandroid.injected.signing.key.alias=androiddebugkey"
+            SIGN="$SIGN -Pandroid.injected.signing.key.password=android"
+            echo "Signiere explizit mit $KS"
+          fi
+          ./gradlew --no-daemon $SIGN testDebugUnitTest lintDebug assembleDebug
 
       - name: APK benennen
         id: apk
@@ -94,7 +103,13 @@ jobs:
 
       - name: Signatur der APK pruefen
         run: |
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner nicht gefunden. Inhalt von $ANDROID_HOME/build-tools:"
+            ls -la "$ANDROID_HOME/build-tools" 2>&1 || true
+            exit 1
+          fi
+          echo "apksigner: $APKSIGNER"
           ACTUAL="$("$APKSIGNER" verify --print-certs "dist/${{ steps.apk.outputs.name }}"                     | grep -oE 'Signer #1 certificate SHA-256 digest: [0-9a-f]+'                     | cut -d' ' -f6 | tr '[:lower:]' '[:upper:]')"
           echo "APK signiert mit: $ACTUAL"
           if [ -z "${EXPECTED_SIGNER:-}" ]; then
