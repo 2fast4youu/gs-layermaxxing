@@ -593,12 +593,18 @@ private fun ValleyScreen(
 ) {
     val scene = remember(vale, built) { FiefScenes.valleyScene(vale, built) }
     var homeToken by remember(vale.friendId) { mutableStateOf(0) }
+    var dockHeight by remember { mutableStateOf(0) }
+    val dockDensity = LocalDensity.current
+    var mapFocus by remember(vale.friendId) { mutableStateOf(MapPoint(.5f, .5f)) }
+    var focusZoom by remember(vale.friendId) { mutableStateOf(1f) }
+    fun center(point: MapPoint, zoom: Float) { mapFocus = point; focusZoom = zoom; homeToken += 1 }
     val revealAnchor = justBuilt?.let(FiefScenes::valleyRevealAnchor)
     Box(Modifier.fillMaxSize()) {
         SceneMap(
             scene = scene,
-            initialFocus = FiefScenes.OWN_CLEARING,
-            initialZoom = 1.35f,
+            modifier = Modifier.padding(bottom = with(dockDensity) { dockHeight.toDp() }),
+            initialFocus = mapFocus,
+            initialZoom = focusZoom,
             focusToken = homeToken,
             onSprite = { sprite ->
                 when (sprite.id) {
@@ -630,9 +636,15 @@ private fun ValleyScreen(
             },
         )
         FiefPlaceBar("Zurück zu Chats", onBack, "Tal mit ${vale.friendName}", vale.creative)
-        WoodToken("⌂", "Eigenen Hof zentrieren", Modifier.align(Alignment.BottomEnd)) { homeToken += 1 }
-        ValleyActionGuide(vale.friendName, openTopics, onChat, onTopics, onGroups, onGlossary, onEnterCourtyard, onVisitFriend, onSignpost,
-            Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 12.dp, bottom = 12.dp))
+        ValleyDashboard(
+            post = post, openTopics = openTopics,
+            onOverview = { center(MapPoint(.5f, .5f), 1f) },
+            onHomeFocus = { center(FiefScenes.OWN_CLEARING, 1.35f) },
+            onFriendFocus = { center(FiefScenes.FRIEND_CLEARING, 1.35f) },
+            onHome = onEnterCourtyard, onChat = onChat, onTopics = onTopics,
+            guide = { ValleyActionGuide(vale.friendName, openTopics, onChat, onTopics, onGroups, onGlossary, onEnterCourtyard, onVisitFriend, onSignpost, Modifier.fillMaxWidth()) },
+            modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { dockHeight = it.height }.navigationBarsPadding().padding(12.dp),
+        )
     }
 }
 

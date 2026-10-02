@@ -1,7 +1,17 @@
 # Gregor-Erweiterung – Test-Preview
 
 Branch: `gregor-erweiterung`, basierend auf Gerfrieds `f003900`.
-Version: `5.1-gregor-preview1`, versionCode 22.
+Version: `5.1-gregor-preview2`, versionCode 23.
+
+## Tal-Überarbeitung (Preview 2)
+
+- Einstieg als Kartenübersicht statt sofortigem Zoom auf den eigenen Hof.
+- Ruhige dunkelgrüne, abgerundete Bedienleiste mit echten Post-/Themenzahlen.
+- Separate Kartenfokusse für Übersicht, eigenen Hof und Freund.
+- Direkte Wege zu Hof/Post, Themen und Chat; weitere Tal-Aktionen bleiben erhalten.
+- Die Karte reserviert die gemessene Höhe der Leiste, damit Bedienelemente keine Kartenorte verdecken. Leisteninhalt ist bei großer Schrift scrollbar.
+- Bestehende Landschaft, Bauten, Zusteller und Gesten bleiben erhalten. Keine neue Landschaftsgrafik generiert.
+- Clean Build/Unit/Lint erneut geprüft. Visuelle Geräteabnahme weiterhin ausstehend; die früheren Emulatorfehler sind nicht als behoben verifiziert.
 
 ## Änderungen
 
