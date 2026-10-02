@@ -1,0 +1,23 @@
+services:
+  test-api:
+    build: ./server
+    image: gs-layermaxxing-gerfried-test:f003900
+    restart: unless-stopped
+    environment:
+      DB_PATH: /data/layermaxxing.db
+      SERVER_ROLE: test
+      SERVER_NAME: Gregor Testserver (Gerfried-Build)
+    volumes:
+      - test_data:/data
+    ports:
+      - "127.0.0.1:8791:8080"
+    networks:
+      proxy:
+        aliases:
+          - layermaxxing-gerfried-test
+networks:
+  proxy:
+    external: true
+    name: gs-layermaxxing_default
+volumes:
+  test_data:

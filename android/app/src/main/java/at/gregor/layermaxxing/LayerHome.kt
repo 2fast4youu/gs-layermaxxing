@@ -145,6 +145,9 @@ fun LayerHome(
     // you enter from the chat overview and leave again — the overview itself is
     // the people list, so this screen is for the rare cases only.
     var peopleOpen by remember { mutableStateOf(false) }
+    var hub by remember { mutableStateOf<String?>(null) }
+    var topicScope by remember { mutableStateOf<TopicScope?>(null) }
+    var topicName by remember { mutableStateOf("") }
     var sparkInbox by remember { mutableStateOf<List<SparkItem>>(emptyList()) }
     var sparkSent by remember { mutableStateOf<List<SparkSent>>(emptyList()) }
     var sparksOpen by remember { mutableStateOf(false) }
@@ -240,6 +243,7 @@ fun LayerHome(
         opened.clear(); epProposal = null; openThreadFriend = null; proof = null; composeLetterFriend = null
         dismissedRequests.clear(); dismissedEpLetters.clear()
         peopleOpen = false; sparksOpen = false; sparkCompose = false
+        hub = null; topicScope = null
         sparkInbox = emptyList(); sparkSent = emptyList()
         castleExperiment = store.castleExperiment
         creativeSwitch = store.creativeMode
@@ -275,16 +279,18 @@ fun LayerHome(
     BackHandler(enabled = openThreadFriend != null) { openThreadFriend = null }
     BackHandler(enabled = peopleOpen) { peopleOpen = false }
     BackHandler(enabled = sparksOpen) { sparksOpen = false }
+    BackHandler(enabled = hub != null) { hub = null }
+    BackHandler(enabled = topicScope != null) { topicScope = null }
 
     // An open thread, the people place and the valley are full-screen places: the
     // global bar and the bottom navigation step aside instead of stacking a second
     // head on top.
-    val fullScreenPlace = tab == MainTab.CASTLES || openThreadFriend != null || peopleOpen || sparksOpen
+    val fullScreenPlace = tab == MainTab.CASTLES || openThreadFriend != null || peopleOpen || sparksOpen || hub != null || topicScope != null
     // The valley is a painted world, so it runs under the system bars instead of
     // sitting in a window of app background: a letterboxed plate inside inset
     // padding is exactly what produced the pale strips above and below the map.
     // Its own chrome reserves the insets it needs.
-    val edgeToEdgePlace = tab == MainTab.CASTLES
+    val edgeToEdgePlace = tab == MainTab.CASTLES && hub == null && topicScope == null
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
@@ -327,6 +333,16 @@ fun LayerHome(
         ) {
             val threadFriend = openThreadFriend?.let { id -> friends.firstOrNull { it.id == id } }
             when {
+                topicScope != null -> SubScreen(topicName, onBack = { topicScope = null }, backLabel = "Zurück") {
+                    TopicsScreen(topics, ApiClient.UserSummary(topicScope!!.id ?: 0, topicName), token, api, ::act, scope = topicScope!!)
+                }
+                hub == "glossary" -> SubScreen("Wörterbuch", onBack = { hub = null }, backLabel = "Zurück") { GlossaryScreen() }
+                hub == "topics" -> SubScreen("Themen", onBack = { hub = null }, backLabel = "Zurück") {
+                    TopicsHub(topics, friends, groups) { s, name -> topicScope = s; topicName = name }
+                }
+                hub == "groups" -> SubScreen("Gruppen", onBack = { hub = null }, backLabel = "Zurück") {
+                    GroupsHub(groups, friends, topics, friendshipSettings, token, api, ::act) { s, name -> topicScope = s; topicName = name }
+                }
                 threadFriend != null -> ThreadScreen(
                     friend = threadFriend,
                     settings = friendshipSettings.firstOrNull { it.friendId == threadFriend.id },
@@ -363,6 +379,9 @@ fun LayerHome(
                     onOpenSparks = { sparksOpen = true },
                     onSendSpark = { sparkCompose = true },
                     sparkEnabled = friends.isNotEmpty(),
+                    onGroups = { hub = "groups" }, onTopicsHub = { hub = "topics" },
+                    onGlossary = { hub = "glossary" }, onValley = { store.setCastleExperiment(true); castleExperiment = true; tab = MainTab.CASTLES },
+                    groupCount = groups.size, topicCount = topics.count { it.completedAt == null },
                 )
                 tab == MainTab.MORE -> MoreScreen(
                     token, api, store, status, sessions, blocked, messages, outbox, ep,
@@ -398,6 +417,9 @@ fun LayerHome(
                     onProposeEp = { epProposal = it },
                     seenEarned = { friendId -> store.fiefSeenEarned(friendId) },
                     onSeenEarned = { friendId, earned -> store.setFiefSeenEarned(friendId, earned) },
+                    topics = topics, onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
+                    onChat = { id -> tab = MainTab.CHATS; openThreadFriend = id },
+                    onGroups = { hub = "groups" }, onGlossary = { hub = "glossary" },
                 )
             }
             if (busy) CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -543,7 +565,11 @@ private fun ChatsScreen(
     sparkInbox: List<SparkItem>, sparkSent: List<SparkSent>,
     onOpen: (Long) -> Unit, onRespond: (PendingRequest, Boolean) -> Unit, onGoPeople: () -> Unit,
     onOpenSparks: () -> Unit, onSendSpark: () -> Unit, sparkEnabled: Boolean,
+    onGroups: () -> Unit, onTopicsHub: () -> Unit, onGlossary: () -> Unit, onValley: () -> Unit,
+    groupCount: Int, topicCount: Int,
 ) {
+    var search by remember { mutableStateOf("") }
+    var onlyNews by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -555,6 +581,16 @@ private fun ChatsScreen(
             }
             if (Sparks.entryVisible(sparkInbox, sparkSent)) item { SparkEntryRow(sparkInbox, sparkSent, onOpenSparks) }
             item { SectionTitle("Gespräche") }
+            item { OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth(), label = { Text("Person oder letzte Nachricht suchen") }, singleLine = true) }
+            item { Row(verticalAlignment = Alignment.CenterVertically) { Switch(onlyNews, { onlyNews = it }); Text("Nur mit Neuigkeiten") } }
+            item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.FilledTonalButton(onClick = onTopicsHub, modifier = Modifier.weight(1f)) { Text("📝 Themen ($topicCount)") }
+                androidx.compose.material3.FilledTonalButton(onClick = onGroups, modifier = Modifier.weight(1f)) { Text("👥 Gruppen ($groupCount)") }
+            } }
+            item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onValley, modifier = Modifier.weight(1f)) { Text("🏔 Tal") }
+                OutlinedButton(onClick = onGlossary, modifier = Modifier.weight(1f)) { Text("📖 Begriffe") }
+            } }
             if (conversations.isEmpty()) item {
                 Column(Modifier.fillMaxWidth().padding(vertical = 22.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Noch keine Gespräche.", fontWeight = FontWeight.Bold)
@@ -564,7 +600,9 @@ private fun ChatsScreen(
                     )
                 }
             }
-            items(conversations, key = { "conv-${it.friendId}" }) { conversation -> ConversationRow(conversation, onOpen) }
+            val matches = conversations.filter { (!onlyNews || it.hasNews) && (it.friendName + " " + it.preview.text).contains(search.trim(), ignoreCase = true) }
+            if (conversations.isNotEmpty() && matches.isEmpty()) item { Text("Keine passenden Gespräche. Ändere die Suche oder den Neuigkeiten-Filter.", Modifier.padding(vertical = 16.dp)) }
+            items(matches, key = { "conv-${it.friendId}" }) { conversation -> ConversationRow(conversation, onOpen) }
             // Room so the last row is never trapped under the round actions.
             item { Spacer(Modifier.height(148.dp)) }
         }
@@ -733,23 +771,29 @@ private fun ThreadScreen(
     topics: List<ApiClient.Topic>, epLine: String, creativeActive: Boolean,
 ) {
     val scope = rememberCoroutineScope()
-    var chat by remember(friend.id) { mutableStateOf<List<ApiClient.ChatMessage>>(emptyList()) }
-    var text by remember(friend.id) { mutableStateOf("") }
+    var chat by remember(friend.id, token) { mutableStateOf<List<ApiClient.ChatMessage>>(emptyList()) }
+    var text by remember(friend.id, token) { mutableStateOf("") }
     var menu by remember { mutableStateOf(false) }
-    var threadError by remember(friend.id) { mutableStateOf<String?>(null) }
+    var threadError by remember(friend.id, token) { mutableStateOf<String?>(null) }
     var now by remember { mutableStateOf(Instant.now().epochSecond) }
     // The Briefraum is a place of this conversation, not a sheet over it: letters
     // are the significant genre and deserve a room, one tap from here.
-    var roomOpen by remember(friend.id) { mutableStateOf(false) }
-    var roomFocusLetterId by remember(friend.id) { mutableStateOf<Long?>(null) }
-    var infoOpen by remember(friend.id) { mutableStateOf(false) }
-    var topicsOpen by remember(friend.id) { mutableStateOf(false) }
+    var roomOpen by remember(friend.id, token) { mutableStateOf(false) }
+    var roomFocusLetterId by remember(friend.id, token) { mutableStateOf<Long?>(null) }
+    var infoOpen by remember(friend.id, token) { mutableStateOf(false) }
+    var topicsOpen by remember(friend.id, token) { mutableStateOf(false) }
     // The bilateral rules are a sheet of this conversation, not a trip to
     // another tab: proposing, answering and withdrawing happen in place.
-    var rulesOpen by remember(friend.id) { mutableStateOf(false) }
-    var confirmRemove by remember(friend.id) { mutableStateOf(false) }
-    var confirmBlock by remember(friend.id) { mutableStateOf(false) }
-    var pulseLetterId by remember(friend.id) { mutableStateOf<Long?>(null) }
+    var rulesOpen by remember(friend.id, token) { mutableStateOf(false) }
+    var confirmRemove by remember(friend.id, token) { mutableStateOf(false) }
+    var confirmBlock by remember(friend.id, token) { mutableStateOf(false) }
+    var pulseLetterId by remember(friend.id, token) { mutableStateOf<Long?>(null) }
+    var query by remember(friend.id, token) { mutableStateOf("") }
+    var searchOpen by remember(friend.id, token) { mutableStateOf(false) }
+    var selectedChat by remember(friend.id, token) { mutableStateOf<ApiClient.ChatMessage?>(null) }
+    var quote by remember(friend.id, token) { mutableStateOf<String?>(null) }
+    var sending by remember(friend.id, token) { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
     val chatsEnabled = settings?.chatsEnabled == true
     val letterAction = LetterAccess.forSettings(settings)
     val listState = rememberLazyListState()
@@ -764,7 +808,7 @@ private fun ThreadScreen(
         runCatching { api.chatMessages(token, friend.id) }.onSuccess { chat = it; threadError = null }
             .onFailure { threadError = it.message }
     }
-    LaunchedEffect(friend.id, chatsEnabled) { while (true) { reloadChat(); delay(5_000) } }
+    LaunchedEffect(friend.id, token, chatsEnabled) { while (true) { reloadChat(); delay(5_000) } }
     LaunchedEffect(friend.id) { while (true) { now = Instant.now().epochSecond; delay(20_000) } }
 
     val openedIds = opened.keys.toSet()
@@ -776,9 +820,9 @@ private fun ThreadScreen(
     val groups = Conversations.groupedLetters(letters, openedIds)
     val band = Conversations.sealBand(groups)
     val entries = Conversations.threadEntries(chat, letters, ownUserId, openedIds)
-    val items = Conversations.withDayMarks(entries, now)
+    val items = Conversations.withDayMarks(ChatTools.filterEntries(entries, query), now)
 
-    var jumped by remember(friend.id) { mutableStateOf(false) }
+    var jumped by remember(friend.id, token) { mutableStateOf(false) }
     LaunchedEffect(items.size) {
         if (items.isEmpty()) return@LaunchedEffect
         // Entering lands at the newest line without a long scroll animation.
@@ -827,6 +871,11 @@ private fun ThreadScreen(
         // Not a permanent second bar any more: the door to the Briefraum moved into
         // the head, so this strip only appears while a letter actually asks for
         // something — released, or waiting for exactly my approval.
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) { Text(if (searchOpen) "Suche schließen" else "Im Gespräch suchen") }
+            Text("Nachricht lange drücken: antworten / kopieren", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+        }
+        if (searchOpen) OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp), label = { Text("Nachrichten und Umschläge suchen") }, singleLine = true)
         val actionable = band.filter { it.bucket != LetterBucket.IN_TRANSIT }
         if (actionable.isNotEmpty()) SealBandRow(
             band = actionable,
@@ -852,7 +901,7 @@ private fun ThreadScreen(
                         textAlign = TextAlign.Center,
                     )
                     is TimelineItem.Entry -> when (val entry = item.entry) {
-                        is ThreadEntry.Chat -> ThreadChatBubble(entry.message, entry.outgoing)
+                        is ThreadEntry.Chat -> ThreadChatBubble(entry.message, entry.outgoing) { selectedChat = entry.message }
                         // A letter is an event in the flow, not a block in it: the
                         // row says what happened and hands over to the Briefraum,
                         // where the whole letter and all its actions live.
@@ -880,8 +929,14 @@ private fun ThreadScreen(
         threadError?.let {
             Text(it, Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
+        quote?.let { quoted ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Antwort auf: " + quoted.take(120), Modifier.weight(1f), maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { quote = null }) { Text("Entfernen") }
+            }
+        }
         Composer(
-            plan = plan,
+            plan = plan.copy(inputEnabled = plan.inputEnabled && !sending),
             text = text,
             onText = { text = it },
             onCompose = { onComposeLetter(friend.id) },
@@ -889,13 +944,28 @@ private fun ThreadScreen(
             onSend = {
                 scope.launch {
                     val sent = text.trim()
-                    if (sent.isNotEmpty()) runCatching { api.sendChat(token, friend.id, sent) }
-                        .onSuccess { text = ""; reloadChat() }.onFailure { threadError = it.message }
+                    if (sent.isNotEmpty() && !sending) {
+                        sending = true
+                        try {
+                            runCatching { api.sendChat(token, friend.id, ChatTools.replyText(quote, sent)) }
+                                .onSuccess { text = ""; quote = null; reloadChat() }.onFailure { threadError = it.message }
+                        } finally { sending = false }
+                    }
                 }
             },
         )
     }
 
+    selectedChat?.let { message ->
+        ModalBottomSheet(onDismissRequest = { selectedChat = null }) {
+            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(message.text.take(300), maxLines = 5)
+                Button(onClick = { quote = message.text; selectedChat = null }, enabled = chatsEnabled, modifier = Modifier.fillMaxWidth()) { Text("Antworten mit Zitat") }
+                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(message.text)); selectedChat = null }, modifier = Modifier.fillMaxWidth()) { Text("Nachricht kopieren") }
+                Spacer(Modifier.height(20.dp))
+            }
+        }
+    }
     if (roomOpen) LetterRoom(
         friendName = friend.name,
         letters = letters,
@@ -1379,10 +1449,12 @@ private fun sealGlyphFor(mode: String): String = when (mode) {
     else -> "◷"
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ThreadChatBubble(message: ApiClient.ChatMessage, outgoing: Boolean) {
+private fun ThreadChatBubble(message: ApiClient.ChatMessage, outgoing: Boolean, onActions: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start) {
         Card(
+            modifier = Modifier.combinedClickable(onClick = onActions, onLongClick = onActions),
             colors = CardDefaults.cardColors(containerColor = if (outgoing)
                 MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant),
             shape = RoundedCornerShape(18.dp),

@@ -8,6 +8,25 @@ import org.junit.Test
 
 class ServerProfileTest {
     @Test
+    fun thirdProfileIsSeparateAndRequiresTestConfirmation() {
+        assertEquals(3, ServerProfile.entries.size)
+        assertEquals("Gregor (Testserver)", ServerProfile.GREGOR_TEST.label)
+        assertEquals("test", ServerProfile.GREGOR_TEST.expectedRole)
+        assertEquals(ServerProfile.GREGOR_TEST, ServerProfile.fromKey("gregor_test"))
+        assertTrue(ServerProfilePolicy.showTestWarning(ServerProfile.GREGOR_TEST, null))
+        assertTrue(ServerProfile.GREGOR_TEST.baseUrl.contains("/test-gerfried/"))
+        assertFalse(ServerProfile.GERFRIED.baseUrl.contains("/test-gerfried/"))
+        val values = mutableMapOf<String, String>()
+        var cleared = false
+        val store = ServerProfileStore({ values[it] }, { k, v -> values[k] = v }, { cleared = true })
+        assertEquals(ServerProfile.GREGOR_TEST, store.selected)
+        assertTrue(store.warningConfirmationRequired)
+        store.acknowledgeWarning()
+        store.select(ServerProfile.GERFRIED)
+        assertTrue(cleared)
+        assertTrue(store.warningConfirmationRequired)
+    }
+    @Test
     fun profileStorePersistsSelectionAndClearsSessionOnChange() {
         val values = mutableMapOf<String, String>()
         var cleared = false
@@ -17,7 +36,7 @@ class ServerProfileTest {
             clearSession = { cleared = true },
         )
 
-        assertEquals(ServerProfile.GERFRIED, store.selected)
+        assertEquals(ServerProfile.GREGOR_TEST, store.selected)
         assertTrue(store.warningConfirmationRequired)
         store.acknowledgeWarning()
         assertFalse(store.warningConfirmationRequired)

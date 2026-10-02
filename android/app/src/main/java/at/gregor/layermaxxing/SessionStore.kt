@@ -17,6 +17,22 @@ class SessionStore(context: Context) {
         },
     )
 
+    // The previous local preview temporarily used the Gerfried slot for Gregor's
+    // test endpoint. Never forward those saved tokens to Gerfried's real server.
+    init {
+        if (!prefs.getBoolean("three_profiles_v1", false)) {
+            val wasGerfried = prefs.getString("server_profile", null) == "gerfried"
+            val editor = prefs.edit().remove("accounts_gerfried")
+                .putBoolean("three_profiles_v1", true)
+            if (wasGerfried) {
+                editor.putString("server_profile", "gregor_test")
+                    .remove("token").remove("name")
+                    .putString("test_warning_acknowledged", "false")
+            }
+            editor.commit()
+        }
+    }
+
     var token: String?
         get() = prefs.getString("token", null)
         set(value) { prefs.edit().putString("token", value).apply() }
@@ -186,6 +202,7 @@ class SessionStore(context: Context) {
         // Remove only session data; preferences, the per-profile notification
         // ledger and the saved test accounts must survive a logout.
         val editor = prefs.edit().clear()
+            .putBoolean("three_profiles_v1", true)
             .putString("theme", preservedTheme)
             .putString("server_profile", preservedProfile)
             .putBoolean("biometric", preservedBiometric)

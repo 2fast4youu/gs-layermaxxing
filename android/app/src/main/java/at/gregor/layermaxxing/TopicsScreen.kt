@@ -63,18 +63,19 @@ fun TopicsScreen(
     api: ApiClient,
     act: ((suspend () -> Unit) -> Unit),
     autoFocus: Boolean = false,
+    scope: TopicScope = TopicScope.friend(friend.id),
 ) {
-    var title by remember(friend.id) { mutableStateOf("") }
-    var details by remember(friend.id) { mutableStateOf("") }
-    var noteOpen by remember(friend.id) { mutableStateOf(false) }
-    var showDone by remember(friend.id) { mutableStateOf(false) }
+    var title by remember(scope) { mutableStateOf("") }
+    var details by remember(scope) { mutableStateOf("") }
+    var noteOpen by remember(scope) { mutableStateOf(false) }
+    var showDone by remember(scope) { mutableStateOf(false) }
     var detailTopic by remember { mutableStateOf<ApiClient.Topic?>(null) }
     var deleteTopic by remember { mutableStateOf<ApiClient.Topic?>(null) }
     // Opened as a sheet the keyword field owns the moment: one tap, then type.
     val keywordFocus = remember { FocusRequester() }
     if (autoFocus) LaunchedEffect(friend.id) { delay(250); runCatching { keywordFocus.requestFocus() } }
 
-    val conversationTopics = Conversations.topicsWith(friend.id, friend.name, topics)
+    val conversationTopics = scope.filter(topics)
     val open = conversationTopics.filter { it.completedAt == null }
     val done = conversationTopics.filter { it.completedAt != null }
 
@@ -83,7 +84,7 @@ fun TopicsScreen(
         if (keyword.isBlank()) return
         val note = details.trim()
         act {
-            api.createTopic(token, keyword, note, friend.id, null)
+            api.createTopic(token, keyword, note, if (scope.type == "friend") scope.id else null, if (scope.type == "group") scope.id else null)
             title = ""
             details = ""
             noteOpen = false
@@ -94,7 +95,7 @@ fun TopicsScreen(
         AlertDialog(
             onDismissRequest = { deleteTopic = null },
             title = { Text("Thema löschen?") },
-            text = { Text("„${topic.title}“ wird für euch beide entfernt.") },
+            text = { Text("„${topic.title}“ wird aus dieser Themenliste entfernt.") },
             confirmButton = {
                 Button(onClick = { deleteTopic = null; detailTopic = null; act { api.deleteTopic(token, topic.id) } }) {
                     Text("Löschen")
@@ -145,7 +146,7 @@ fun TopicsScreen(
         ) {
             item {
                 Text(
-                    "Stichworte mit ${friend.name} · ${open.size} offen",
+                    "${friend.name} · ${open.size} offene Themen",
                     Modifier.padding(top = 10.dp),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -310,10 +310,10 @@ private fun AuthScreen(
 fun ServerProfileSelector(selected: ServerProfile, onSelected: (ServerProfile) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Server", fontWeight = FontWeight.SemiBold)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ServerProfile.entries.forEach { profile ->
-                if (selected == profile) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(profile.label) }
-                else OutlinedButton(onClick = { onSelected(profile) }, modifier = Modifier.weight(1f)) { Text(profile.label) }
+                if (selected == profile) Button(onClick = {}, modifier = Modifier.fillMaxWidth()) { Text("✓ " + profile.label) }
+                else OutlinedButton(onClick = { onSelected(profile) }, modifier = Modifier.fillMaxWidth()) { Text(profile.label) }
             }
         }
     }

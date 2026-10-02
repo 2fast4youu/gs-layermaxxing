@@ -58,7 +58,7 @@ private object ResilientDns : Dns {
 class ApiException(val code: Int, message: String) : IOException(message)
 
 class ApiClient(
-    private val baseUrl: String = ServerProfile.GERFRIED.baseUrl,
+    private val baseUrl: String = ServerProfile.GREGOR_TEST.baseUrl,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .dns(ResilientDns)
         .protocols(listOf(Protocol.HTTP_1_1))

@@ -117,6 +117,8 @@ internal fun CastlesScreen(
     onProposeEp: (EpOpportunity) -> Unit,
     seenEarned: (Long) -> Int,
     onSeenEarned: (Long, Int) -> Unit,
+    topics: List<ApiClient.Topic>, onTopics: (Long) -> Unit, onChat: (Long) -> Unit,
+    onGroups: () -> Unit, onGlossary: () -> Unit,
 ) {
     // Sound follows the same "removed animations" switch as the idle motion: with
     // animations off the valley falls silent instead of ticking and thudding.
@@ -127,6 +129,7 @@ internal fun CastlesScreen(
             ownUserId, friends, settings, ep, letters, builds, creativeActive, onBuild, onBack, onPeople,
             onComposeLetter, letterAccess, opened, act, token, api, onOpenLetter, onLockedTap,
             onProof, epLinkedLetterIds, dismissedEpLetters, onProposeEp, seenEarned, onSeenEarned,
+            topics, onTopics, onChat, onGroups, onGlossary,
         )
     }
 }
@@ -157,6 +160,8 @@ private fun CastlesScreenContent(
     onProposeEp: (EpOpportunity) -> Unit,
     seenEarned: (Long) -> Int,
     onSeenEarned: (Long, Int) -> Unit,
+    topics: List<ApiClient.Topic>, onTopics: (Long) -> Unit, onChat: (Long) -> Unit,
+    onGroups: () -> Unit, onGlossary: () -> Unit,
 ) {
     val lockedByFriend = letters.filter { !it.unlocked }.groupingBy { it.peerId }.eachCount()
     val vales = Castles.vales(
@@ -217,6 +222,9 @@ private fun CastlesScreenContent(
                 onVisitFriend = { place = CastlePlace.FRIEND },
                 onSignpost = { sheet = FiefSheet.Signpost },
                 onDelivery = { letterId -> focusLetterId = letterId; place = CastlePlace.BOARD },
+                onTopics = { onTopics(vale.friendId) }, onChat = { onChat(vale.friendId) },
+                onGroups = onGroups, onGlossary = onGlossary,
+                openTopics = TopicScope.friend(vale.friendId).filter(topics).count { it.completedAt == null },
             )
             CastlePlace.FRIEND -> FriendCourtScreen(
                 vale = vale,
@@ -580,6 +588,8 @@ private fun ValleyScreen(
     onVisitFriend: () -> Unit,
     onSignpost: () -> Unit,
     onDelivery: (Long) -> Unit,
+    onTopics: () -> Unit, onChat: () -> Unit, onGroups: () -> Unit, onGlossary: () -> Unit,
+    openTopics: Int,
 ) {
     val scene = remember(vale, built) { FiefScenes.valleyScene(vale, built) }
     var homeToken by remember(vale.friendId) { mutableStateOf(0) }
@@ -621,6 +631,8 @@ private fun ValleyScreen(
         )
         FiefPlaceBar("Zurück zu Chats", onBack, "Tal mit ${vale.friendName}", vale.creative)
         WoodToken("⌂", "Eigenen Hof zentrieren", Modifier.align(Alignment.BottomEnd)) { homeToken += 1 }
+        ValleyActionGuide(vale.friendName, openTopics, onChat, onTopics, onGroups, onGlossary, onEnterCourtyard, onVisitFriend, onSignpost,
+            Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 12.dp, bottom = 12.dp))
     }
 }
 
