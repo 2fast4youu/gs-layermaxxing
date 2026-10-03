@@ -793,7 +793,7 @@ private fun VillageWorld(
             when (current) {
                 is VillagePick.Place -> {
                     val d = current.destination
-                    val news = count(d)?.let { "${it.count} neu · ${it.label}" }
+                    val news = count(d)?.let { "${it.count} × ${it.label}" }
                     BuildingCard(d.iconRes(), null, d.title, d.detail, news, "Betreten",
                         { pick = null; onDestination(d) }, { pick = null }, cardModifier)
                 }

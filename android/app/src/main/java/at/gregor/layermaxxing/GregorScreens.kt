@@ -19,18 +19,29 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ExtensionEntry(title: String, detail: String, onClick: () -> Unit) {
-    // A calm list row, not a tall card: submenus stay short and scannable.
+    // "🦊 Gerfried" → avatar disc + name: emoji become portraits, not inline glyphs.
+    val head = title.substringBefore(' ')
+    val hasAvatar = title.contains(' ') && head.none { it.isLetterOrDigit() }
+    val name = if (hasAvatar) title.substringAfter(' ') else title
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f))
-            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = 60.dp).clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (hasAvatar) {
+            Box(
+                Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center,
+            ) { Text(head, style = MaterialTheme.typography.titleMedium) }
+            Spacer(Modifier.width(12.dp))
+        }
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
-        Text("›", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+        Text("›", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.outline)
     }
 }
 
@@ -208,7 +219,7 @@ internal fun openTopics(n: Int): String = when (n) { 0 -> "Keine offenen Themen"
 
 @Composable
 fun TopicsHub(topics: List<ApiClient.Topic>, friends: List<ApiClient.UserSummary>, groups: List<ApiClient.Group>, onOpen: (TopicScope, String) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
         item { Text("Stichworte fürs nächste Gespräch – abhaken, wenn erledigt.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
         item { val scope = TopicScope.personal(); ExtensionEntry("🔒 Nur für mich", openTopics(scope.filter(topics).count { it.completedAt == null })) { onOpen(scope, "Meine Themen") } }
         items(friends, key = { "friend-${it.id}" }) { friend ->

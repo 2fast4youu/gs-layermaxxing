@@ -193,7 +193,7 @@ class VillageVisualReview {
                 androidx.compose.ui.Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             )
             BuildingCard(
-                R.drawable.ic_chat, null, "Treffpunkt", ValleyDestination.CONVERSATIONS.detail, "3 neu · Neue Nachrichten",
+                R.drawable.ic_chat, null, "Treffpunkt", ValleyDestination.CONVERSATIONS.detail, "3 × Neue Nachrichten",
                 "Betreten", {}, {}, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(10.dp),
                 secondary = "Chat" to {},
             )

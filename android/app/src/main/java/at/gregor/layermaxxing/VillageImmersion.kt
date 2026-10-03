@@ -19,25 +19,40 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 
 @Composable
 internal fun VillageTheme(enabled: Boolean, content: @Composable () -> Unit) {
     if (!enabled) { content(); return }
+    val base = Typography()
+    fun TextStyle.body() = copy(fontFamily = Kit.Body)
+    fun TextStyle.display() = copy(fontFamily = Kit.Display, fontWeight = FontWeight.Normal)
     MaterialTheme(
         colorScheme = lightColorScheme(
-            primary = Color(0xFF3F7D22), onPrimary = Color(0xFFFFFBEA),
-            primaryContainer = Color(0xFFCBE6A8), onPrimaryContainer = Color(0xFF1F3B0E),
-            secondary = Color(0xFF80522D), onSecondary = Color(0xFFFFF2D8),
-            secondaryContainer = Color(0xFFE5C994), onSecondaryContainer = Color(0xFF49331F),
-            background = Color(0xFFF0DCAF), onBackground = Color(0xFF392C20),
-            surface = Color(0xFFF7E6C2), onSurface = Color(0xFF392C20),
-            surfaceVariant = Color(0xFFE5CFA3), onSurfaceVariant = Color(0xFF624A33),
-            outline = Color(0xFF93704A), outlineVariant = Color(0xFFC5A675),
-            surfaceContainer = Color(0xFFEEDAB3), surfaceContainerHigh = Color(0xFFE9D0A4),
-            surfaceContainerLow = Color(0xFFF2DDB9), surfaceContainerLowest = Color(0xFFFFF0D3),
-            surfaceContainerHighest = Color(0xFFE5CCA0), surfaceDim = Color(0xFFE1C694), surfaceBright = Color(0xFFF7E6C2),
+            primary = Color(0xFF3E8E2A), onPrimary = Color.White,
+            primaryContainer = Color(0xFFD7EFC6), onPrimaryContainer = Color(0xFF173A0C),
+            secondary = Color(0xFF2F5E9E), onSecondary = Color.White,
+            secondaryContainer = Color(0xFFDCE7F6), onSecondaryContainer = Color(0xFF0F2747),
+            tertiary = Color(0xFFB5832A), onTertiary = Color.White,
+            background = Color(0xFFFFF9EC), onBackground = Color(0xFF2A2219),
+            surface = Color(0xFFFFF9EC), onSurface = Color(0xFF2A2219),
+            surfaceVariant = Color(0xFFF3E8D2), onSurfaceVariant = Color(0xFF6B5B48),
+            outline = Color(0xFFC9B48E), outlineVariant = Color(0xFFE6D8BC),
+            surfaceContainer = Color(0xFFF8EEDB), surfaceContainerHigh = Color(0xFFF3E8D2),
+            surfaceContainerLow = Color(0xFFFCF4E4), surfaceContainerLowest = Color.White,
+            surfaceContainerHighest = Color(0xFFEFE2C8), surfaceDim = Color(0xFFEADCC0), surfaceBright = Color(0xFFFFF9EC),
         ),
-        shapes = Shapes(small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(22.dp)),
+        typography = Typography(
+            displayLarge = base.displayLarge.display(), displayMedium = base.displayMedium.display(), displaySmall = base.displaySmall.display(),
+            headlineLarge = base.headlineLarge.display(), headlineMedium = base.headlineMedium.display(), headlineSmall = base.headlineSmall.display(),
+            titleLarge = base.titleLarge.display(), titleMedium = base.titleMedium.body().copy(fontWeight = FontWeight.ExtraBold),
+            titleSmall = base.titleSmall.body().copy(fontWeight = FontWeight.ExtraBold),
+            bodyLarge = base.bodyLarge.body(), bodyMedium = base.bodyMedium.body(), bodySmall = base.bodySmall.body(),
+            labelLarge = base.labelLarge.body().copy(fontWeight = FontWeight.ExtraBold),
+            labelMedium = base.labelMedium.body().copy(fontWeight = FontWeight.Bold), labelSmall = base.labelSmall.body(),
+        ),
+        shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp)),
         content = content,
     )
 }
@@ -62,7 +77,7 @@ internal fun VillageRoom(
     val rise by animateFloatAsState(if (entered) 1f else 0f, spring(dampingRatio = .78f, stiffness = 380f), label = "room-rise")
     Box(Modifier.fillMaxSize()) {
         if (!mapBehind) Image(painterResource(R.drawable.village_plate), null, Modifier.fillMaxSize().blur(2.dp), contentScale = ContentScale.Crop)
-        Box(Modifier.fillMaxSize().background(Color(0xD9140A04)).pointerInput(Unit) {
+        Box(Modifier.fillMaxSize().background(Color(0xCC0B1424)).pointerInput(Unit) {
             awaitPointerEventScope { while (true) awaitPointerEvent() }
         })
         Column(
@@ -74,12 +89,10 @@ internal fun VillageRoom(
         ) {
             RoomHeader(icon, title, onBack = null, onClose = onClose)
             Box(
-                Modifier.weight(1f).fillMaxWidth()
-                    .shadow(12.dp, RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
-                    .background(Kit.woodBrush, RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp))
-                    .padding(start = 5.dp, end = 5.dp, bottom = 5.dp)
-                    .background(Kit.parchmentBrush, RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp))
-                    .clip(RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp)),
+                Modifier.weight(1f, fill = false).fillMaxWidth()
+                    .shadow(18.dp, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp), ambientColor = Kit.Navy, spotColor = Kit.Navy)
+                    .background(Kit.Ivory, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                    .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)),
             ) { CompositionLocalProvider(LocalInVillageRoom provides true) { content() } }
         }
     }

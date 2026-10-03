@@ -2,20 +2,20 @@ package at.gregor.layermaxxing
 
 /** Map destinations link real existing features; they grant no extra permissions. */
 enum class ValleyDestination(val label: String, val detail: String, val anchor: MapPoint) {
-    CONVERSATIONS("💬 Treffpunkt", "Alle Gespräche und Freundschaftsregeln", MapPoint(.522f, .254f)),
-    TOPICS("📝 Schwarzes Brett", "Private, Freundschafts- und Gruppenthemen", MapPoint(.767f, .345f)),
-    GROUPS("👥 Gruppenplatz", "Gruppen und gemeinsame Briefe", MapPoint(.244f, .345f)),
-    PEOPLE("🧭 Wegweiser", "Freunde finden und verwalten", MapPoint(.752f, .124f)),
-    GLOSSARY("📖 Bibliothek", "App-Begriffe verständlich erklärt", MapPoint(.249f, .498f)),
-    SPARKS("✨ Funkenplatz", "Freundesfunken senden und empfangen", MapPoint(.742f, .498f)),
-    ARCHIVE("✉ Postarchiv", "Alle Briefe und Prüfdateien", MapPoint(.420f, .827f)),
-    EP("★ EP-Verwaltung", "EP vorschlagen und Verlauf prüfen", MapPoint(.728f, .820f)),
-    SETTINGS("⚙ Gemeindehaus", "Profil, Modus, Konten, Geräte und Sicherheit", MapPoint(.254f, .133f)),
+    CONVERSATIONS("💬 Treffpunkt", "Chatte mit deinen Freunden", MapPoint(.526f, .245f)),
+    TOPICS("📝 Schwarzes Brett", "Private, Freundschafts- und Gruppenthemen", MapPoint(.802f, .371f)),
+    GROUPS("👥 Gruppenplatz", "Gruppen und gemeinsame Briefe", MapPoint(.242f, .341f)),
+    PEOPLE("🧭 Wegweiser", "Freunde finden und verwalten", MapPoint(.774f, .110f)),
+    GLOSSARY("📖 Bibliothek", "App-Begriffe verständlich erklärt", MapPoint(.260f, .506f)),
+    SPARKS("✨ Funkenplatz", "Freundesfunken senden und empfangen", MapPoint(.763f, .499f)),
+    ARCHIVE("✉ Postarchiv", "Alle Briefe und Prüfdateien", MapPoint(.451f, .817f)),
+    EP("★ EP-Verwaltung", "EP vorschlagen und Verlauf prüfen", MapPoint(.749f, .801f)),
+    SETTINGS("⚙ Gemeindehaus", "Profil, Modus, Konten, Geräte und Sicherheit", MapPoint(.254f, .129f)),
 }
 
 object VillageScenes {
-    val HOME = MapPoint(.288f, .661f)
-    val FRIEND = MapPoint(.723f, .661f)
+    val HOME = MapPoint(.335f, .663f)
+    val FRIEND = MapPoint(.748f, .675f)
     const val PLATE = "village_plate"
     const val HIT = "village_hit"
     fun spot(id: String, point: MapPoint, label: String) = SceneSprite(
