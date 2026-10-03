@@ -1,7 +1,16 @@
 # Gregor-Erweiterung – Test-Preview
 
 Branch: `gregor-erweiterung`, basierend auf Gerfrieds `f003900`.
-Version: `5.1-gregor-preview2`, versionCode 23.
+Version: `5.1-gregor-preview3`, versionCode 24.
+
+## Standardmodus (Preview 3)
+
+- Unter Mehr → Einstellungen → Standardmodus: Nur Messenger, Nur Spiel oder Messenger & Spiel.
+- Auswahl bleibt geräte-lokal pro Konto und Server gespeichert; Neustart und Kontowechsel verwenden den gespeicherten Startbereich.
+- Messenger blendet die Tal-Navigation aus. Spiel startet im Tal, ohne separaten Chats-Haupttab; Gespräche können als Unteransicht aus dem Tal geöffnet werden und kehren dorthin zurück.
+- Übersicht/Einstellungen bleiben im Spiel erreichbar, auch ohne Freunde. Moduswechsel löscht keine Nachrichten oder Baufortschritte.
+- Bestehende Installationen übernehmen die bisherige Tal-Sichtbarkeit als Standard. Fünf neue Policy-Tests decken Modi, Startbereich, Tabs und Altkonfiguration ab.
+- Visuelle Geräteabnahme weiterhin offen.
 
 ## Tal-Überarbeitung (Preview 2)
 

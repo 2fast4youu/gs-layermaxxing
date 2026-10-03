@@ -139,7 +139,8 @@ fun LayerHome(
     accounts: List<SavedAccount>, onAddAccount: () -> Unit, onSwitchAccount: (SavedAccount) -> Unit,
     serverProfile: ServerProfile, onServerProfile: (ServerProfile) -> Unit,
 ) {
-    var tab by remember { mutableStateOf(MainTab.CHATS) }
+    var appMode by remember(token) { mutableStateOf(store.appMode) }
+    var tab by remember(token) { mutableStateOf(store.appMode.startTab) }
     var openThreadFriend by remember { mutableStateOf<Long?>(null) }
     // "Leute" is no longer a tab. Finding, adding and managing people is a place
     // you enter from the chat overview and leave again — the overview itself is
@@ -246,6 +247,7 @@ fun LayerHome(
         hub = null; topicScope = null
         sparkInbox = emptyList(); sparkSent = emptyList()
         castleExperiment = store.castleExperiment
+        appMode = store.appMode; tab = appMode.startTab
         creativeSwitch = store.creativeMode
         fogVisible = false; lockedTapTracker.reset(); lockedLetterSounds.stopAll()
         busy = true; error = null
@@ -257,7 +259,7 @@ fun LayerHome(
     val conversations = Conversations.overview(friends, friendshipSettings, chatThreads, messages, outbox, status?.userId)
     val requestInbox = RequestInbox.collect(incoming, friendshipSettings, ep)
     val currentDialog = RequestInbox.dialog(requestInbox, dismissedRequests.keys, snoozed = false)
-    val tabs = Navigation.tabs(castleExperiment)
+    val tabs = appMode.tabs()
     val creativeEligible = CreativeMode.eligible(status?.serverRole, status?.creativeEntitled == true)
     val creativeActive = creativeEligible && creativeSwitch
     // The valley reads from the ledger of the current mode: creative builds live
@@ -275,7 +277,7 @@ fun LayerHome(
     // Back walks the same chain the visible arrows walk. Screens rendered below
     // register their own handlers, and a handler composed later wins, so a thread
     // section or a castle place is unwound before the tab and before the app closes.
-    BackHandler(enabled = tab != MainTab.CHATS) { tab = MainTab.CHATS; openThreadFriend = null }
+    BackHandler(enabled = tab != appMode.startTab) { tab = appMode.startTab; openThreadFriend = null }
     BackHandler(enabled = openThreadFriend != null) { openThreadFriend = null }
     BackHandler(enabled = peopleOpen) { peopleOpen = false }
     BackHandler(enabled = sparksOpen) { sparksOpen = false }
@@ -290,7 +292,7 @@ fun LayerHome(
     // sitting in a window of app background: a letterboxed plate inside inset
     // padding is exactly what produced the pale strips above and below the map.
     // Its own chrome reserves the insets it needs.
-    val edgeToEdgePlace = tab == MainTab.CASTLES && hub == null && topicScope == null
+    val edgeToEdgePlace = tab == MainTab.CASTLES && hub == null && topicScope == null && openThreadFriend == null && !peopleOpen && !sparksOpen
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
@@ -381,13 +383,13 @@ fun LayerHome(
                     sparkEnabled = friends.isNotEmpty(),
                     onGroups = { hub = "groups" }, onTopicsHub = { hub = "topics" },
                     onGlossary = { hub = "glossary" }, onValley = { store.setCastleExperiment(true); castleExperiment = true; tab = MainTab.CASTLES },
-                    groupCount = groups.size, topicCount = topics.count { it.completedAt == null },
+                    groupCount = groups.size, topicCount = topics.count { it.completedAt == null }, showValley = appMode.showsValley,
                 )
                 tab == MainTab.MORE -> MoreScreen(
                     token, api, store, status, sessions, blocked, messages, outbox, ep,
                     friendshipSettings, opened, onTheme, onLogout, serverProfile, onServerProfile,
                     castleExperiment = castleExperiment,
-                    onCastleExperiment = { store.setCastleExperiment(it); castleExperiment = it },
+                    onCastleExperiment = { store.setCastleExperiment(it); castleExperiment = it; appMode = store.appMode; tab = appMode.startTab },
                     creativeEligible = creativeEligible,
                     creativeSwitch = creativeSwitch,
                     onCreativeSwitch = { store.setCreativeMode(it); creativeSwitch = it },
@@ -403,8 +405,8 @@ fun LayerHome(
                             castleBuilds = store.fiefBuilds(creativeActive)
                         }
                     },
-                    onBack = { tab = MainTab.CHATS },
-                    onPeople = { tab = MainTab.CHATS; peopleOpen = true },
+                    onBack = { tab = if (appMode == AppMode.GAME) MainTab.MORE else MainTab.CHATS },
+                    onPeople = { tab = appMode.startTab; peopleOpen = true },
                     onComposeLetter = { composeLetterFriend = it },
                     letterAccess = { friendId ->
                         LetterAccess.forSettings(friendshipSettings.firstOrNull { it.friendId == friendId })
@@ -418,7 +420,7 @@ fun LayerHome(
                     seenEarned = { friendId -> store.fiefSeenEarned(friendId) },
                     onSeenEarned = { friendId, earned -> store.setFiefSeenEarned(friendId, earned) },
                     topics = topics, onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
-                    onChat = { id -> tab = MainTab.CHATS; openThreadFriend = id },
+                    onChat = { id -> tab = appMode.startTab; openThreadFriend = id },
                     onGroups = { hub = "groups" }, onGlossary = { hub = "glossary" },
                 )
             }
@@ -566,7 +568,7 @@ private fun ChatsScreen(
     onOpen: (Long) -> Unit, onRespond: (PendingRequest, Boolean) -> Unit, onGoPeople: () -> Unit,
     onOpenSparks: () -> Unit, onSendSpark: () -> Unit, sparkEnabled: Boolean,
     onGroups: () -> Unit, onTopicsHub: () -> Unit, onGlossary: () -> Unit, onValley: () -> Unit,
-    groupCount: Int, topicCount: Int,
+    groupCount: Int, topicCount: Int, showValley: Boolean,
 ) {
     var search by remember { mutableStateOf("") }
     var onlyNews by remember { mutableStateOf(false) }
@@ -588,7 +590,7 @@ private fun ChatsScreen(
                 androidx.compose.material3.FilledTonalButton(onClick = onGroups, modifier = Modifier.weight(1f)) { Text("👥 Gruppen ($groupCount)") }
             } }
             item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onValley, modifier = Modifier.weight(1f)) { Text("🏔 Tal") }
+                if (showValley) OutlinedButton(onClick = onValley, modifier = Modifier.weight(1f)) { Text("🏔 Tal") }
                 OutlinedButton(onClick = onGlossary, modifier = Modifier.weight(1f)) { Text("📖 Begriffe") }
             } }
             if (conversations.isEmpty()) item {
@@ -2325,6 +2327,16 @@ private fun MoreHub(
     var biometric by remember { mutableStateOf(store.biometricEnabled) }
     var advanced by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { SectionTitle("Standardmodus") }
+        item { Card { Column(Modifier.padding(15.dp)) {
+            AppMode.entries.forEach { mode ->
+                Row(Modifier.fillMaxWidth().clickable { store.appMode = mode; onCastleExperiment(mode.showsValley) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.RadioButton(selected = store.appMode == mode, onClick = { store.appMode = mode; onCastleExperiment(mode.showsValley) })
+                    Column(Modifier.weight(1f)) { Text(mode.label, fontWeight = FontWeight.SemiBold); Text(mode.detail, style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+            Text("Wird pro Konto und Server gespeichert. Nachrichten und Baufortschritt bleiben erhalten.", style = MaterialTheme.typography.bodySmall)
+        } } }
         item { SectionTitle("Postfach & Verlauf") }
         item { NavCard("✉  Briefe & Prüfdateien", "Empfangene und gesendete Briefe, Nachweis-Export") { onDest(MoreDest.LETTERS) } }
         item { NavCard("★  Ebenen-Punkte", "Verlauf, Summen und Level · Gegeben ${ep?.given ?: 0} · Erhalten ${ep?.received ?: 0}") { onDest(MoreDest.EP) } }
@@ -2409,10 +2421,7 @@ private fun MoreHub(
             } }
 
             item { SectionTitle("Erweiterte Einstellungen") }
-            item { Card { Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Rückschrittlichen Modus aktivieren", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                Switch(castleExperiment, onCastleExperiment)
-            } } }
+
             if (creativeEligible) item { Card { Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Kreativmodus (Testserver)", fontWeight = FontWeight.SemiBold)

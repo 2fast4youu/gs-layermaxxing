@@ -635,7 +635,7 @@ private fun ValleyScreen(
                 revealAnchor?.let { DustReveal(it, onRevealed) }
             },
         )
-        FiefPlaceBar("Zurück zu Chats", onBack, "Tal mit ${vale.friendName}", vale.creative)
+        FiefPlaceBar("Zurück zur Übersicht", onBack, "Tal mit ${vale.friendName}", vale.creative)
         ValleyDashboard(
             post = post, openTopics = openTopics,
             onOverview = { center(MapPoint(.5f, .5f), 1f) },

@@ -61,6 +61,13 @@ class SessionStore(context: Context) {
     val castleExperiment: Boolean get() = castleFlagStore.enabled(serverProfile.key)
     fun setCastleExperiment(value: Boolean) = castleFlagStore.setEnabled(serverProfile.key, value)
 
+    var appMode: AppMode
+        get() = AppMode.fromKey(prefs.getString("app_mode_${serverProfile.key}_$name", null), castleExperiment)
+        set(value) {
+            prefs.edit().putString("app_mode_${serverProfile.key}_$name", value.key).apply()
+            setCastleExperiment(value.showsValley)
+        }
+
     // Device-local build ledger for the experiment, keyed per profile and account
     // so nothing leaks across accounts or servers. No server ever sees this.
     // Creative mode writes into its own ledger: switching it off returns to the
