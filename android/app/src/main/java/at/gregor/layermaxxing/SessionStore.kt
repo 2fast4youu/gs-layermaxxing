@@ -68,6 +68,15 @@ class SessionStore(context: Context) {
             setCastleExperiment(value.showsValley)
         }
 
+    // Village growth: which places this account has grown into, and which of them
+    // the player has already been shown. Per server and account, device-local.
+    private fun growthKey(kind: String) = "village_${kind}_${serverProfile.key}_$name"
+    /** null = this account has never been measured (first run: seed silently). */
+    fun villageUnlocked(): Set<ValleyDestination>? = prefs.getString(growthKey("unlocked"), null)?.let(VillageGrowth::decode)
+    fun setVillageUnlocked(value: Set<ValleyDestination>) { prefs.edit().putString(growthKey("unlocked"), VillageGrowth.encode(value)).apply() }
+    fun villageFresh(): Set<ValleyDestination> = VillageGrowth.decode(prefs.getString(growthKey("fresh"), null))
+    fun setVillageFresh(value: Set<ValleyDestination>) { prefs.edit().putString(growthKey("fresh"), VillageGrowth.encode(value)).apply() }
+
     // Device-local build ledger for the experiment, keyed per profile and account
     // so nothing leaks across accounts or servers. No server ever sees this.
     // Creative mode writes into its own ledger: switching it off returns to the

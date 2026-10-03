@@ -184,6 +184,8 @@ fun LayerHome(
     var recoveryCode by remember { mutableStateOf(initialRecoveryCode) }
     var castleExperiment by remember { mutableStateOf(store.castleExperiment) }
     var castleBuilds by remember { mutableStateOf(store.fiefBuilds()) }
+    var villageUnlocked by remember(token) { mutableStateOf(store.villageUnlocked() ?: VillageGrowth.START) }
+    var villageFresh by remember(token) { mutableStateOf(store.villageFresh()) }
     // The device remembers only the switch; role and entitlement arrive fresh
     // with every status refresh, so production or a revoked entitlement wins.
     var creativeSwitch by remember { mutableStateOf(store.creativeMode) }
@@ -297,6 +299,36 @@ fun LayerHome(
     // An open thread, the people place and the valley are full-screen places: the
     // global bar and the bottom navigation step aside instead of stacking a second
     // head on top.
+    val villageActivities = VillageActivityModel.collect(
+        conversations.sumOf { it.unreadChats }, topics.count { it.completedAt == null }, groups.size,
+        Sparks.unopenedCount(sparkInbox), Conversations.postStatus(messages + outbox, opened.keys).urgent,
+        requestInbox.count { it.kind == RequestKind.EP },
+        requestInbox.count { it.kind == RequestKind.FRIEND }, requestInbox.count { it.kind == RequestKind.SETTINGS },
+    )
+    val growthFacts = GrowthFacts(
+        friends = friends.size,
+        chatsWithActivity = chatThreads.count { it.lastMessageAt > 0 },
+        letters = (messages + outbox).size,
+        topics = topics.size,
+        groups = groups.size,
+        sparks = sparkInbox.size + sparkSent.size,
+        epEnabledFriendships = friendshipSettings.count { it.epEnabled },
+        epReceived = ep?.received ?: 0,
+    )
+    // Measure growth only once real data has arrived, so an empty first frame
+    // never "locks" a grown village and never fakes a celebration.
+    LaunchedEffect(token, busy, growthFacts, villageActivities) {
+        if (busy || status == null) return@LaunchedEffect
+        val remembered = store.villageUnlocked()
+        val now = VillageGrowth.unlocked(growthFacts, remembered.orEmpty(), villageActivities.associate { it.destination to it.count })
+        if (remembered == null) {
+            store.setVillageUnlocked(now); villageUnlocked = now
+        } else if (now != remembered) {
+            val added = now - remembered
+            store.setVillageUnlocked(now); villageUnlocked = now
+            if (added.isNotEmpty()) { villageFresh = villageFresh + added; store.setVillageFresh(villageFresh) }
+        }
+    }
     val fullScreenPlace = tab == MainTab.CASTLES || openThreadFriend != null || peopleOpen || sparksOpen || hub != null || topicScope != null
     // The valley is a painted world, so it runs under the system bars instead of
     // sitting in a window of app background: a letterboxed plate inside inset
@@ -372,17 +404,14 @@ fun LayerHome(
                     topics = topics, onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
                     onChat = { id -> tab = MainTab.CASTLES; openThreadFriend = id },
                     onGroups = { hub = "groups" }, onGlossary = { hub = "glossary" },
-                    activities = VillageActivityModel.collect(
-                        conversations.sumOf { it.unreadChats }, topics.count { it.completedAt == null }, groups.size,
-                        Sparks.unopenedCount(sparkInbox), Conversations.postStatus(messages + outbox, opened.keys).urgent,
-                        requestInbox.count { it.kind == RequestKind.EP },
-                        requestInbox.count { it.kind == RequestKind.FRIEND }, requestInbox.count { it.kind == RequestKind.SETTINGS },
-                    ),
+                    activities = villageActivities,
                     hud = VillageHudInfo(
                         name = status?.name ?: store.name, emoji = status?.avatarEmoji ?: "🙂",
                         level = ep?.levelName ?: "Ebenen-Neuling", ep = ep?.received ?: 0,
                         letters = (messages + outbox).size,
                         exitLabel = if (appMode == AppMode.GAME) null else "Messenger",
+                        unlocked = villageUnlocked, fresh = villageFresh,
+                        onFreshSeen = { villageFresh = villageFresh.drop(1).toSet(); store.setVillageFresh(villageFresh) },
                     ),
                     onDestination = { destination ->
                         when (destination) {

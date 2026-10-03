@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -17,14 +19,18 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ExtensionEntry(title: String, detail: String, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text("›", Modifier.padding(start = 12.dp))
+    // A calm list row, not a tall card: submenus stay short and scannable.
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f))
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
+        Text("›", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -198,19 +204,20 @@ private fun ExplanationDialog(title: String, value: String, onValue: (String) ->
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
     )
 
+internal fun openTopics(n: Int): String = when (n) { 0 -> "Keine offenen Themen"; 1 -> "1 offenes Thema"; else -> "$n offene Themen" }
+
 @Composable
 fun TopicsHub(topics: List<ApiClient.Topic>, friends: List<ApiClient.UserSummary>, groups: List<ApiClient.Group>, onOpen: (TopicScope, String) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Text("Nichts vergessen", style = MaterialTheme.typography.headlineSmall) }
-        item { Text("Ein Stichwort reicht. Notiere Details und hake es nach eurem Gespräch ab.") }
-        item { val scope = TopicScope.personal(); ExtensionEntry("🔒 Meine Themen", "${scope.filter(topics).count { it.completedAt == null }} offen · nur für dich") { onOpen(scope, "Meine Themen") } }
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item { Text("Stichworte fürs nächste Gespräch – abhaken, wenn erledigt.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
+        item { val scope = TopicScope.personal(); ExtensionEntry("🔒 Nur für mich", openTopics(scope.filter(topics).count { it.completedAt == null })) { onOpen(scope, "Meine Themen") } }
         items(friends, key = { "friend-${it.id}" }) { friend ->
             val scope = TopicScope.friend(friend.id)
-            ExtensionEntry("${friend.avatarEmoji} Mit ${friend.name}", "${scope.filter(topics).count { it.completedAt == null }} offene Themen") { onOpen(scope, friend.name) }
+            ExtensionEntry("${friend.avatarEmoji} ${friend.name}", openTopics(scope.filter(topics).count { it.completedAt == null })) { onOpen(scope, friend.name) }
         }
         items(groups, key = { "group-${it.id}" }) { group ->
             val scope = TopicScope.group(group.id)
-            ExtensionEntry("👥 ${group.name}", "${scope.filter(topics).count { it.completedAt == null }} offene Gruppenthemen") { onOpen(scope, group.name) }
+            ExtensionEntry("👥 ${group.name}", openTopics(scope.filter(topics).count { it.completedAt == null })) { onOpen(scope, group.name) }
         }
     }
 }

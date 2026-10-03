@@ -116,6 +116,61 @@ class VillageVisualReview {
         }
     }
 
+    private val topicsSample = listOf(
+        ApiClient.Topic(1, "Grillabend planen", "", "Gregor", "friend", "Gerfried", 2, 1, null, null, true),
+        ApiClient.Topic(2, "Hüttenschlüssel", "", "Gregor", "personal", "Nur für mich", null, 1, null, null, true),
+    )
+
+    @Test fun topicsRoom() = shot("08-topics-room") {
+        VillageTheme(true) {
+            VillageRoom(true, icon = R.drawable.ic_topics, title = "Schwarzes Brett", onClose = {}) {
+                TopicsHub(topicsSample, friends, listOf(ApiClient.Group(9, "Hüttenteam", 1, friends)), { _, _ -> })
+            }
+        }
+    }
+
+    @Test fun groupsRoom() = shot("09-groups-room") {
+        VillageTheme(true) {
+            VillageRoom(true, icon = R.drawable.ic_groups, title = "Gruppenplatz", onClose = {}) {
+                GroupsHub(listOf(ApiClient.Group(9, "Hüttenteam", 1, friends)), friends, topicsSample, emptyList(), "", ApiClient(), {}, { _, _ -> })
+            }
+        }
+    }
+
+    @Test fun newPlayerVillage() = shot("10-new-player") {
+        VillageTheme(true) {
+            CastlesScreen(
+                ownUserId = 1, friends = emptyList(), settings = emptyList(), ep = null, letters = emptyList(),
+                builds = emptyMap(), creativeActive = false, onBuild = { _, _, _ -> }, onBack = {}, onPeople = {},
+                onComposeLetter = {}, letterAccess = { LetterAction(true, "Brief", null) }, opened = emptyMap(), act = {}, token = "",
+                api = ApiClient(), onOpenLetter = {}, onLockedTap = {}, onProof = {}, epLinkedLetterIds = emptySet(),
+                dismissedEpLetters = emptyMap(), onProposeEp = {}, seenEarned = { 0 }, onSeenEarned = { _, _ -> },
+                topics = emptyList(), onTopics = {}, onChat = {}, onGroups = {}, onGlossary = {},
+                onDestination = {}, activities = emptyList(),
+                hud = VillageHudInfo("Gregor", "🦉", "Ebenen-Neuling", 0, 0, "Messenger", unlocked = VillageGrowth.START),
+            )
+        }
+    }
+
+    @Test fun growingVillage() = shot("11-growing") {
+        VillageTheme(true) {
+            CastlesScreen(
+                ownUserId = 1, friends = friends.take(1), settings = emptyList(), ep = null, letters = emptyList(),
+                builds = emptyMap(), creativeActive = false, onBuild = { _, _, _ -> }, onBack = {}, onPeople = {},
+                onComposeLetter = {}, letterAccess = { LetterAction(true, "Brief", null) }, opened = emptyMap(), act = {}, token = "",
+                api = ApiClient(), onOpenLetter = {}, onLockedTap = {}, onProof = {}, epLinkedLetterIds = emptySet(),
+                dismissedEpLetters = emptyMap(), onProposeEp = {}, seenEarned = { 0 }, onSeenEarned = { _, _ -> },
+                topics = emptyList(), onTopics = {}, onChat = {}, onGroups = {}, onGlossary = {},
+                onDestination = {}, activities = listOf(VillageActivity(ValleyDestination.CONVERSATIONS, 2, "Neue Nachrichten")),
+                hud = VillageHudInfo(
+                    "Gregor", "🦉", "Ebenen-Neuling", 0, 0, "Messenger",
+                    unlocked = VillageGrowth.START + ValleyDestination.TOPICS + ValleyDestination.SPARKS,
+                    fresh = setOf(ValleyDestination.SPARKS),
+                ),
+            )
+        }
+    }
+
     @Test fun emptyVillage() = shot("01-empty") { Village(emptyList(), emptyList()) }
 
     @Test fun buildingRoom() = shot("03-room") {

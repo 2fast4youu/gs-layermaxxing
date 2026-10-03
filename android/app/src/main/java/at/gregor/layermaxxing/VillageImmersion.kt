@@ -62,7 +62,7 @@ internal fun VillageRoom(
     val rise by animateFloatAsState(if (entered) 1f else 0f, spring(dampingRatio = .78f, stiffness = 380f), label = "room-rise")
     Box(Modifier.fillMaxSize()) {
         if (!mapBehind) Image(painterResource(R.drawable.village_plate), null, Modifier.fillMaxSize().blur(2.dp), contentScale = ContentScale.Crop)
-        Box(Modifier.fillMaxSize().background(Color(0x99140A04)).pointerInput(Unit) {
+        Box(Modifier.fillMaxSize().background(Color(0xD9140A04)).pointerInput(Unit) {
             awaitPointerEventScope { while (true) awaitPointerEvent() }
         })
         Column(

@@ -100,6 +100,11 @@ internal data class VillageHudInfo(
     val letters: Int = 0,
     /** Label of the way back to the messenger, or null when the game is the whole app. */
     val exitLabel: String? = null,
+    /** Places already built; the rest lie under fog until the player grows into them. */
+    val unlocked: Set<ValleyDestination> = ValleyDestination.entries.toSet(),
+    /** Places that appeared since the player last looked: celebrated once. */
+    val fresh: Set<ValleyDestination> = emptySet(),
+    val onFreshSeen: () -> Unit = {},
 )
 
 internal fun ValleyDestination.iconRes(): Int = when (this) {
@@ -503,24 +508,39 @@ internal fun BuildingCard(
 /** Header strip for in-world building rooms: icon medallion, carved title, back and close. */
 @Composable
 internal fun RoomHeader(icon: Int, title: String, onBack: (() -> Unit)?, onClose: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(62.dp)) {
+    Column(Modifier.fillMaxWidth()) {
+        // Breadcrumb pill above the frame: says plainly "you left the village, here's the way back".
         Row(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(50.dp)
-                .background(Kit.woodBrush, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
-                .padding(start = 78.dp, end = 8.dp),
+            Modifier.padding(bottom = 6.dp).heightIn(min = 40.dp).shadow(4.dp, RoundedCornerShape(20.dp))
+                .background(Color(0xE6261A10), RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp))
+                .clickable(onClick = onClose).padding(start = 10.dp, end = 14.dp)
+                .semantics { contentDescription = "Zurück ins Dorf"; role = Role.Button },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            GameText(title, size = 20.sp, modifier = Modifier.weight(1f))
+            Text("‹", color = Kit.Gold, fontSize = 22.sp, fontWeight = FontWeight.Black)
+            Spacer(Modifier.width(6.dp))
+            Image(painterResource(R.drawable.ic_home), null, Modifier.size(22.dp))
+            Text(" Dorf", color = Kit.Cream, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text("  ›  ", color = Kit.Gold.copy(alpha = .7f), fontSize = 14.sp)
+            Text(title, color = Kit.Gold, fontSize = 14.sp, fontWeight = FontWeight.Black, maxLines = 1)
+        }
+        Row(
+            Modifier.fillMaxWidth().height(56.dp)
+                .background(Kit.woodBrush, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                .padding(start = 8.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).shadow(4.dp, CircleShape)
+                    .background(Kit.goldBrush, CircleShape).padding(2.dp)
+                    .background(Brush.radialGradient(listOf(Color(0xFFFFF2CF), Kit.ParchmentDark)), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Image(painterResource(icon), null, Modifier.size(34.dp)) }
+            GameText(title, size = 20.sp, modifier = Modifier.weight(1f).padding(start = 10.dp))
             if (onBack != null) SmallRound("‹", "Zurück", Brush.verticalGradient(listOf(Kit.WoodLight, Kit.WoodDark)), onBack)
             Spacer(Modifier.width(6.dp))
             SmallRound("✕", "Zurück ins Dorf", Brush.verticalGradient(listOf(Color(0xFFFF6A55), Kit.Red)), onClose)
         }
-        Box(
-            Modifier.padding(start = 8.dp).size(62.dp).shadow(6.dp, CircleShape)
-                .background(Kit.goldBrush, CircleShape).padding(3.dp)
-                .background(Brush.radialGradient(listOf(Color(0xFFFFF2CF), Kit.ParchmentDark)), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) { Image(painterResource(icon), null, Modifier.size(48.dp)) }
     }
 }
 
@@ -533,4 +553,107 @@ private fun SmallRound(glyph: String, description: String, brush: Brush, onClick
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Text(glyph, color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp) }
+}
+
+
+/**
+ * Soft fog over a building the player has not grown into yet: the painting
+ * stays recognisable but quiet, so the village reads as "more to come", not as
+ * a wall of icons.
+ */
+@Composable
+internal fun FogPatch(anchor: MapPoint, scope: PlateScope) {
+    val w = scope.width * .40f
+    val unit = 1f / scope.zoom
+    with(scope) {
+        Box(Modifier.at(MapPoint(anchor.x, anchor.y + .01f), w, w * .85f, pivotY = .5f).size(w, w * .85f)) {
+            Canvas(Modifier.fillMaxSize()) {
+                // Several overlapping soft puffs instead of one disc: reads as mist, not a sticker.
+                val puffs = listOf(Offset(.5f, .5f) to .50f, Offset(.32f, .56f) to .34f, Offset(.68f, .54f) to .34f,
+                    Offset(.5f, .34f) to .32f, Offset(.42f, .70f) to .28f, Offset(.60f, .70f) to .28f)
+                puffs.forEach { (c, r) ->
+                    val center = Offset(size.width * c.x, size.height * c.y)
+                    drawCircle(
+                        Brush.radialGradient(listOf(Color(0xE6F1F3EC), Color(0x99E9EDE4), Color(0x00E9EDE4)), center = center, radius = size.minDimension * r),
+                        radius = size.minDimension * r, center = center,
+                    )
+                }
+            }
+            Box(
+                Modifier.align(Alignment.Center).size(30.dp * unit).shadow(3.dp * unit, CircleShape)
+                    .background(Kit.goldBrush, CircleShape).padding(2.dp * unit)
+                    .background(Brush.verticalGradient(listOf(Color(0xFF8B8F96), Color(0xFF5A5E66))), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Text("🔒", fontSize = 13.sp * unit) }
+        }
+    }
+}
+
+/** Gentle pulsing ring around a freshly built place. */
+@Composable
+internal fun FreshRing(anchor: MapPoint, scope: PlateScope, reducedMotion: Boolean) {
+    val t = rememberInfiniteTransition(label = "fresh")
+    val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart), label = "fresh-p")
+    val phase = if (reducedMotion) .5f else p
+    val w = scope.width * .26f
+    with(scope) {
+        Canvas(Modifier.at(MapPoint(anchor.x, anchor.y + .01f), w, w * .6f, pivotY = .5f).size(w, w * .6f)) {
+            drawOval(
+                Kit.Gold.copy(alpha = (1f - phase) * .9f),
+                topLeft = Offset(size.width * (.5f - .5f * (.6f + .4f * phase)), size.height * (.5f - .5f * (.6f + .4f * phase))),
+                size = Size(size.width * (.6f + .4f * phase), size.height * (.6f + .4f * phase)),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4.dp.toPx() / scope.zoom),
+            )
+        }
+    }
+}
+
+/** "New building!" banner under the HUD: one tap flies to it. */
+@Composable
+internal fun FreshBanner(destination: ValleyDestination, onOpen: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.shadow(8.dp, RoundedCornerShape(18.dp)).background(Kit.woodBrush, RoundedCornerShape(18.dp))
+            .padding(3.dp).background(Kit.parchmentBrush, RoundedCornerShape(15.dp))
+            .clickable(onClick = onOpen).padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
+            .semantics { contentDescription = "Neues Gebäude: ${destination.title}"; role = Role.Button },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(painterResource(destination.iconRes()), null, Modifier.size(28.dp))
+        Text(
+            "Neu: ${destination.title}", Modifier.padding(horizontal = 8.dp).widthIn(max = 200.dp),
+            fontSize = 13.sp, fontWeight = FontWeight.Black, color = Kit.Ink, maxLines = 1,
+        )
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onDismiss)
+                .semantics { contentDescription = "Schließen"; role = Role.Button },
+            contentAlignment = Alignment.Center,
+        ) { Text("✕", color = Kit.Ink, fontWeight = FontWeight.Bold) }
+    }
+}
+
+
+/**
+ * The single "what next" of the village: level, one task, one button. It is the
+ * whole tutorial — no wall of text, no list of everything the app can do.
+ */
+@Composable
+internal fun GuidePlank(step: GrowthStep, level: Int, maxLevel: Int, onGo: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.widthIn(max = 360.dp).fillMaxWidth().shadow(6.dp, RoundedCornerShape(16.dp))
+            .background(Kit.woodBrush, RoundedCornerShape(16.dp)).padding(3.dp)
+            .background(Kit.parchmentBrush, RoundedCornerShape(13.dp))
+            .clickable(onClick = onGo).padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
+            .semantics { contentDescription = "Nächster Schritt: ${step.task}"; role = Role.Button },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(34.dp).background(Kit.goldBrush, CircleShape), contentAlignment = Alignment.Center) {
+            Text("$level", fontWeight = FontWeight.Black, color = Kit.Ink, fontSize = 15.sp)
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 9.dp)) {
+            Text("Dorfstufe $level von $maxLevel · nächster Schritt", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Kit.GoldDark)
+            Text(step.task, fontSize = 14.sp, fontWeight = FontWeight.Black, color = Kit.Ink, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        GameButton("Los", onGo)
+    }
 }

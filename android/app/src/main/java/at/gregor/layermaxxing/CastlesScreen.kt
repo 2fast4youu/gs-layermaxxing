@@ -629,6 +629,8 @@ private sealed interface VillagePick {
     data class Place(val destination: ValleyDestination) : VillagePick
     data object Home : VillagePick
     data object Friend : VillagePick
+    /** A place still under fog: the card tells what grows it. */
+    data class Locked(val destination: ValleyDestination) : VillagePick
 }
 
 /**
@@ -684,12 +686,18 @@ private fun VillageWorld(
                 when (sprite.id) {
                     "home" -> select(VillagePick.Home, VillageScenes.HOME)
                     "friend" -> select(VillagePick.Friend, VillageScenes.FRIEND)
-                    else -> ValleyDestination.entries.firstOrNull { it.name == sprite.id }?.let { select(VillagePick.Place(it), it.anchor) }
+                    else -> ValleyDestination.entries.firstOrNull { it.name == sprite.id }?.let {
+                        select(if (it in hud.unlocked) VillagePick.Place(it) else VillagePick.Locked(it), it.anchor)
+                    }
                 }
             },
             overlay = {
                 CloudShadows(reduced)
+                // Not yet grown into: a soft fog patch instead of a marker.
+                ValleyDestination.entries.filter { it !in hud.unlocked }.forEach { FogPatch(it.anchor, this) }
+                hud.fresh.filter { it in hud.unlocked }.forEach { FreshRing(it.anchor, this, reduced) }
                 val visible = VillageCalm.visibleMarkers(activities.associate { it.destination to it.count }, closeUp, (pick as? VillagePick.Place)?.destination)
+                    .filter { it in hud.unlocked }.toSet() + hud.fresh.filter { it in hud.unlocked }
                 ValleyDestination.entries.forEachIndexed { i, d ->
                     if (d in visible) BuildingMarker(
                         d.iconRes(), d.title, count(d)?.count ?: 0, d.anchor, this,
@@ -698,7 +706,7 @@ private fun VillageWorld(
                     )
                 }
                 BuildingMarker(
-                    R.drawable.ic_home, "Dein Hof", post?.urgent ?: 0, VillageScenes.HOME, this,
+                    R.drawable.ic_home, "Mein Hof", post?.urgent ?: 0, VillageScenes.HOME, this,
                     selected = pick == VillagePick.Home, showName = true, reducedMotion = reduced, phase = .2f,
                 )
                 BuildingMarker(
@@ -728,6 +736,15 @@ private fun VillageWorld(
             ResourcePill(R.drawable.ic_ep, "${hud.ep}", "Ebenen-Punkte") { onDestination(ValleyDestination.EP) }
         }
 
+        hud.fresh.firstOrNull { it in hud.unlocked }?.let { fresh ->
+            FreshBanner(
+                fresh,
+                onOpen = { hud.onFreshSeen(); select(VillagePick.Place(fresh), fresh.anchor) },
+                onDismiss = hud.onFreshSeen,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 58.dp),
+            )
+        }
+
         // ---- bottom: action buttons, or the selected building's card --------
         androidx.compose.animation.AnimatedVisibility(
             visible = pick == null,
@@ -736,7 +753,12 @@ private fun VillageWorld(
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            if (friendName == null) NamePlank("Tippe auf ein Gebäude", Modifier.padding(bottom = 6.dp), size = 12.sp)
+            val next = VillageGrowth.nextStep(hud.unlocked)
+            if (next != null) GuidePlank(
+                next, VillageGrowth.level(hud.unlocked), VillageGrowth.MAX_LEVEL,
+                onGo = { onDestination(VillageGrowth.guideTarget(next)) },
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
             if (friendName != null) NamePlank(
                 if (onSwitchFriend != null) "Tal mit $friendName  ▾" else "Tal mit $friendName",
                 Modifier.padding(bottom = 6.dp)
@@ -776,11 +798,11 @@ private fun VillageWorld(
                         { pick = null; onDestination(d) }, { pick = null }, cardModifier)
                 }
                 VillagePick.Home -> if (onEnterCourtyard != null) BuildingCard(
-                    R.drawable.ic_home, null, "Dein Hof", "Poststelle, Schatzkammer und Ausbau · $builtCount Ausbauten",
+                    R.drawable.ic_home, null, "Mein Hof", "Poststelle, Schatzkammer und Ausbau · $builtCount Ausbauten",
                     post?.takeIf { it.urgent > 0 }?.let { "${it.urgent} Briefe bereit oder warten auf dich" },
                     "Betreten", { pick = null; onEnterCourtyard() }, { pick = null }, cardModifier,
                 ) else BuildingCard(
-                    R.drawable.ic_home, null, "Dein Hof", "Dein Hof wächst mit deiner ersten Freundschaft.", null,
+                    R.drawable.ic_home, null, "Mein Hof", "Dein Hof wächst mit deiner ersten Freundschaft.", null,
                     "Freunde", { pick = null; onDestination(ValleyDestination.PEOPLE) }, { pick = null }, cardModifier,
                 )
                 VillagePick.Friend -> if (friendName != null) BuildingCard(
@@ -791,6 +813,15 @@ private fun VillageWorld(
                     R.drawable.ic_people, null, "Freunde finden", "Hier zieht deine erste Freundschaft ein.", null,
                     "Suchen", { pick = null; onDestination(ValleyDestination.PEOPLE) }, { pick = null }, cardModifier,
                 )
+                is VillagePick.Locked -> {
+                    val d = current.destination
+                    val step = VillageGrowth.PATH.firstOrNull { it.destination == d }
+                    BuildingCard(
+                        d.iconRes(), null, "${d.title} – noch im Nebel",
+                        step?.let { "So entsteht es: ${it.task}. ${it.hint}" } ?: d.detail, null,
+                        "Hinführen", { pick = null; step?.let { onDestination(VillageGrowth.guideTarget(it)) } }, { pick = null }, cardModifier,
+                    )
+                }
                 null -> Unit
             }
         }
@@ -875,7 +906,7 @@ private fun CourtyardScreen(
                 revealAnchor?.let { DustReveal(it, onRevealed) }
             },
         )
-        FiefPlaceBar("Zurück ins Tal", onBack, "Dein Hof", vale.creative)
+        FiefPlaceBar("Zurück ins Tal", onBack, "Mein Hof", vale.creative)
     }
 }
 
