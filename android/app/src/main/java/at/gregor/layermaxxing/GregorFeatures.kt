@@ -11,6 +11,29 @@ data class TopicScope(val type: String, val id: Long?) {
 }
 
 data class GlossaryEntry(val term: String, val meaning: String, val action: String)
+/** One line of the merged dictionary: either a built-in app term or a shared community word. */
+data class DictionaryRow(
+    val key: String, val term: String, val builtIn: GlossaryEntry?, val shared: ApiClient.GlossaryTerm?,
+)
+
+object Dictionary {
+    /** Built-in terms first, then community words, both alphabetical; search covers terms and every explanation. */
+    fun rows(shared: List<ApiClient.GlossaryTerm>, query: String): List<DictionaryRow> {
+        val q = query.trim()
+        fun hit(vararg parts: String) = q.isEmpty() || parts.any { it.contains(q, ignoreCase = true) }
+        val builtIn = AppGlossary.entries.filter { hit(it.term, it.meaning, it.action) }
+            .sortedBy { it.term.lowercase() }
+            .map { DictionaryRow("app-${it.term}", it.term, it, null) }
+        val community = shared.filter { t -> hit(t.term, *t.explanations.map { it.text }.toTypedArray()) }
+            .sortedBy { it.term.lowercase() }
+            .map { DictionaryRow("word-${it.id}", it.term, null, it) }
+        return builtIn + community
+    }
+
+    fun canSubmit(term: String, explanation: String) =
+        term.isNotBlank() && explanation.isNotBlank() && term.trim().length <= 80 && explanation.trim().length <= 2000
+}
+
 object AppGlossary {
     val entries = listOf(
         GlossaryEntry("Tal / Lehen", "Die grafische Ansicht einer Freundschaft. Jeder Freund hat sein eigenes Tal.", "Wegweiser: Freund wechseln. Haus: eigener Hof. Gegenüber: Freund besuchen."),
@@ -38,4 +61,41 @@ object ChatTools {
     }
     fun replyText(quote: String?, body: String) = if (quote == null) body else
         "> " + quote.replace('\n', ' ').take(200) + "\n\n" + body
+
+    /** Splits a message written by [replyText] back into quote and body, so the bubble can draw the quote as a block. */
+    fun parseReply(text: String): Pair<String?, String> {
+        if (!text.startsWith("> ")) return null to text
+        val split = text.indexOf("\n\n")
+        if (split < 0) return null to text
+        val body = text.substring(split + 2)
+        return if (body.isBlank()) null to text else text.substring(2, split) to body
+    }
+
+    /** WhatsApp-style list time: clock today, "Gestern", weekday within a week, date otherwise. */
+    fun listTime(epoch: Long, now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+        if (epoch <= 0) return ""
+        val then = java.time.Instant.ofEpochSecond(epoch).atZone(zone)
+        val today = java.time.Instant.ofEpochSecond(now).atZone(zone).toLocalDate()
+        val days = java.time.temporal.ChronoUnit.DAYS.between(then.toLocalDate(), today)
+        return when {
+            days <= 0L -> java.time.format.DateTimeFormatter.ofPattern("HH:mm").format(then)
+            days == 1L -> "Gestern"
+            days < 7L -> listOf("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")[then.dayOfWeek.value - 1]
+            else -> java.time.format.DateTimeFormatter.ofPattern("dd.MM.yy").format(then)
+        }
+    }
+
+    /** Chat-list filters; navigation shortcuts (groups, topics …) are chips too but not filters. */
+    enum class ListFilter(val label: String) { ALL("Alle"), UNREAD("Ungelesen"), LETTERS("Briefe") }
+
+    fun filterConversations(list: List<Conversation>, query: String, filter: ListFilter): List<Conversation> {
+        val q = query.trim()
+        return list.filter { c ->
+            (q.isEmpty() || (c.friendName + " " + c.preview.text).contains(q, ignoreCase = true)) && when (filter) {
+                ListFilter.ALL -> true
+                ListFilter.UNREAD -> c.hasNews
+                ListFilter.LETTERS -> c.readyLetters + c.lockedLetters + c.awaitingMe > 0
+            }
+        }
+    }
 }

@@ -99,6 +99,13 @@ class ApiClient(
         val attachmentCiphertext: String?, val attachmentNonce: String?, val canonicalMetadata: String?,
     )
     data class Group(val id: Long, val name: String, val ownerId: Long, val members: List<UserSummary>)
+    data class GlossaryExplanation(
+        val id: Long, val text: String, val authorName: String, val createdAt: Long, val updatedAt: Long, val mine: Boolean,
+    )
+    data class GlossaryTerm(
+        val id: Long, val term: String, val creatorName: String, val explanations: List<GlossaryExplanation>, val canDelete: Boolean,
+    )
+
     data class Topic(
         val id: Long, val title: String, val details: String, val creatorName: String,
         val targetType: String, val targetName: String, val targetId: Long?, val createdAt: Long, val completedAt: Long?,
@@ -375,6 +382,22 @@ class ApiClient(
     )
     suspend fun deleteTopic(token: String, id: Long) = unitCall(authorized(token, "api/topics/$id").delete().build())
 
+    // Shared, community-edited glossary (plain text by design: it is a public dictionary).
+    suspend fun glossary(token: String): List<GlossaryTerm> = array(token, "api/glossary", ::parseGlossaryTerm)
+    suspend fun addGlossaryTerm(token: String, term: String, explanation: String): Long = io {
+        execute(authorized(token, "api/glossary").post(
+            JSONObject().put("term", term.trim()).put("explanation", explanation.trim()).body()
+        ).build()).getLong("id")
+    }
+    suspend fun addGlossaryExplanation(token: String, termId: Long, text: String) = unitCall(
+        authorized(token, "api/glossary/$termId/explanations").post(JSONObject().put("text", text.trim()).body()).build()
+    )
+    suspend fun editGlossaryExplanation(token: String, id: Long, text: String) = unitCall(
+        authorized(token, "api/glossary/explanations/$id").patch(JSONObject().put("text", text.trim()).body()).build()
+    )
+    suspend fun deleteGlossaryExplanation(token: String, id: Long) =
+        unitCall(authorized(token, "api/glossary/explanations/$id").delete().build())
+
     suspend fun send(token: String, payload: SendRequest): List<Long> = io {
         val body = JSONObject().put("recipient_ids", JSONArray(payload.recipientIds))
             .put("ciphertext", payload.encrypted.ciphertext).put("nonce", payload.encrypted.nonce)
@@ -439,6 +462,18 @@ class ApiClient(
     private fun parseAuth(json: JSONObject) = Auth(json.getString("token"), json.getLong("user_id"), json.getString("name"), json.nullableString("recovery_code"))
     private fun parseUser(json: JSONObject) = UserSummary(json.getLong("id"), json.getString("name"), json.optString("relationship", "none"),
         json.optString("avatar_emoji", "👤"), json.optString("display_color", "#6750A4"))
+    private fun parseGlossaryTerm(json: JSONObject): GlossaryTerm {
+        val list = json.optJSONArray("explanations")
+        val explanations = (0 until (list?.length() ?: 0)).map { i ->
+            val e = list!!.getJSONObject(i)
+            GlossaryExplanation(
+                e.getLong("id"), e.getString("text"), e.optString("author_name"),
+                e.optLong("created_at"), e.optLong("updated_at"), e.optBoolean("mine"),
+            )
+        }
+        return GlossaryTerm(json.getLong("id"), json.getString("term"), json.optString("creator_name"), explanations, json.optBoolean("can_delete"))
+    }
+
     private fun parseTopic(json: JSONObject): Topic {
         val clear = JSONObject(CryptoBox.decrypt(json.getString("ciphertext"), json.getString("nonce"), json.getString("encryption_key")))
         return Topic(

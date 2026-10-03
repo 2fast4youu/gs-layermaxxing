@@ -61,6 +61,61 @@ class VillageVisualReview {
         )
     }
 
+    private fun conv(id: Long, name: String, emoji: String, color: String, ago: Long, text: String, fromMe: Boolean, unread: Int = 0, ready: Int = 0, sealed: Boolean = false) = Conversation(
+        friendId = id, friendName = name, avatarEmoji = emoji, displayColor = color,
+        lastActivityAt = java.time.Instant.now().epochSecond - ago,
+        preview = ConversationPreview(text, sealed, fromMe), unreadChats = unread, readyLetters = ready,
+        lockedLetters = 0, awaitingMe = 0, chatsEnabled = true, lettersEnabled = true, epEnabled = false,
+    )
+
+    @Test fun chatList() = shot("05-chats") {
+        androidx.compose.material3.MaterialTheme {
+            androidx.compose.material3.Surface {
+                ChatsScreen(
+                    conversations = listOf(
+                        conv(2, "Gerfried", "🦊", "#2E7D32", 300, "Passt, dann Samstag am Brennerhaus 👍", false, unread = 2),
+                        conv(3, "Anna", "🐻", "#1565C0", 4_000, "Brief für dich", false, ready = 1, sealed = true),
+                        conv(4, "Lukas", "🐺", "#6A1B9A", 90_000, "> Wann?\n\nUm acht passt", true),
+                        conv(5, "Mara", "🦉", "#EF6C00", 400_000, "Danke dir!", false),
+                    ),
+                    requests = emptyList(), sparkInbox = emptyList(), sparkSent = emptyList(),
+                    onOpen = {}, onRespond = { _, _ -> }, onGoPeople = {}, onOpenSparks = {}, onSendSpark = {}, sparkEnabled = true,
+                    onGroups = {}, onTopicsHub = {}, onGlossary = {}, onValley = {}, groupCount = 2, topicCount = 3, showValley = true,
+                )
+            }
+        }
+    }
+
+    @Test fun chatThread() = shot("06-thread") {
+        val now = java.time.Instant.now().epochSecond
+        androidx.compose.material3.MaterialTheme {
+            androidx.compose.material3.Surface {
+                androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f).fillMaxSize().chatWallpaper()) {
+                        androidx.compose.foundation.layout.Column(
+                            androidx.compose.ui.Modifier.padding(10.dp),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+                        ) {
+                            ThreadChatBubble(ApiClient.ChatMessage(1, 2, 1, "Servus! Kommst du am Samstag mit aufs Brennerhaus?", now - 600, null), false, {}, {})
+                            ThreadChatBubble(ApiClient.ChatMessage(2, 1, 2, "Ja klar, ich bring die Schlüssel mit", now - 500, now - 400), true, {}, {})
+                            ThreadChatBubble(ApiClient.ChatMessage(3, 2, 1, "> Ja klar, ich bring die Schlüssel mit\n\nPerfekt, dann um 9 beim Parkplatz", now - 300, null), false, {}, {})
+                            ThreadChatBubble(ApiClient.ChatMessage(4, 1, 2, "👍", now - 60, null), true, {}, {})
+                        }
+                    }
+                    Composer(ComposerPlan(true, true, "Nachricht", 0, null), "", {}, {}, {}, {})
+                }
+            }
+        }
+    }
+
+    @Test fun glossary() = shot("07-glossary") {
+        VillageTheme(true) {
+            VillageRoom(true, icon = R.drawable.ic_glossary, title = "Wörterbuch", onClose = {}) {
+                GlossaryScreen()
+            }
+        }
+    }
+
     @Test fun emptyVillage() = shot("01-empty") { Village(emptyList(), emptyList()) }
 
     @Test fun buildingRoom() = shot("03-room") {

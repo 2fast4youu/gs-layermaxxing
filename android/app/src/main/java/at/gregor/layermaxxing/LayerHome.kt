@@ -1,5 +1,14 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.draw.drawBehind
 import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
@@ -412,13 +421,20 @@ fun LayerHome(
             Box(Modifier.fillMaxSize()) {
             val threadFriend = openThreadFriend?.let { id -> friends.firstOrNull { it.id == id } }
             when {
+                // The meeting point IS the messenger: same list, same search, same chips.
                 hub == "conversations" -> SubScreen("Treffpunkt", onBack = { hub = null }, backLabel = "Tal") {
-                    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        item { Text("Gespräche öffnen – Regeln, Briefe und Themen bleiben im Gespräch erreichbar.") }
-                        item { OutlinedButton(onClick = { hub = null; peopleOpen = true }) { Text("Freunde finden und verwalten") } }
-                        if (conversations.isEmpty()) item { Text("Noch keine Gespräche. Füge am Wegweiser Freunde hinzu.") }
-                        items(conversations, key = { it.friendId }) { c -> ConversationRow(c) { id -> hub = null; openThreadFriend = id } }
-                    }
+                    ChatsScreen(
+                        conversations = conversations, requests = requestInbox,
+                        sparkInbox = sparkInbox, sparkSent = sparkSent,
+                        onOpen = { id -> hub = null; openThreadFriend = id }, onRespond = ::respondRequest,
+                        onGoPeople = { hub = null; peopleOpen = true },
+                        onOpenSparks = { hub = null; sparksOpen = true },
+                        onSendSpark = { sparkCompose = true },
+                        sparkEnabled = friends.isNotEmpty(),
+                        onGroups = { hub = "groups" }, onTopicsHub = { hub = "topics" },
+                        onGlossary = { hub = "glossary" }, onValley = { hub = null },
+                        groupCount = groups.size, topicCount = topics.count { it.completedAt == null }, showValley = false,
+                    )
                 }
                 hub == "archive" -> SubScreen("Postarchiv", onBack = { hub = null }, backLabel = "Tal") {
                     InboxScreen(messages, outbox, opened, token, api, ::act, ::openLetter, ::lockedLetterTap, { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } })
@@ -435,7 +451,7 @@ fun LayerHome(
                 topicScope != null -> SubScreen(topicName, onBack = { topicScope = null }, backLabel = "Zurück") {
                     TopicsScreen(topics, ApiClient.UserSummary(topicScope!!.id ?: 0, topicName), token, api, ::act, scope = topicScope!!)
                 }
-                hub == "glossary" -> SubScreen("Wörterbuch", onBack = { hub = null }, backLabel = "Zurück") { GlossaryScreen() }
+                hub == "glossary" -> SubScreen("Wörterbuch", onBack = { hub = null }, backLabel = "Zurück") { GlossaryScreen(api, token) }
                 hub == "topics" -> SubScreen("Themen", onBack = { hub = null }, backLabel = "Zurück") {
                     TopicsHub(topics, friends, groups) { s, name -> topicScope = s; topicName = name }
                 }
@@ -637,7 +653,7 @@ private fun AppChrome(
  * management stays behind the finding action.
  */
 @Composable
-private fun ChatsScreen(
+internal fun ChatsScreen(
     conversations: List<Conversation>, requests: List<PendingRequest>,
     sparkInbox: List<SparkItem>, sparkSent: List<SparkSent>,
     onOpen: (Long) -> Unit, onRespond: (PendingRequest, Boolean) -> Unit, onGoPeople: () -> Unit,
@@ -646,42 +662,64 @@ private fun ChatsScreen(
     groupCount: Int, topicCount: Int, showValley: Boolean,
 ) {
     var search by remember { mutableStateOf("") }
-    var onlyNews by remember { mutableStateOf(false) }
+    var filter by remember { mutableStateOf(ChatTools.ListFilter.ALL) }
+    val now = remember(conversations) { Instant.now().epochSecond }
+    val matches = ChatTools.filterConversations(conversations, search, filter)
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (requests.isNotEmpty()) {
-                item { SectionTitle("Wartet auf deine Antwort") }
-                items(requests, key = { it.key }) { request -> RequestCard(request, onRespond) }
+        LazyColumn(Modifier.fillMaxSize()) {
+            // WhatsApp layout: one search pill, one row of chips, then the list.
+            item {
+                androidx.compose.material3.TextField(
+                    search, { search = it },
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp).heightIn(min = 48.dp),
+                    placeholder = { Text("Suchen") }, leadingIcon = { Text("🔍", fontSize = 15.sp) },
+                    trailingIcon = if (search.isNotEmpty()) ({ TextButton(onClick = { search = "" }) { Text("✕") } }) else null,
+                    singleLine = true, shape = RoundedCornerShape(26.dp),
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .7f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .7f),
+                    ),
+                )
             }
-            if (Sparks.entryVisible(sparkInbox, sparkSent)) item { SparkEntryRow(sparkInbox, sparkSent, onOpenSparks) }
-            item { SectionTitle("Gespräche") }
-            item { OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth(), label = { Text("Person oder letzte Nachricht suchen") }, singleLine = true) }
-            item { Row(verticalAlignment = Alignment.CenterVertically) { Switch(onlyNews, { onlyNews = it }); Text("Nur mit Neuigkeiten") } }
-            item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                androidx.compose.material3.FilledTonalButton(onClick = onTopicsHub, modifier = Modifier.weight(1f)) { Text("📝 Themen ($topicCount)") }
-                androidx.compose.material3.FilledTonalButton(onClick = onGroups, modifier = Modifier.weight(1f)) { Text("👥 Gruppen ($groupCount)") }
-            } }
-            item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (showValley) OutlinedButton(onClick = onValley, modifier = Modifier.weight(1f)) { Text("🏔 Tal") }
-                OutlinedButton(onClick = onGlossary, modifier = Modifier.weight(1f)) { Text("📖 Begriffe") }
-            } }
-            if (conversations.isEmpty()) item {
-                Column(Modifier.fillMaxWidth().padding(vertical = 22.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Noch keine Gespräche.", fontWeight = FontWeight.Bold)
-                    Text(
-                        "Such jemanden über ＋, dann erscheint hier euer Gespräch.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            item {
+                androidx.compose.foundation.lazy.LazyRow(
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(bottom = 4.dp),
+                ) {
+                    items(ChatTools.ListFilter.entries) { f ->
+                        val count = if (f == ChatTools.ListFilter.UNREAD) conversations.count { it.hasNews } else 0
+                        ListChip(if (count > 0) "${f.label} $count" else f.label, selected = filter == f) { filter = f }
+                    }
+                    item { ListChip("Gruppen" + if (groupCount > 0) " $groupCount" else "", selected = false, onClick = onGroups) }
+                    item { ListChip("Themen" + if (topicCount > 0) " $topicCount" else "", selected = false, onClick = onTopicsHub) }
+                    item { ListChip("Wörterbuch", selected = false, onClick = onGlossary) }
+                    if (showValley) item { ListChip("🏔 Tal", selected = false, onClick = onValley) }
                 }
             }
-            val matches = conversations.filter { (!onlyNews || it.hasNews) && (it.friendName + " " + it.preview.text).contains(search.trim(), ignoreCase = true) }
-            if (conversations.isNotEmpty() && matches.isEmpty()) item { Text("Keine passenden Gespräche. Ändere die Suche oder den Neuigkeiten-Filter.", Modifier.padding(vertical = 16.dp)) }
-            items(matches, key = { "conv-${it.friendId}" }) { conversation -> ConversationRow(conversation, onOpen) }
+            if (requests.isNotEmpty()) items(requests, key = { it.key }) { request ->
+                Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) { RequestCard(request, onRespond) }
+            }
+            if (Sparks.entryVisible(sparkInbox, sparkSent)) item {
+                Box(Modifier.padding(horizontal = 8.dp)) { SparkEntryRow(sparkInbox, sparkSent, onOpenSparks) }
+            }
+            if (conversations.isEmpty()) item {
+                Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("💬", fontSize = 42.sp)
+                    Text("Noch keine Chats", fontWeight = FontWeight.Bold)
+                    Text("Tippe auf ＋ und finde deine erste Person.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                }
+            } else if (matches.isEmpty()) item {
+                Text(
+                    if (search.isNotBlank()) "Keine Chats zu „${search.trim()}“." else "Hier ist gerade nichts.",
+                    Modifier.fillMaxWidth().padding(28.dp), textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            items(matches, key = { "conv-${it.friendId}" }) { conversation -> ConversationRow(conversation, now, onOpen) }
             // Room so the last row is never trapped under the round actions.
-            item { Spacer(Modifier.height(148.dp)) }
+            item { Spacer(Modifier.height(150.dp)) }
         }
         Column(
             Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 18.dp),
@@ -691,17 +729,34 @@ private fun ChatsScreen(
             if (sparkEnabled) RoundAction(
                 glyph = "✨",
                 description = "Freundesfunke senden",
-                container = MaterialTheme.colorScheme.tertiaryContainer,
-                content = MaterialTheme.colorScheme.onTertiaryContainer,
+                container = MaterialTheme.colorScheme.surfaceVariant,
+                content = MaterialTheme.colorScheme.onSurfaceVariant,
                 onClick = onSendSpark,
+                size = 46,
             )
             RoundAction(
                 glyph = "＋",
-                description = "Person finden oder Freundschaftsanfrage senden",
-                container = MaterialTheme.colorScheme.primaryContainer,
-                content = MaterialTheme.colorScheme.onPrimaryContainer,
+                description = "Neuer Chat: Person finden oder Freundschaftsanfrage senden",
+                container = MaterialTheme.colorScheme.primary,
+                content = MaterialTheme.colorScheme.onPrimary,
                 onClick = onGoPeople,
             )
+        }
+    }
+}
+
+/** A filter or shortcut chip of the chat list. */
+@Composable
+private fun ListChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(50)).clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+        shape = RoundedCornerShape(50),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .7f),
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Box(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+            Text(text, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
         }
     }
 }
@@ -714,9 +769,10 @@ private fun RoundAction(
     container: Color,
     content: Color,
     onClick: () -> Unit,
+    size: Int = 56,
 ) {
     Surface(
-        modifier = Modifier.size(56.dp)
+        modifier = Modifier.size(size.dp)
             .semantics { contentDescription = description; role = Role.Button }
             .clip(RoundedCornerShape(50)).clickable(onClick = onClick),
         shape = RoundedCornerShape(50),
@@ -782,44 +838,61 @@ private fun RequestCard(request: PendingRequest, onRespond: (PendingRequest, Boo
  * box inside a box.
  */
 @Composable
-private fun ConversationRow(conversation: Conversation, onOpen: (Long) -> Unit) {
+private fun ConversationRow(conversation: Conversation, now: Long, onOpen: (Long) -> Unit) {
+    val news = conversation.hasNews
+    val accent = MaterialTheme.colorScheme.primary
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 64.dp)
-            .clip(RoundedCornerShape(16.dp)).clickable { onOpen(conversation.friendId) }
-            .padding(horizontal = 6.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().heightIn(min = 72.dp).clickable { onOpen(conversation.friendId) }
+            .padding(start = 14.dp, end = 14.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
             shape = RoundedCornerShape(50),
-            color = profileColor(conversation.displayColor).copy(alpha = .18f),
-            modifier = Modifier.size(46.dp),
-        ) { Box(contentAlignment = Alignment.Center) { Text(conversation.avatarEmoji, fontSize = 24.sp) } }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(
-                conversation.friendName, fontSize = 16.sp,
-                fontWeight = if (conversation.hasNews) FontWeight.Bold else FontWeight.SemiBold,
-            )
-            val preview = conversation.preview
-            Text(
-                (if (preview.fromMe) "Du: " else "") + (if (preview.sealed) "✦ " else "") + preview.text,
-                fontSize = 13.sp, maxLines = 1,
-                fontStyle = if (preview.sealed) FontStyle.Italic else FontStyle.Normal,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (conversation.silenced) Text(
-                "Briefe und Chat sind in dieser Freundschaft aus",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.error,
-            )
+            color = profileColor(conversation.displayColor).copy(alpha = .22f),
+            modifier = Modifier.size(52.dp),
+        ) { Box(contentAlignment = Alignment.Center) { Text(conversation.avatarEmoji, fontSize = 26.sp) } }
+        Column(Modifier.weight(1f).padding(start = 13.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    conversation.friendName, Modifier.weight(1f), fontSize = 16.sp, maxLines = 1,
+                    fontWeight = if (news) FontWeight.Bold else FontWeight.SemiBold,
+                )
+                Text(
+                    ChatTools.listTime(conversation.lastActivityAt, now), fontSize = 12.sp,
+                    color = if (news) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (news) FontWeight.Bold else FontWeight.Normal,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val preview = conversation.preview
+                val line = when {
+                    conversation.silenced -> "Briefe und Chat sind aus"
+                    else -> (if (preview.fromMe) "Du: " else "") + (if (preview.sealed) "✦ " else "") +
+                        (ChatTools.parseReply(preview.text).second.replace('\n', ' '))
+                }
+                Text(
+                    line, Modifier.weight(1f), fontSize = 14.sp, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    fontStyle = if (preview.sealed) FontStyle.Italic else FontStyle.Normal,
+                    color = if (conversation.silenced) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (conversation.lockedLetters > 0) Text("🔒${conversation.lockedLetters}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (conversation.readyLetters > 0) Chip("✦${conversation.readyLetters}", MaterialTheme.colorScheme.tertiary)
+                    if (conversation.awaitingMe > 0) Chip("✓${conversation.awaitingMe}", MaterialTheme.colorScheme.secondary)
+                    if (conversation.unreadChats > 0) UnreadDot(conversation.unreadChats, accent)
+                }
+            }
         }
-        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            if (conversation.unreadChats > 0) Chip("${conversation.unreadChats}", MaterialTheme.colorScheme.primary)
-            if (conversation.readyLetters > 0) Chip("✦ ${conversation.readyLetters}", MaterialTheme.colorScheme.tertiary)
-            if (conversation.awaitingMe > 0) Chip("✓ ${conversation.awaitingMe}", MaterialTheme.colorScheme.secondary)
-            if (conversation.lockedLetters > 0) Text(
-                "🔒 ${conversation.lockedLetters}", fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    }
+    HorizontalDivider(Modifier.padding(start = 79.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
+}
+
+/** The round unread counter of a chat row. */
+@Composable
+private fun UnreadDot(count: Int, color: Color) {
+    Box(Modifier.sizeIn(minWidth = 22.dp, minHeight = 22.dp).background(color, RoundedCornerShape(50)).padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
+        Text(if (count > 99) "99+" else "$count", color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -919,6 +992,7 @@ private fun ThreadScreen(
             lettersUrgent = band.any { it.bucket != LetterBucket.IN_TRANSIT },
             onMenu = { menu = it },
             onBack = onBack,
+            onSearch = { searchOpen = true },
             onInfo = { infoOpen = true },
             onRules = { rulesOpen = true },
             onTopics = { topicsOpen = true },
@@ -948,11 +1022,17 @@ private fun ThreadScreen(
         // Not a permanent second bar any more: the door to the Briefraum moved into
         // the head, so this strip only appears while a letter actually asks for
         // something — released, or waiting for exactly my approval.
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) { Text(if (searchOpen) "Suche schließen" else "Im Gespräch suchen") }
-            Text("Nachricht lange drücken: antworten / kopieren", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+        if (searchOpen) Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.TextField(
+                query, { query = it }, Modifier.weight(1f), singleLine = true,
+                placeholder = { Text("Im Chat suchen") }, leadingIcon = { Text("🔍", fontSize = 15.sp) },
+                shape = RoundedCornerShape(24.dp),
+                colors = androidx.compose.material3.TextFieldDefaults.colors(
+                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                ),
+            )
+            TextButton(onClick = { searchOpen = false; query = "" }) { Text("Fertig") }
         }
-        if (searchOpen) OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp), label = { Text("Nachrichten und Umschläge suchen") }, singleLine = true)
         val actionable = band.filter { it.bucket != LetterBucket.IN_TRANSIT }
         if (actionable.isNotEmpty()) SealBandRow(
             band = actionable,
@@ -963,22 +1043,30 @@ private fun ThreadScreen(
                 }
             },
         )
-        if (items.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(Conversations.EMPTY_THREAD, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.weight(1f).fillMaxWidth().chatWallpaper()) {
+        if (items.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .9f)) {
+                Text(Conversations.EMPTY_THREAD, Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            }
         } else LazyColumn(
             state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            item { Spacer(Modifier.height(6.dp)) }
             items(items, key = { it.key }) { item ->
                 when (item) {
-                    is TimelineItem.DayMark -> Text(
-                        item.label, Modifier.fillMaxWidth().padding(top = 8.dp),
-                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
+                    is TimelineItem.DayMark -> Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                        Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f), shadowElevation = 1.dp) {
+                            Text(item.label, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                     is TimelineItem.Entry -> when (val entry = item.entry) {
-                        is ThreadEntry.Chat -> ThreadChatBubble(entry.message, entry.outgoing) { selectedChat = entry.message }
+                        is ThreadEntry.Chat -> ThreadChatBubble(
+                            entry.message, entry.outgoing,
+                            onActions = { selectedChat = entry.message },
+                            onSwipeReply = if (chatsEnabled) ({ quote = entry.message.text }) else null,
+                        )
                         // A letter is an event in the flow, not a block in it: the
                         // row says what happened and hands over to the Briefraum,
                         // where the whole letter and all its actions live.
@@ -1001,15 +1089,29 @@ private fun ThreadScreen(
                     }
                 }
             }
-            item { Spacer(Modifier.height(4.dp)) }
+            item { Spacer(Modifier.height(6.dp)) }
+        }
         }
         threadError?.let {
             Text(it, Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
         quote?.let { quoted ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Antwort auf: " + quoted.take(120), Modifier.weight(1f), maxLines = 2, style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { quote = null }) { Text("Entfernen") }
+            Row(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .8f), RoundedCornerShape(12.dp))
+                    .height(IntrinsicSize.Min),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.width(4.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary, RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)))
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Text("Antwort", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text(ChatTools.parseReply(quoted).second, maxLines = 2, fontSize = 13.sp, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { quote = null }
+                        .semantics { contentDescription = "Antwort verwerfen"; role = Role.Button },
+                    contentAlignment = Alignment.Center,
+                ) { Text("✕", fontSize = 16.sp) }
             }
         }
         Composer(
@@ -1035,11 +1137,18 @@ private fun ThreadScreen(
 
     selectedChat?.let { message ->
         ModalBottomSheet(onDismissRequest = { selectedChat = null }) {
-            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(message.text.take(300), maxLines = 5)
-                Button(onClick = { quote = message.text; selectedChat = null }, enabled = chatsEnabled, modifier = Modifier.fillMaxWidth()) { Text("Antworten mit Zitat") }
-                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(message.text)); selectedChat = null }, modifier = Modifier.fillMaxWidth()) { Text("Nachricht kopieren") }
-                Spacer(Modifier.height(20.dp))
+            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                Text(
+                    ChatTools.parseReply(message.text).second.take(300), Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    maxLines = 4, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SheetAction("↩", "Antworten", enabled = chatsEnabled) { quote = message.text; selectedChat = null }
+                SheetAction("⧉", "Kopieren") { clipboard.setText(AnnotatedString(ChatTools.parseReply(message.text).second)); selectedChat = null }
+                Text(
+                    "Gesendet ${socialDate(message.createdAt)}" + (message.readAt?.let { " · gelesen ${socialDate(it)}" } ?: ""),
+                    Modifier.padding(horizontal = 12.dp, vertical = 10.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
             }
         }
     }
@@ -1116,6 +1225,7 @@ private fun ThreadHeader(
     lettersUrgent: Boolean,
     onMenu: (Boolean) -> Unit,
     onBack: () -> Unit,
+    onSearch: () -> Unit,
     onInfo: () -> Unit,
     onRules: () -> Unit,
     onTopics: () -> Unit,
@@ -1124,7 +1234,7 @@ private fun ThreadHeader(
     onBlock: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).height(62.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -1143,10 +1253,10 @@ private fun ThreadHeader(
                 color = profileColor(friend.displayColor).copy(alpha = .18f),
                 modifier = Modifier.size(40.dp),
             ) { Box(contentAlignment = Alignment.Center) { Text(friend.avatarEmoji, fontSize = 21.sp) } }
-            Text(
-                friend.name, Modifier.padding(start = 10.dp), fontWeight = FontWeight.Bold,
-                fontSize = 18.sp, maxLines = 1,
-            )
+            Column(Modifier.padding(start = 10.dp)) {
+                Text(friend.name, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1)
+                Text("Tippen für Info & Regeln", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
         }
         // The door to the letters. It is always here, so the Briefraum is exactly
         // one tap away from the conversation, whatever the timeline shows.
@@ -1188,6 +1298,7 @@ private fun ThreadHeader(
                 contentAlignment = Alignment.Center,
             ) { Text("⋮", fontSize = 22.sp) }
             DropdownMenu(menu, { onMenu(false) }) {
+                DropdownMenuItem(text = { Text("Im Chat suchen") }, onClick = { onMenu(false); onSearch() })
                 DropdownMenuItem(text = { Text("Freundschaftsregeln") }, onClick = { onMenu(false); onRules() })
                 DropdownMenuItem(text = { Text("Info & Nachweise") }, onClick = { onMenu(false); onInfo() })
                 DropdownMenuItem(text = { Text("Freund entfernen") }, onClick = { onMenu(false); onRemove() })
@@ -1271,7 +1382,7 @@ private fun sealGlyph(bucket: LetterBucket): String = when (bucket) {
  * switched-off genre leaves no dead button behind, only the way to the rules.
  */
 @Composable
-private fun Composer(
+internal fun Composer(
     plan: ComposerPlan,
     text: String,
     onText: (String) -> Unit,
@@ -1291,46 +1402,57 @@ private fun Composer(
             return@Column
         }
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.Bottom,
         ) {
-            if (plan.sealVisible) Surface(
-                modifier = Modifier.height(52.dp).clickable(onClick = onCompose)
-                    .semantics { contentDescription = LetterAccess.LABEL_LONG; role = Role.Button },
-                shape = RoundedCornerShape(26.dp),
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            // One pill like WhatsApp: the letter button sits inside, where the attach clip would be.
+            Row(
+                Modifier.weight(1f).heightIn(min = 50.dp)
+                    .shadow(1.dp, RoundedCornerShape(25.dp))
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(25.dp))
+                    .padding(start = 6.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-                    Text("✦ Brief", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                }
+                androidx.compose.material3.TextField(
+                    value = text,
+                    onValueChange = onText,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 5,
+                    enabled = plan.inputEnabled,
+                    placeholder = { Text(plan.placeholder, fontSize = 15.sp, maxLines = 1) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send, capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
+                    // Messenger convention: sending keeps the keyboard and the focus.
+                    keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) onSend() }),
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                )
+                if (plan.sealVisible) Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable(onClick = onCompose)
+                        .semantics { contentDescription = LetterAccess.LABEL_LONG; role = Role.Button },
+                    contentAlignment = Alignment.Center,
+                ) { Text("✦", fontSize = 20.sp, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold) }
             }
-            OutlinedTextField(
-                value = text,
-                onValueChange = onText,
-                modifier = Modifier.weight(1f),
-                maxLines = 4,
-                enabled = plan.inputEnabled,
-                placeholder = { Text(plan.placeholder, fontSize = 14.sp) },
-                shape = RoundedCornerShape(26.dp),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                // Messenger convention: sending keeps the keyboard and the focus.
-                keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) onSend() }),
-            )
             if (plan.inputEnabled) {
                 val ready = text.isNotBlank()
                 Surface(
-                    modifier = Modifier.size(52.dp)
+                    modifier = Modifier.size(48.dp)
+                        .clip(RoundedCornerShape(50))
                         .clickable(enabled = ready, onClick = onSend)
                         .semantics { contentDescription = "Senden"; role = Role.Button },
                     shape = RoundedCornerShape(50),
-                    color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (ready) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = if (ready) 1f else .45f),
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shadowElevation = if (ready) 2.dp else 0.dp,
                 ) { Box(contentAlignment = Alignment.Center) { Text("➤", fontSize = 19.sp) } }
-            } else TextButton(onClick = onRules, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text("Regeln", fontSize = 13.sp)
-            }
+            } else Surface(
+                modifier = Modifier.heightIn(min = 50.dp).clip(RoundedCornerShape(25.dp)).clickable(onClick = onRules),
+                shape = RoundedCornerShape(25.dp), color = MaterialTheme.colorScheme.secondaryContainer,
+            ) { Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) { Text("Regeln", fontSize = 13.sp) } }
         }
     }
 }
@@ -1527,18 +1649,87 @@ private fun sealGlyphFor(mode: String): String = when (mode) {
 }
 
 @OptIn(ExperimentalFoundationApi::class)
+/**
+ * A WhatsApp-style bubble: tail toward the speaker, time and ticks inside the
+ * bubble, quotes drawn as a block. Long-press or tap opens actions; swiping a
+ * bubble to the right answers it.
+ */
 @Composable
-private fun ThreadChatBubble(message: ApiClient.ChatMessage, outgoing: Boolean, onActions: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start) {
-        Card(
-            modifier = Modifier.combinedClickable(onClick = onActions, onLongClick = onActions),
-            colors = CardDefaults.cardColors(containerColor = if (outgoing)
-                MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(18.dp),
-        ) { Column(Modifier.padding(11.dp)) {
-            Text(message.text)
-            Text(if (outgoing && message.readAt != null) "✓ gelesen" else socialDate(message.createdAt), fontSize = 10.sp)
-        } }
+internal fun ThreadChatBubble(message: ApiClient.ChatMessage, outgoing: Boolean, onActions: () -> Unit, onSwipeReply: (() -> Unit)?) {
+    val (quoted, body) = ChatTools.parseReply(message.text)
+    val bubble = if (outgoing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+    val onBubble = if (outgoing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val shape = if (outgoing) RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp) else RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
+    var drag by remember(message.id) { mutableStateOf(0f) }
+    val swipe = Modifier.pointerInput(message.id, onSwipeReply) {
+        if (onSwipeReply == null) return@pointerInput
+        detectHorizontalDragGestures(
+            onDragEnd = { if (drag > 64.dp.toPx()) onSwipeReply(); drag = 0f },
+            onDragCancel = { drag = 0f },
+        ) { _: androidx.compose.ui.input.pointer.PointerInputChange, amount: Float -> drag = (drag + amount).coerceIn(0f, 96.dp.toPx()) }
+    }
+    Row(
+        Modifier.fillMaxWidth().then(swipe).graphicsLayer { translationX = drag }
+            .padding(start = if (outgoing) 52.dp else 0.dp, end = if (outgoing) 0.dp else 52.dp),
+        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
+    ) {
+        Surface(
+            modifier = Modifier.clip(shape).combinedClickable(onClick = onActions, onLongClick = onActions),
+            color = bubble, contentColor = onBubble, shape = shape, shadowElevation = 1.dp,
+        ) {
+            Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 5.dp).width(IntrinsicSize.Max)) {
+                quoted?.let {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                            .background(onBubble.copy(alpha = .07f), RoundedCornerShape(8.dp)).height(IntrinsicSize.Min),
+                    ) {
+                        Box(Modifier.width(3.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary, RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp)))
+                        Text(it, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp, maxLines = 2, color = onBubble.copy(alpha = .75f), overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                }
+                Text(body, fontSize = 15.sp, modifier = Modifier.widthIn(min = 40.dp))
+                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(message.createdAt)),
+                        fontSize = 10.sp, color = onBubble.copy(alpha = .6f),
+                    )
+                    if (outgoing) Text(
+                        if (message.readAt != null) " ✓✓" else " ✓", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        color = if (message.readAt != null) Color(0xFF2E8BD6) else Color(0xFF8A8A8A),
+                        modifier = Modifier.semantics { contentDescription = if (message.readAt != null) "gelesen" else "zugestellt" },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** One full-width action row in a message's action sheet. */
+@Composable
+private fun SheetAction(glyph: String, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp).semantics { role = Role.Button },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(glyph, fontSize = 19.sp, modifier = Modifier.width(36.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else .4f))
+        Text(label, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .4f))
+    }
+}
+
+/** A soft patterned chat background so bubbles read like a messenger, tinted by the active theme. */
+@Composable
+internal fun Modifier.chatWallpaper(): Modifier {
+    val base = MaterialTheme.colorScheme.surfaceContainerLow
+    val dot = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .12f)
+    return this.background(base).drawBehind {
+        val step = 28.dp.toPx()
+        var y = 0f; var row = 0
+        while (y < size.height) {
+            var x = if (row % 2 == 0) 0f else step / 2
+            while (x < size.width) { drawCircle(dot, radius = 1.6.dp.toPx(), center = androidx.compose.ui.geometry.Offset(x, y)); x += step }
+            y += step; row++
+        }
     }
 }
 

@@ -12,6 +12,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.time.Instant
+import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlinx.coroutines.launch
 
 @Composable
 fun ExtensionEntry(title: String, detail: String, onClick: () -> Unit) {
@@ -26,23 +28,175 @@ fun ExtensionEntry(title: String, detail: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * The shared dictionary: built-in app terms plus words anyone added.
+ *
+ * Everyone signed in can add a word with an explanation or add another
+ * explanation to an existing word; only the author edits or deletes their own
+ * text. It loads by itself so a server without the glossary endpoint degrades
+ * to the built-in terms instead of breaking the screen.
+ */
 @Composable
-fun GlossaryScreen() {
+fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
+    val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
-    val entries = AppGlossary.search(query)
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("Begriff suchen") }, singleLine = true) }
-        item { Text("Das App-Wörterbuch", style = MaterialTheme.typography.headlineSmall) }
-        if (entries.isEmpty()) item { Text("Kein Begriff gefunden. Versuche z. B. Themen, EP oder Tal.") }
-        items(entries, key = { it.term }) { entry ->
-            Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(entry.term, fontWeight = FontWeight.Bold)
-                Text(entry.meaning)
-                Text(entry.action, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-            } }
+    var shared by remember { mutableStateOf<List<ApiClient.GlossaryTerm>>(emptyList()) }
+    var sharedAvailable by remember { mutableStateOf(api != null && token != null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
+    var newTerm by remember { mutableStateOf("") }
+    var newText by remember { mutableStateOf("") }
+    var explainFor by remember { mutableStateOf<ApiClient.GlossaryTerm?>(null) }
+    var editing by remember { mutableStateOf<ApiClient.GlossaryExplanation?>(null) }
+    var draft by remember { mutableStateOf("") }
+    var expanded by remember { mutableStateOf<String?>(null) }
+
+    suspend fun reload() {
+        if (api == null || token == null) return
+        runCatching { api.glossary(token) }
+            .onSuccess { shared = it; sharedAvailable = true; error = null }
+            .onFailure {
+                // Older servers simply lack the endpoint: keep the built-in terms.
+                if ((it as? ApiException)?.code == 404) sharedAvailable = false else error = it.message ?: "Wörterbuch nicht geladen"
+            }
+    }
+    fun run(block: suspend () -> Unit) {
+        if (api == null || token == null || busy) return
+        busy = true
+        scope.launch {
+            runCatching { block() }.onFailure { error = it.message ?: "Speichern fehlgeschlagen" }
+            reload(); busy = false
+        }
+    }
+    LaunchedEffect(token) { reload() }
+
+    val rows = Dictionary.rows(shared, query)
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+        ) {
+            item {
+                OutlinedTextField(
+                    query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    placeholder = { Text("Wort oder Erklärung suchen") }, leadingIcon = { Text("🔍") },
+                    shape = RoundedCornerShape(24.dp),
+                )
+            }
+            error?.let { item { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) } }
+            if (!sharedAvailable) item {
+                Text(
+                    "Dieser Server kennt das gemeinsame Wörterbuch noch nicht – du siehst die eingebauten Begriffe.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (rows.isEmpty()) item {
+                Column(Modifier.padding(vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("„${query.trim()}“ steht noch nicht drin.", fontWeight = FontWeight.Bold)
+                    if (sharedAvailable) Button(onClick = { newTerm = query.trim(); newText = ""; adding = true }) { Text("Als neues Wort eintragen") }
+                }
+            }
+            items(rows, key = { it.key }) { row ->
+                val open = expanded == row.key
+                Surface(
+                    Modifier.fillMaxWidth().clickable { expanded = if (open) null else row.key },
+                    shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(row.term, Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (row.builtIn != null) "App" else "${row.shared!!.explanations.size} ✍",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        row.builtIn?.let { entry ->
+                            Text(entry.meaning)
+                            if (open) Text(entry.action, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                        }
+                        row.shared?.let { term ->
+                            val shown = if (open) term.explanations else term.explanations.take(1)
+                            shown.forEachIndexed { i, ex ->
+                                if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .3f))
+                                Text(ex.text)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "— ${ex.authorName}" + if (ex.updatedAt > ex.createdAt) " · bearbeitet" else "",
+                                        Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    if (open && ex.mine) {
+                                        TextButton(onClick = { editing = ex; draft = ex.text }) { Text("Ändern") }
+                                        TextButton(onClick = { run { api!!.deleteGlossaryExplanation(token!!, ex.id) } }) {
+                                            Text("Löschen", color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
+                            if (!open && term.explanations.size > 1) Text(
+                                "+ ${term.explanations.size - 1} weitere Erklärung" + if (term.explanations.size > 2) "en" else "",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                            )
+                            if (open) OutlinedButton(onClick = { explainFor = term; draft = "" }) { Text("＋ Eigene Erklärung") }
+                        }
+                    }
+                }
+            }
+        }
+        if (sharedAvailable) ExtendedFloatingActionButton(
+            onClick = { newTerm = query.trim(); newText = ""; adding = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp),
+            text = { Text("Wort hinzufügen") }, icon = { Text("＋") },
+        )
+    }
+
+    if (adding) AlertDialog(
+        onDismissRequest = { adding = false },
+        title = { Text("Neues Wort") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(newTerm, { newTerm = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("Wort") }, singleLine = true)
+                OutlinedTextField(newText, { newText = it.take(2000) }, Modifier.fillMaxWidth().heightIn(min = 110.dp), label = { Text("Erklärung") })
+                Text(
+                    "Für alle sichtbar. Gibt es das Wort schon, wird deine Erklärung dort ergänzt.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(enabled = Dictionary.canSubmit(newTerm, newText) && !busy, onClick = {
+                val t = newTerm; val x = newText; adding = false
+                expanded = null
+                run { api!!.addGlossaryTerm(token!!, t, x) }
+            }) { Text("Eintragen") }
+        },
+        dismissButton = { TextButton(onClick = { adding = false }) { Text("Abbrechen") } },
+    )
+    explainFor?.let { term ->
+        ExplanationDialog("Erklärung zu „${term.term}“", draft, { draft = it }, busy, onDismiss = { explainFor = null }) {
+            val x = draft; explainFor = null
+            run { api!!.addGlossaryExplanation(token!!, term.id, x) }
+        }
+    }
+    editing?.let { ex ->
+        ExplanationDialog("Erklärung ändern", draft, { draft = it }, busy, onDismiss = { editing = null }) {
+            val x = draft; editing = null
+            run { api!!.editGlossaryExplanation(token!!, ex.id, x) }
         }
     }
 }
+
+@Composable
+private fun ExplanationDialog(title: String, value: String, onValue: (String) -> Unit, busy: Boolean, onDismiss: () -> Unit, onSave: () -> Unit) =
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { OutlinedTextField(value, { onValue(it.take(2000)) }, Modifier.fillMaxWidth().heightIn(min = 120.dp), label = { Text("Erklärung") }) },
+        confirmButton = { Button(enabled = value.isNotBlank() && !busy, onClick = onSave) { Text("Speichern") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
+    )
 
 @Composable
 fun TopicsHub(topics: List<ApiClient.Topic>, friends: List<ApiClient.UserSummary>, groups: List<ApiClient.Group>, onOpen: (TopicScope, String) -> Unit) {

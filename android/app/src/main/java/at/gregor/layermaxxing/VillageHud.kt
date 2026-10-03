@@ -69,6 +69,28 @@ internal object Kit {
     val parchmentBrush = Brush.verticalGradient(listOf(Color(0xFFFFF3D2), Parchment, ParchmentDark))
 }
 
+/**
+ * Keeps the overview calm: at normal zoom only buildings with something new
+ * (plus the selected one) wear a marker. Idle buildings stay tappable as painted
+ * houses and show their marker once the player zooms in.
+ */
+internal object VillageCalm {
+    fun visibleMarkers(counts: Map<ValleyDestination, Int>, closeUp: Boolean, selected: ValleyDestination?): Set<ValleyDestination> =
+        if (closeUp) ValleyDestination.entries.toSet()
+        else {
+            // Even on a busy day the overview carries at most MAX_ACTIVE news markers:
+            // the biggest piles of news win, the rest appear on zoom-in.
+            val busiest = ValleyDestination.entries.filter { (counts[it] ?: 0) > 0 && it !in ALWAYS }
+                .sortedByDescending { counts[it] ?: 0 }.take(MAX_ACTIVE)
+            (ALWAYS + busiest + listOfNotNull(selected)).toSet()
+        }
+
+    const val MAX_ACTIVE = 3
+
+    /** The meeting point is the messenger's door, so it is always marked. */
+    val ALWAYS = setOf(ValleyDestination.CONVERSATIONS)
+}
+
 /** What the village HUD shows about the player; all values come from existing data. */
 internal data class VillageHudInfo(
     val name: String = "Du",

@@ -209,6 +209,25 @@ def initialize_database() -> None:
             FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
             FOREIGN KEY(completed_by_id) REFERENCES users(id) ON DELETE SET NULL
         );
+        CREATE TABLE IF NOT EXISTS glossary_terms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            term TEXT NOT NULL,
+            term_key TEXT NOT NULL UNIQUE,
+            creator_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(creator_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS glossary_explanations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            term_id INTEGER NOT NULL,
+            author_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY(term_id) REFERENCES glossary_terms(id) ON DELETE CASCADE,
+            FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_glossary_expl_term ON glossary_explanations(term_id,created_at);
         CREATE INDEX IF NOT EXISTS idx_topics_creator ON topics(creator_id,completed_at,created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_topics_peer ON topics(peer_user_id,completed_at,created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_topics_group ON topics(group_id,completed_at,created_at DESC);
@@ -515,6 +534,15 @@ class TopicCreate(BaseModel):
 
 class TopicUpdate(BaseModel):
     completed: bool
+
+
+class GlossaryTermCreate(BaseModel):
+    term: str = Field(min_length=1, max_length=80)
+    explanation: str = Field(min_length=1, max_length=2000)
+
+
+class GlossaryExplanationWrite(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
 
 
 class ChatMessageCreate(BaseModel):
@@ -1303,6 +1331,105 @@ def delete_topic(topic_id: int, user: sqlite3.Row = Depends(current_user)) -> di
         if visible[0]["creator_id"] != user["id"]:
             raise HTTPException(403, "Nur der Ersteller kann das Thema löschen")
         conn.execute("DELETE FROM topics WHERE id=?", (topic_id,))
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Shared glossary: every signed-in user may add words and explanations.
+# Entries are deliberately public plaintext on this server (a community
+# dictionary, not private messages); only authors edit or delete their own text.
+# ---------------------------------------------------------------------------
+
+def glossary_key(term: str) -> str:
+    return " ".join(term.split()).casefold()
+
+
+def glossary_view(conn: sqlite3.Connection, user_id: int, term_id: int | None = None) -> list[dict]:
+    where = "WHERE t.id=?" if term_id is not None else ""
+    terms = conn.execute(f"""SELECT t.*,u.name creator_name FROM glossary_terms t
+                         JOIN users u ON u.id=t.creator_id {where} ORDER BY t.term_key""",
+                         (term_id,) if term_id is not None else ()).fetchall()
+    result = []
+    for t in terms:
+        rows = conn.execute("""SELECT e.*,u.name author_name FROM glossary_explanations e
+                            JOIN users u ON u.id=e.author_id WHERE e.term_id=? ORDER BY e.created_at,e.id""",
+                            (t["id"],)).fetchall()
+        result.append({
+            "id": t["id"], "term": t["term"], "creator_name": t["creator_name"], "created_at": t["created_at"],
+            "can_delete": t["creator_id"] == user_id and all(r["author_id"] == user_id for r in rows),
+            "explanations": [{
+                "id": r["id"], "text": r["text"], "author_name": r["author_name"],
+                "created_at": r["created_at"], "updated_at": r["updated_at"], "mine": r["author_id"] == user_id,
+            } for r in rows],
+        })
+    return result
+
+
+@app.get("/api/glossary")
+def list_glossary(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
+    with db() as conn:
+        return glossary_view(conn, user["id"])
+
+
+@app.post("/api/glossary", status_code=201)
+def create_glossary_term(payload: GlossaryTermCreate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    term, text = " ".join(payload.term.split()), payload.explanation.strip()
+    if not term or not text:
+        raise HTTPException(422, "Wort und Erklärung dürfen nicht leer sein")
+    ts = now_ts()
+    with db() as conn:
+        existing = conn.execute("SELECT id FROM glossary_terms WHERE term_key=?", (glossary_key(term),)).fetchone()
+        # An existing word gains another explanation instead of a duplicate entry.
+        term_id = existing["id"] if existing else int(conn.execute(
+            "INSERT INTO glossary_terms(term,term_key,creator_id,created_at) VALUES (?,?,?,?)",
+            (term, glossary_key(term), user["id"], ts)).lastrowid)
+        conn.execute("INSERT INTO glossary_explanations(term_id,author_id,text,created_at,updated_at) VALUES (?,?,?,?,?)",
+                     (term_id, user["id"], text, ts, ts))
+        return {"id": term_id, "merged": existing is not None}
+
+
+@app.post("/api/glossary/{term_id}/explanations", status_code=201)
+def add_glossary_explanation(term_id: int, payload: GlossaryExplanationWrite, user: sqlite3.Row = Depends(current_user)) -> dict:
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(422, "Erklärung darf nicht leer sein")
+    ts = now_ts()
+    with db() as conn:
+        if not conn.execute("SELECT 1 FROM glossary_terms WHERE id=?", (term_id,)).fetchone():
+            raise HTTPException(404, "Wort nicht gefunden")
+        cur = conn.execute("INSERT INTO glossary_explanations(term_id,author_id,text,created_at,updated_at) VALUES (?,?,?,?,?)",
+                           (term_id, user["id"], text, ts, ts))
+        return {"id": int(cur.lastrowid)}
+
+
+def own_explanation(conn: sqlite3.Connection, explanation_id: int, user_id: int) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM glossary_explanations WHERE id=?", (explanation_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Erklärung nicht gefunden")
+    if row["author_id"] != user_id:
+        raise HTTPException(403, "Nur der Verfasser kann diese Erklärung ändern")
+    return row
+
+
+@app.patch("/api/glossary/explanations/{explanation_id}")
+def edit_glossary_explanation(explanation_id: int, payload: GlossaryExplanationWrite, user: sqlite3.Row = Depends(current_user)) -> dict:
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(422, "Erklärung darf nicht leer sein")
+    with db() as conn:
+        own_explanation(conn, explanation_id, user["id"])
+        conn.execute("UPDATE glossary_explanations SET text=?,updated_at=? WHERE id=?", (text, now_ts(), explanation_id))
+    return {"ok": True}
+
+
+@app.delete("/api/glossary/explanations/{explanation_id}")
+def delete_glossary_explanation(explanation_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        row = own_explanation(conn, explanation_id, user["id"])
+        conn.execute("DELETE FROM glossary_explanations WHERE id=?", (explanation_id,))
+        # A word without any explanation left disappears with its last one.
+        if not conn.execute("SELECT 1 FROM glossary_explanations WHERE term_id=?", (row["term_id"],)).fetchone():
+            conn.execute("DELETE FROM glossary_terms WHERE id=?", (row["term_id"],))
     return {"ok": True}
 
 

@@ -689,8 +689,9 @@ private fun VillageWorld(
             },
             overlay = {
                 CloudShadows(reduced)
+                val visible = VillageCalm.visibleMarkers(activities.associate { it.destination to it.count }, closeUp, (pick as? VillagePick.Place)?.destination)
                 ValleyDestination.entries.forEachIndexed { i, d ->
-                    BuildingMarker(
+                    if (d in visible) BuildingMarker(
                         d.iconRes(), d.title, count(d)?.count ?: 0, d.anchor, this,
                         selected = pick == VillagePick.Place(d), showName = closeUp, reducedMotion = reduced,
                         phase = (i * .37f) % 1f,
@@ -735,6 +736,7 @@ private fun VillageWorld(
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (friendName == null) NamePlank("Tippe auf ein Gebäude", Modifier.padding(bottom = 6.dp), size = 12.sp)
             if (friendName != null) NamePlank(
                 if (onSwitchFriend != null) "Tal mit $friendName  ▾" else "Tal mit $friendName",
                 Modifier.padding(bottom = 6.dp)
@@ -750,15 +752,11 @@ private fun VillageWorld(
                     badge = post?.urgent ?: 0, size = 62.dp,
                 )
                 Spacer(Modifier.weight(1f))
-                RoundHudButton(
-                    R.drawable.ic_sparks, "Funken", { onDestination(ValleyDestination.SPARKS) },
-                    badge = count(ValleyDestination.SPARKS)?.count ?: 0, size = 52.dp,
-                )
+                // Everything else is a building: tap it in the world, not in a toolbar.
                 RoundHudButton(
                     R.drawable.ic_people, "Freunde", { onDestination(ValleyDestination.PEOPLE) },
                     badge = count(ValleyDestination.PEOPLE)?.count ?: 0, size = 52.dp,
                 )
-                RoundHudButton(R.drawable.ic_settings, "Gemeinde", { onDestination(ValleyDestination.SETTINGS) }, size = 52.dp)
             }
             }
         }
