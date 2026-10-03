@@ -294,13 +294,16 @@ fun LayerHome(
     // padding is exactly what produced the pale strips above and below the map.
     // Its own chrome reserves the insets it needs.
     val edgeToEdgePlace = tab == MainTab.CASTLES && hub == null && topicScope == null && openThreadFriend == null && !peopleOpen && !sparksOpen
+    val worldStyle = appMode == AppMode.GAME || tab == MainTab.CASTLES
+    val worldRoom = worldStyle && !edgeToEdgePlace
+    VillageTheme(worldStyle) {
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             // One chrome row, not a landscape of bars. The tab name is already on
             // the bottom navigation and the build number belongs in "Mehr", so the
             // only things left here are: who am I, and refresh.
-            if (!fullScreenPlace) AppChrome(
+            if (!fullScreenPlace && !worldStyle) AppChrome(
                 name = status?.name ?: store.name,
                 avatarEmoji = status?.avatarEmoji ?: "👤",
                 color = status?.displayColor?.let(::profileColor) ?: MaterialTheme.colorScheme.primary,
@@ -313,7 +316,7 @@ fun LayerHome(
             )
         },
         bottomBar = {
-            if (!fullScreenPlace) NavigationBar {
+            if (!fullScreenPlace && !worldStyle) NavigationBar {
                 tabs.forEach { item -> NavigationBarItem(
                     selected = tab == item, onClick = { tab = item; openThreadFriend = null }, icon = {
                         val count = when (item) {
@@ -334,6 +337,79 @@ fun LayerHome(
             if (edgeToEdgePlace) Modifier.fillMaxSize()
             else Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
         ) {
+            if (tab == MainTab.CASTLES) { villageStateHolder.SaveableStateProvider("village_${store.serverProfile.key}_${store.name}") { CastlesScreen(
+                    ownUserId = status?.userId, friends = friends, settings = friendshipSettings,
+                    ep = ep, letters = messages + outbox, builds = castleBuilds,
+                    creativeActive = creativeActive,
+                    onBuild = { friendId, step, earnedEp ->
+                        if (store.buildFiefStep(friendId, step, earnedEp, creativeActive)) {
+                            castleBuilds = store.fiefBuilds(creativeActive)
+                        }
+                    },
+                    onBack = { if (appMode == AppMode.GAME) hub = "settings" else tab = MainTab.CHATS },
+                    onPeople = { tab = MainTab.CASTLES; peopleOpen = true },
+                    onComposeLetter = { composeLetterFriend = it },
+                    letterAccess = { friendId ->
+                        LetterAccess.forSettings(friendshipSettings.firstOrNull { it.friendId == friendId })
+                    },
+                    opened = opened, act = ::act, token = token, api = api,
+                    onOpenLetter = ::openLetter, onLockedTap = ::lockedLetterTap,
+                    onProof = { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } },
+                    epLinkedLetterIds = EpOpportunities.linkedLetterIds(ep),
+                    dismissedEpLetters = dismissedEpLetters,
+                    onProposeEp = { epProposal = it },
+                    seenEarned = { friendId -> store.fiefSeenEarned(friendId) },
+                    onSeenEarned = { friendId, earned -> store.setFiefSeenEarned(friendId, earned) },
+                    topics = topics, onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
+                    onChat = { id -> tab = MainTab.CASTLES; openThreadFriend = id },
+                    onGroups = { hub = "groups" }, onGlossary = { hub = "glossary" },
+                    activities = VillageActivityModel.collect(
+                        conversations.sumOf { it.unreadChats }, topics.count { it.completedAt == null }, groups.size,
+                        Sparks.unopenedCount(sparkInbox), Conversations.postStatus(messages + outbox, opened.keys).urgent,
+                        requestInbox.count { it.kind == RequestKind.EP },
+                        requestInbox.count { it.kind == RequestKind.FRIEND }, requestInbox.count { it.kind == RequestKind.SETTINGS },
+                    ),
+                    hud = VillageHudInfo(
+                        name = status?.name ?: store.name, emoji = status?.avatarEmoji ?: "🙂",
+                        level = ep?.levelName ?: "Ebenen-Neuling", ep = ep?.received ?: 0,
+                        letters = (messages + outbox).size,
+                        exitLabel = if (appMode == AppMode.GAME) null else "Messenger",
+                    ),
+                    onDestination = { destination ->
+                        when (destination) {
+                            ValleyDestination.CONVERSATIONS -> hub = "conversations"
+                            ValleyDestination.TOPICS -> hub = "topics"
+                            ValleyDestination.GROUPS -> hub = "groups"
+                            ValleyDestination.PEOPLE -> peopleOpen = true
+                            ValleyDestination.GLOSSARY -> hub = "glossary"
+                            ValleyDestination.SPARKS -> sparksOpen = true
+                            ValleyDestination.ARCHIVE -> hub = "archive"
+                            ValleyDestination.EP -> hub = "ep"
+                            ValleyDestination.SETTINGS -> hub = "settings"
+                        }
+                    },
+                ) }
+            }
+            val roomPlace = when {
+                hub == "conversations" || openThreadFriend != null -> ValleyDestination.CONVERSATIONS
+                hub == "archive" -> ValleyDestination.ARCHIVE
+                hub == "ep" -> ValleyDestination.EP
+                hub == "settings" || hub == "accounts" -> ValleyDestination.SETTINGS
+                topicScope != null || hub == "topics" -> ValleyDestination.TOPICS
+                hub == "glossary" -> ValleyDestination.GLOSSARY
+                hub == "groups" -> ValleyDestination.GROUPS
+                sparksOpen -> ValleyDestination.SPARKS
+                peopleOpen -> ValleyDestination.PEOPLE
+                else -> ValleyDestination.SETTINGS
+            }
+            val roomTitle = when {
+                openThreadFriend != null -> friends.firstOrNull { it.id == openThreadFriend }?.name ?: roomPlace.title
+                topicScope != null -> topicName
+                hub == "accounts" -> "Konten"
+                else -> roomPlace.title
+            }
+            VillageRoom(worldRoom, mapBehind = tab == MainTab.CASTLES, icon = roomPlace.iconRes(), title = roomTitle, onClose = { hub = null; topicScope = null; openThreadFriend = null; peopleOpen = false; sparksOpen = false; tab = MainTab.CASTLES }) {
+            Box(Modifier.fillMaxSize()) {
             val threadFriend = openThreadFriend?.let { id -> friends.firstOrNull { it.id == id } }
             when {
                 hub == "conversations" -> SubScreen("Treffpunkt", onBack = { hub = null }, backLabel = "Tal") {
@@ -419,46 +495,7 @@ fun LayerHome(
                     onRecovery = { recoveryCode = it }, onProof = { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } },
                     onOpenLetter = ::openLetter, onLockedTap = ::lockedLetterTap, act = ::act,
                 )
-                tab == MainTab.CASTLES -> villageStateHolder.SaveableStateProvider("village_${store.serverProfile.key}_${store.name}") { CastlesScreen(
-                    ownUserId = status?.userId, friends = friends, settings = friendshipSettings,
-                    ep = ep, letters = messages + outbox, builds = castleBuilds,
-                    creativeActive = creativeActive,
-                    onBuild = { friendId, step, earnedEp ->
-                        if (store.buildFiefStep(friendId, step, earnedEp, creativeActive)) {
-                            castleBuilds = store.fiefBuilds(creativeActive)
-                        }
-                    },
-                    onBack = { tab = if (appMode == AppMode.GAME) MainTab.MORE else MainTab.CHATS },
-                    onPeople = { tab = appMode.startTab; peopleOpen = true },
-                    onComposeLetter = { composeLetterFriend = it },
-                    letterAccess = { friendId ->
-                        LetterAccess.forSettings(friendshipSettings.firstOrNull { it.friendId == friendId })
-                    },
-                    opened = opened, act = ::act, token = token, api = api,
-                    onOpenLetter = ::openLetter, onLockedTap = ::lockedLetterTap,
-                    onProof = { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } },
-                    epLinkedLetterIds = EpOpportunities.linkedLetterIds(ep),
-                    dismissedEpLetters = dismissedEpLetters,
-                    onProposeEp = { epProposal = it },
-                    seenEarned = { friendId -> store.fiefSeenEarned(friendId) },
-                    onSeenEarned = { friendId, earned -> store.setFiefSeenEarned(friendId, earned) },
-                    topics = topics, onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
-                    onChat = { id -> tab = appMode.startTab; openThreadFriend = id },
-                    onGroups = { hub = "groups" }, onGlossary = { hub = "glossary" },
-                    onDestination = { destination ->
-                        when (destination) {
-                            ValleyDestination.CONVERSATIONS -> hub = "conversations"
-                            ValleyDestination.TOPICS -> hub = "topics"
-                            ValleyDestination.GROUPS -> hub = "groups"
-                            ValleyDestination.PEOPLE -> peopleOpen = true
-                            ValleyDestination.GLOSSARY -> hub = "glossary"
-                            ValleyDestination.SPARKS -> sparksOpen = true
-                            ValleyDestination.ARCHIVE -> hub = "archive"
-                            ValleyDestination.EP -> hub = "ep"
-                            ValleyDestination.SETTINGS -> hub = "settings"
-                        }
-                    },
-                ) }
+                tab == MainTab.CASTLES -> Unit
             }
             if (busy) CircularProgressIndicator(Modifier.align(Alignment.Center))
             currentDialog?.let { request -> RequestDialog(
@@ -483,6 +520,7 @@ fun LayerHome(
                 Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.onErrorContainer)
                 TextButton(onClick = { error = null }) { Text("Schließen") }
             } } }
+            } }
         }
     }
     composeLetterFriend?.let { friendId ->
@@ -516,6 +554,7 @@ fun LayerHome(
     if (fogVisible) FogOverlay {
         fogVisible = false
         lockedTapTracker.reset()
+    }
     }
     }
 }
@@ -2342,7 +2381,15 @@ private fun SubScreen(
     content: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (LocalInVillageRoom.current) {
+            // Inside a building the room header already names the place; only a
+            // wooden step back remains, and none at all when it would just leave.
+            if (backLabel != "Tal") Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 8.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                NamePlank("‹ $backLabel", Modifier.heightIn(min = 32.dp).clickable(onClick = onBack), size = 13.sp)
+                Spacer(Modifier.width(10.dp))
+                Text(title, Modifier.weight(1f), fontWeight = FontWeight.Black, color = Kit.Ink, maxLines = 1)
+            }
+        } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { Text("← $backLabel") }
             Text(title, Modifier.weight(1f), fontWeight = FontWeight.Bold)
         }

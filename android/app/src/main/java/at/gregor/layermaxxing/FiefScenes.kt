@@ -632,6 +632,13 @@ object FiefMap {
         return MapSize(image.width * factor, image.height * factor)
     }
 
+    /** Zoom at which the fitted plate fills the viewport on both axes (no letterbox). */
+    fun coverZoom(viewport: MapSize, image: MapSize): Float {
+        val fitted = fittedSize(viewport, image)
+        if (fitted.width <= 0f || fitted.height <= 0f) return 1f
+        return max(viewport.width / fitted.width, viewport.height / fitted.height).coerceAtLeast(1f)
+    }
+
     fun clampPan(viewport: MapSize, image: MapSize, zoom: Float, pan: MapPoint): MapPoint {
         val fitted = fittedSize(viewport, image)
         val maxX = max(0f, (fitted.width * zoom - viewport.width) / 2f)

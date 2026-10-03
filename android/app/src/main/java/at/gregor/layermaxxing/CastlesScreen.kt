@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -119,7 +120,8 @@ internal fun CastlesScreen(
     onSeenEarned: (Long, Int) -> Unit,
     topics: List<ApiClient.Topic>, onTopics: (Long) -> Unit, onChat: (Long) -> Unit,
     onGroups: () -> Unit, onGlossary: () -> Unit,
-    onDestination: (ValleyDestination) -> Unit,
+    onDestination: (ValleyDestination) -> Unit, activities: List<VillageActivity>,
+    hud: VillageHudInfo = VillageHudInfo(),
 ) {
     // Sound follows the same "removed animations" switch as the idle motion: with
     // animations off the valley falls silent instead of ticking and thudding.
@@ -130,7 +132,7 @@ internal fun CastlesScreen(
             ownUserId, friends, settings, ep, letters, builds, creativeActive, onBuild, onBack, onPeople,
             onComposeLetter, letterAccess, opened, act, token, api, onOpenLetter, onLockedTap,
             onProof, epLinkedLetterIds, dismissedEpLetters, onProposeEp, seenEarned, onSeenEarned,
-            topics, onTopics, onChat, onGroups, onGlossary, onDestination,
+            topics, onTopics, onChat, onGroups, onGlossary, onDestination, activities, hud,
         )
     }
 }
@@ -163,7 +165,8 @@ private fun CastlesScreenContent(
     onSeenEarned: (Long, Int) -> Unit,
     topics: List<ApiClient.Topic>, onTopics: (Long) -> Unit, onChat: (Long) -> Unit,
     onGroups: () -> Unit, onGlossary: () -> Unit,
-    onDestination: (ValleyDestination) -> Unit,
+    onDestination: (ValleyDestination) -> Unit, activities: List<VillageActivity>,
+    hud: VillageHudInfo,
 ) {
     val lockedByFriend = letters.filter { !it.unlocked }.groupingBy { it.peerId }.eachCount()
     val vales = Castles.vales(
@@ -203,7 +206,7 @@ private fun CastlesScreenContent(
     }
 
     if (vale == null) {
-        EmptyValley(onBack = onBack, onPeople = onPeople, onDestination = onDestination)
+        EmptyValley(onBack = onBack, onDestination = onDestination, activities = activities, hud = hud)
         return
     }
     val built = vale.built
@@ -225,9 +228,9 @@ private fun CastlesScreenContent(
                 onVisitFriend = { place = CastlePlace.FRIEND },
                 onSignpost = { sheet = FiefSheet.Signpost },
                 onDelivery = { letterId -> focusLetterId = letterId; place = CastlePlace.BOARD },
-                onTopics = { onTopics(vale.friendId) }, onChat = { onChat(vale.friendId) },
-                onGroups = onGroups, onGlossary = onGlossary, onDestination = onDestination,
-                openTopics = TopicScope.friend(vale.friendId).filter(topics).count { it.completedAt == null },
+                onChat = { onChat(vale.friendId) },
+                onDestination = onDestination, activities = activities,
+                hud = hud, multipleFriends = vales.size > 1,
             )
             CastlePlace.FRIEND -> FriendCourtScreen(
                 vale = vale,
@@ -345,6 +348,9 @@ private fun SceneMap(
     onSprite: (SceneSprite) -> Unit,
     onPinchOut: (() -> Unit)? = null,
     overlay: @Composable (PlateScope.() -> Unit)? = null,
+    /** Fill the whole screen with the painting (no letterbox), like a game camera. */
+    cover: Boolean = false,
+    onBackgroundTap: (() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
@@ -357,18 +363,29 @@ private fun SceneMap(
     var settled by remember(scene.id) { mutableStateOf(false) }
     val minTouchPx = with(density) { 48.dp.toPx() }
 
+    val baseZoom = if (cover) FiefMap.coverZoom(viewport, scene.image) else 1f
     LaunchedEffect(viewport, scene.id) {
         if (viewport.width > 0f && !settled) {
+            zoom = initialZoom * baseZoom
             initialFocus?.let { pan = FiefMap.focusPan(it, viewport, scene.image, zoom) }
             settled = true
         }
+        zoom = zoom.coerceIn(FiefMap.MIN_ZOOM * baseZoom, scene.maxZoom * baseZoom)
         pan = FiefMap.clampPan(viewport, scene.image, zoom, pan)
     }
 
+    // The camera glides to a focused building instead of cutting to it.
     LaunchedEffect(focusToken) {
         if (focusToken > 0 && viewport.width > 0f && initialFocus != null) {
-            zoom = initialZoom
-            pan = FiefMap.focusPan(initialFocus, viewport, scene.image, initialZoom)
+            val targetZoom = (initialZoom * baseZoom).coerceIn(FiefMap.MIN_ZOOM * baseZoom, scene.maxZoom * baseZoom)
+            val targetPan = FiefMap.focusPan(initialFocus, viewport, scene.image, targetZoom)
+            if (reducedMotion) { zoom = targetZoom; pan = targetPan; return@LaunchedEffect }
+            val fromZoom = zoom
+            val fromPan = pan
+            androidx.compose.animation.core.animate(0f, 1f, animationSpec = tween(520, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { t, _ ->
+                zoom = fromZoom + (targetZoom - fromZoom) * t
+                pan = MapPoint(fromPan.x + (targetPan.x - fromPan.x) * t, fromPan.y + (targetPan.y - fromPan.y) * t)
+            }
         }
     }
 
@@ -403,7 +420,7 @@ private fun SceneMap(
             .onSizeChanged { viewport = MapSize(it.width.toFloat(), it.height.toFloat()) }
             .pointerInput(scene.id, viewport) {
                 detectTransformGestures { centroid, gesturePan, gestureZoom, _ ->
-                    val nextZoom = (zoom * gestureZoom).coerceIn(FiefMap.MIN_ZOOM, scene.maxZoom)
+                    val nextZoom = (zoom * gestureZoom).coerceIn(FiefMap.MIN_ZOOM * baseZoom, scene.maxZoom * baseZoom)
                     val ratio = nextZoom / zoom
                     val centerX = viewport.width / 2f
                     val centerY = viewport.height / 2f
@@ -412,13 +429,13 @@ private fun SceneMap(
                         pan.y + gesturePan.y + (centroid.y - centerY - pan.y) * (1f - ratio),
                     )
                     // Pinching below the minimum on a nested scene steps one level out.
-                    if (onPinchOut != null && gestureZoom < 1f && zoom <= FiefMap.MIN_ZOOM + .001f) onPinchOut()
+                    if (onPinchOut != null && gestureZoom < 1f && zoom <= FiefMap.MIN_ZOOM * baseZoom + .001f) onPinchOut()
                     zoom = nextZoom
                     pan = FiefMap.clampPan(viewport, scene.image, nextZoom, focused)
                 }
             }
             .pointerInput(scene.id, viewport, zoom, pan) {
-                detectTapGestures(onDoubleTap = { offset ->
+                detectTapGestures(onTap = { onBackgroundTap?.invoke() }, onDoubleTap = { offset ->
                     val hit = FiefMap.hitTest(
                         MapPoint(offset.x, offset.y), viewport, scene.image, zoom, pan, scene.sprites, minTouchPx,
                     )
@@ -426,7 +443,7 @@ private fun SceneMap(
                         onSprite(hit)
                     } else {
                         // Smart zoom towards the tapped spot, and back out again.
-                        val target = if (zoom > 1.2f) 1f else minOf(1.8f, scene.maxZoom)
+                        val target = if (zoom > 1.2f * baseZoom) baseZoom else minOf(1.8f, scene.maxZoom) * baseZoom
                         val ratio = target / zoom
                         val focused = MapPoint(
                             pan.x + (offset.x - viewport.width / 2f - pan.x) * (1f - ratio),
@@ -442,7 +459,7 @@ private fun SceneMap(
         if (fitted.width <= 0f) return@Box
         val plateWidth = with(density) { fitted.width.toDp() }
         val plateHeight = with(density) { fitted.height.toDp() }
-        val scope = PlateScope(plateWidth, plateHeight)
+        val scope = PlateScope(plateWidth, plateHeight, zoom, closeUp = zoom >= baseZoom * 1.55f)
 
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(
@@ -514,7 +531,7 @@ private fun SceneMap(
 }
 
 /** Plate-relative placement for sprites and for the close-up scenes. */
-private class PlateScope(val width: Dp, val height: Dp) {
+internal class PlateScope(val width: Dp, val height: Dp, val zoom: Float = 1f, val closeUp: Boolean = false) {
     fun Modifier.at(point: MapPoint, spriteWidth: Dp, spriteHeight: Dp, pivotY: Float = 1f): Modifier =
         offset(width * point.x - spriteWidth / 2, height * point.y - spriteHeight * pivotY)
 }
@@ -594,52 +611,191 @@ private fun ValleyScreen(
     onVisitFriend: () -> Unit,
     onSignpost: () -> Unit,
     onDelivery: (Long) -> Unit,
-    onTopics: () -> Unit, onChat: () -> Unit, onGroups: () -> Unit, onGlossary: () -> Unit,
-    onDestination: (ValleyDestination) -> Unit,
-    openTopics: Int,
+    onChat: () -> Unit,
+    onDestination: (ValleyDestination) -> Unit, activities: List<VillageActivity>,
+    hud: VillageHudInfo,
+    multipleFriends: Boolean,
 ) {
-    val scene = remember(vale.friendName) { VillageScenes.valley(vale.friendName) }
-    var homeToken by remember(vale.friendId) { mutableStateOf(0) }
-    var dockHeight by remember { mutableStateOf(0) }
-    val dockDensity = LocalDensity.current
-    var mapFocus by remember(vale.friendId) { mutableStateOf(MapPoint(.5f, .5f)) }
-    var focusZoom by remember(vale.friendId) { mutableStateOf(1f) }
-    fun center(point: MapPoint, zoom: Float) { mapFocus = point; focusZoom = zoom; homeToken += 1 }
-    val revealAnchor = justBuilt?.let(FiefScenes::valleyRevealAnchor)
-    Box(Modifier.fillMaxSize()) {
+    VillageWorld(
+        friendName = vale.friendName, creative = vale.creative, hud = hud, post = post, builtCount = built.size,
+        activities = activities, deliveries = deliveries, justBuilt = justBuilt, onRevealed = onRevealed,
+        onBack = onBack, onEnterCourtyard = onEnterCourtyard, onVisitFriend = onVisitFriend, onFriendChat = onChat,
+        onSwitchFriend = if (multipleFriends) onSignpost else null,
+        onDelivery = onDelivery, onDestination = onDestination,
+    )
+}
+
+private sealed interface VillagePick {
+    data class Place(val destination: ValleyDestination) : VillagePick
+    data object Home : VillagePick
+    data object Friend : VillagePick
+}
+
+/**
+ * The whole village as one game screen: full-bleed painting under a floating
+ * HUD, painted building markers with live counters, a gliding camera and a
+ * selection card. Tapping a building selects it (the camera glides there and
+ * a card rises); the card's button walks in. Nothing here is a separate menu.
+ */
+@Composable
+private fun VillageWorld(
+    friendName: String?,
+    creative: Boolean,
+    hud: VillageHudInfo,
+    post: PostStatus?,
+    builtCount: Int,
+    activities: List<VillageActivity>,
+    deliveries: List<FiefScenes.DeliveryStop>,
+    justBuilt: BuildStep?,
+    onRevealed: () -> Unit,
+    onBack: () -> Unit,
+    onEnterCourtyard: (() -> Unit)?,
+    onVisitFriend: () -> Unit,
+    onFriendChat: (() -> Unit)?,
+    onSwitchFriend: (() -> Unit)?,
+    onDelivery: (Long) -> Unit,
+    onDestination: (ValleyDestination) -> Unit,
+) {
+    val scene = remember(friendName) { VillageScenes.valley(friendName) }
+    val reduced = rememberReducedMotion()
+    var pick by remember(friendName) { mutableStateOf<VillagePick?>(null) }
+    var shown by remember { mutableStateOf<VillagePick?>(null) }
+    if (pick != null) shown = pick
+    var token by remember(friendName) { mutableStateOf(0) }
+    var focus by remember(friendName) { mutableStateOf(MapPoint(.5f, .5f)) }
+    var focusZoom by remember(friendName) { mutableStateOf(1f) }
+    fun select(p: VillagePick, at: MapPoint) {
+        pick = p
+        // Keep the building above the rising card: aim the camera a bit below it.
+        focus = MapPoint(at.x, (at.y + .07f).coerceAtMost(1f)); focusZoom = 1.75f; token += 1
+    }
+    fun count(d: ValleyDestination) = activities.firstOrNull { it.destination == d }
+    BackHandler(enabled = pick != null) { pick = null }
+
+    Box(Modifier.fillMaxSize().background(FIEF_BACKDROP)) {
         SceneMap(
             scene = scene,
-            modifier = Modifier.padding(bottom = with(dockDensity) { dockHeight.toDp() }),
-            initialFocus = mapFocus,
+            cover = true,
+            initialFocus = focus,
             initialZoom = focusZoom,
-            focusToken = homeToken,
+            focusToken = token,
+            onBackgroundTap = { pick = null },
             onSprite = { sprite ->
                 when (sprite.id) {
-                    "home" -> onEnterCourtyard()
-                    "friend" -> onVisitFriend()
-                    "signpost", "PEOPLE" -> onSignpost()
-                    else -> ValleyDestination.entries.firstOrNull { it.name == sprite.id }?.let(onDestination)
+                    "home" -> select(VillagePick.Home, VillageScenes.HOME)
+                    "friend" -> select(VillagePick.Friend, VillageScenes.FRIEND)
+                    else -> ValleyDestination.entries.firstOrNull { it.name == sprite.id }?.let { select(VillagePick.Place(it), it.anchor) }
                 }
             },
             overlay = {
-                ValleyDestination.entries.forEach { destination ->
-                    PlaceSign(destination.label, null, MapPoint(destination.anchor.x, destination.anchor.y + .065f), this)
+                CloudShadows(reduced)
+                ValleyDestination.entries.forEachIndexed { i, d ->
+                    BuildingMarker(
+                        d.iconRes(), d.title, count(d)?.count ?: 0, d.anchor, this,
+                        selected = pick == VillagePick.Place(d), showName = closeUp, reducedMotion = reduced,
+                        phase = (i * .37f) % 1f,
+                    )
                 }
-                PlaceSign("Dein Hof", post, MapPoint(VillageScenes.HOME.x, .735f), this, subline = "${built.size} Ausbauten")
-                PlaceSign(vale.friendName, null, MapPoint(VillageScenes.FRIEND.x, .735f), this, subline = "besuchen")
+                BuildingMarker(
+                    R.drawable.ic_home, "Dein Hof", post?.urgent ?: 0, VillageScenes.HOME, this,
+                    selected = pick == VillagePick.Home, showName = true, reducedMotion = reduced, phase = .2f,
+                )
+                BuildingMarker(
+                    if (friendName != null) R.drawable.ic_home else R.drawable.ic_people,
+                    friendName ?: "Freunde finden", 0, VillageScenes.FRIEND, this,
+                    selected = pick == VillagePick.Friend, showName = true, reducedMotion = reduced, phase = .7f,
+                )
+                deliveries.forEach { stop ->
+                    CourierWalker(VillageActivityModel.courierPoint(stop.roadPosition), this, stop.label, reduced) { onDelivery(stop.letterId) }
+                }
+                ActivityBursts(activities, this, reduced)
                 if (justBuilt != null) DustReveal(VillageScenes.HOME, onRevealed)
             },
         )
-        FiefPlaceBar("Zurück zur Übersicht", onBack, "Tal mit ${vale.friendName}", vale.creative)
-        ValleyDashboard(
-            post = post, openTopics = openTopics,
-            onOverview = { center(MapPoint(.5f, .5f), 1f) },
-            onHomeFocus = { center(VillageScenes.HOME, 1.6f) },
-            onFriendFocus = { center(VillageScenes.FRIEND, 1.6f) },
-            onHome = onEnterCourtyard, onChat = onChat, onTopics = onTopics,
-            guide = { VillageDirectory({ d -> if (d == ValleyDestination.PEOPLE) onSignpost() else onDestination(d) }, onEnterCourtyard, onVisitFriend) },
-            modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { dockHeight = it.height }.navigationBarsPadding().padding(12.dp),
-        )
+        WorldVignette()
+
+        // ---- top HUD: one compact row, like a game's status bar ------------
+        Row(
+            Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PlayerPlate(hud.emoji, hud.name, hud.level)
+            if (creative) { Spacer(Modifier.width(4.dp)); CreativeTag() }
+            Spacer(Modifier.weight(1f))
+            ResourcePill(R.drawable.ic_letter, "${hud.letters}", "Briefe") { onDestination(ValleyDestination.ARCHIVE) }
+            Spacer(Modifier.width(2.dp))
+            ResourcePill(R.drawable.ic_ep, "${hud.ep}", "Ebenen-Punkte") { onDestination(ValleyDestination.EP) }
+        }
+
+        // ---- bottom: action buttons, or the selected building's card --------
+        androidx.compose.animation.AnimatedVisibility(
+            visible = pick == null,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 },
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it / 2 },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (friendName != null) NamePlank(
+                if (onSwitchFriend != null) "Tal mit $friendName  ▾" else "Tal mit $friendName",
+                Modifier.padding(bottom = 6.dp)
+                    .then(if (onSwitchFriend != null) Modifier.clickable(onClick = onSwitchFriend) else Modifier)
+                    .semantics { contentDescription = "Freundschaft wechseln"; role = Role.Button },
+                size = 13.sp,
+            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                hud.exitLabel?.let { RoundHudButton(R.drawable.ic_chat, it, onBack, size = 52.dp) }
+                RoundHudButton(
+                    R.drawable.ic_home, "Mein Hof",
+                    { onEnterCourtyard?.invoke() ?: select(VillagePick.Home, VillageScenes.HOME) },
+                    badge = post?.urgent ?: 0, size = 62.dp,
+                )
+                Spacer(Modifier.weight(1f))
+                RoundHudButton(
+                    R.drawable.ic_sparks, "Funken", { onDestination(ValleyDestination.SPARKS) },
+                    badge = count(ValleyDestination.SPARKS)?.count ?: 0, size = 52.dp,
+                )
+                RoundHudButton(
+                    R.drawable.ic_people, "Freunde", { onDestination(ValleyDestination.PEOPLE) },
+                    badge = count(ValleyDestination.PEOPLE)?.count ?: 0, size = 52.dp,
+                )
+                RoundHudButton(R.drawable.ic_settings, "Gemeinde", { onDestination(ValleyDestination.SETTINGS) }, size = 52.dp)
+            }
+            }
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = pick != null,
+            enter = androidx.compose.animation.slideInVertically(androidx.compose.animation.core.spring(dampingRatio = .72f, stiffness = 420f)) { it } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            val current = shown
+            val cardModifier = Modifier.navigationBarsPadding().padding(10.dp)
+            when (current) {
+                is VillagePick.Place -> {
+                    val d = current.destination
+                    val news = count(d)?.let { "${it.count} neu · ${it.label}" }
+                    BuildingCard(d.iconRes(), null, d.title, d.detail, news, "Betreten",
+                        { pick = null; onDestination(d) }, { pick = null }, cardModifier)
+                }
+                VillagePick.Home -> if (onEnterCourtyard != null) BuildingCard(
+                    R.drawable.ic_home, null, "Dein Hof", "Poststelle, Schatzkammer und Ausbau · $builtCount Ausbauten",
+                    post?.takeIf { it.urgent > 0 }?.let { "${it.urgent} Briefe bereit oder warten auf dich" },
+                    "Betreten", { pick = null; onEnterCourtyard() }, { pick = null }, cardModifier,
+                ) else BuildingCard(
+                    R.drawable.ic_home, null, "Dein Hof", "Dein Hof wächst mit deiner ersten Freundschaft.", null,
+                    "Freunde", { pick = null; onDestination(ValleyDestination.PEOPLE) }, { pick = null }, cardModifier,
+                )
+                VillagePick.Friend -> if (friendName != null) BuildingCard(
+                    R.drawable.ic_home, null, "Hof von $friendName", "Besuchen zeigt nur Geteiltes – kein Zugriff auf das andere Gerät.", null,
+                    "Besuchen", { pick = null; onVisitFriend() }, { pick = null }, cardModifier,
+                    secondary = onFriendChat?.let { chat -> "Chat" to { pick = null; chat() } },
+                ) else BuildingCard(
+                    R.drawable.ic_people, null, "Freunde finden", "Hier zieht deine erste Freundschaft ein.", null,
+                    "Suchen", { pick = null; onDestination(ValleyDestination.PEOPLE) }, { pick = null }, cardModifier,
+                )
+                null -> Unit
+            }
+        }
     }
 }
 
@@ -1356,17 +1512,7 @@ private fun BoxScope.FiefPlaceBar(
 /** The carved name plate of a place. A label, never a button. */
 @Composable
 private fun WoodPlate(text: String) {
-    Surface(
-        shape = RoundedCornerShape(9.dp),
-        color = Color(0xE64A3F2E),
-        contentColor = Color(0xFFF2E7D0),
-        shadowElevation = 3.dp,
-    ) {
-        Text(
-            text, Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-        )
-    }
+    NamePlank(text, Modifier.padding(vertical = 4.dp), size = 16.sp)
 }
 
 /** The one visible mark of creative mode inside the valley. */
@@ -1514,16 +1660,16 @@ private fun WoodSign(label: String, reason: String, point: MapPoint, scope: Plat
 @Composable
 private fun WoodToken(glyph: String, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val sounds = LocalFiefSounds.current
-    Surface(
+    Box(
         modifier = modifier.navigationBarsPadding().padding(10.dp).size(48.dp)
+            .shadow(5.dp, CircleShape)
+            .background(Kit.goldBrush, CircleShape).padding(3.dp)
+            .background(Kit.woodBrush, CircleShape)
             .semantics { contentDescription = description; role = Role.Button }
             .pointerInput(description) { detectTapGestures(onTap = { sounds?.play(FiefSound.TICK); onClick() }) },
-        shape = CircleShape,
-        color = Color(0xE64A3F2E),
-        contentColor = Color(0xFFF2E7D0),
-        shadowElevation = 4.dp,
+        contentAlignment = Alignment.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) { Text(glyph, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+        GameText(glyph, size = 22.sp)
     }
 }
 
@@ -1546,21 +1692,16 @@ private fun FiefSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun EmptyValley(onBack: () -> Unit, onPeople: () -> Unit, onDestination: (ValleyDestination) -> Unit) {
-    val scene = remember { VillageScenes.valley(null) }
-    Box(Modifier.fillMaxSize()) {
-        SceneMap(scene, onSprite = { sprite ->
-            when (sprite.id) {
-                "home" -> onDestination(ValleyDestination.SETTINGS)
-                "friend" -> onPeople()
-                else -> ValleyDestination.entries.firstOrNull { it.name == sprite.id }?.let(onDestination)
-            }
-        }, overlay = {
-            ValleyDestination.entries.forEach { d -> PlaceSign(d.label, null, MapPoint(d.anchor.x, d.anchor.y + .065f), this) }
-        })
-        FiefPlaceBar("Zurück", onBack, "Dein Dorf", false)
-        androidx.compose.material3.FilledTonalButton(onClick = onPeople, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp)) { Text("Freunde hinzufügen · alle Dorf-Orte sind bereits erreichbar") }
-    }
+private fun EmptyValley(
+    onBack: () -> Unit, onDestination: (ValleyDestination) -> Unit,
+    activities: List<VillageActivity>, hud: VillageHudInfo,
+) {
+    VillageWorld(
+        friendName = null, creative = false, hud = hud, post = null, builtCount = 0,
+        activities = activities, deliveries = emptyList(), justBuilt = null, onRevealed = {},
+        onBack = onBack, onEnterCourtyard = null, onVisitFriend = { onDestination(ValleyDestination.PEOPLE) },
+        onFriendChat = null, onSwitchFriend = null, onDelivery = {}, onDestination = onDestination,
+    )
 }
 
 private fun Modifier.clickableRow(onClick: () -> Unit): Modifier =
