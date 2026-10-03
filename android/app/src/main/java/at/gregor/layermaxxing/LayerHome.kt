@@ -139,6 +139,7 @@ fun LayerHome(
     accounts: List<SavedAccount>, onAddAccount: () -> Unit, onSwitchAccount: (SavedAccount) -> Unit,
     serverProfile: ServerProfile, onServerProfile: (ServerProfile) -> Unit,
 ) {
+    val villageStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var appMode by remember(token) { mutableStateOf(store.appMode) }
     var tab by remember(token) { mutableStateOf(store.appMode.startTab) }
     var openThreadFriend by remember { mutableStateOf<Long?>(null) }
@@ -335,6 +336,26 @@ fun LayerHome(
         ) {
             val threadFriend = openThreadFriend?.let { id -> friends.firstOrNull { it.id == id } }
             when {
+                hub == "conversations" -> SubScreen("Treffpunkt", onBack = { hub = null }, backLabel = "Tal") {
+                    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        item { Text("Gespräche öffnen – Regeln, Briefe und Themen bleiben im Gespräch erreichbar.") }
+                        item { OutlinedButton(onClick = { hub = null; peopleOpen = true }) { Text("Freunde finden und verwalten") } }
+                        if (conversations.isEmpty()) item { Text("Noch keine Gespräche. Füge am Wegweiser Freunde hinzu.") }
+                        items(conversations, key = { it.friendId }) { c -> ConversationRow(c) { id -> hub = null; openThreadFriend = id } }
+                    }
+                }
+                hub == "archive" -> SubScreen("Postarchiv", onBack = { hub = null }, backLabel = "Tal") {
+                    InboxScreen(messages, outbox, opened, token, api, ::act, ::openLetter, ::lockedLetterTap, { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } })
+                }
+                hub == "ep" -> SubScreen("EP-Verwaltung", onBack = { hub = null }, backLabel = "Tal") {
+                    EpScreen(token, api, friendshipSettings, ep, draft = null, onDraftConsumed = {}, act = ::act)
+                }
+                hub == "accounts" -> SubScreen("Konten", onBack = { hub = "settings" }, backLabel = "Gemeindehaus") {
+                    LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
+                        items(accounts, key = { it.token }) { account -> TextButton(onClick = { onSwitchAccount(account) }) { Text(account.name) } }
+                        item { Button(onClick = onAddAccount) { Text("Konto hinzufügen") } }
+                    }
+                }
                 topicScope != null -> SubScreen(topicName, onBack = { topicScope = null }, backLabel = "Zurück") {
                     TopicsScreen(topics, ApiClient.UserSummary(topicScope!!.id ?: 0, topicName), token, api, ::act, scope = topicScope!!)
                 }
@@ -385,18 +406,20 @@ fun LayerHome(
                     onGlossary = { hub = "glossary" }, onValley = { store.setCastleExperiment(true); castleExperiment = true; tab = MainTab.CASTLES },
                     groupCount = groups.size, topicCount = topics.count { it.completedAt == null }, showValley = appMode.showsValley,
                 )
-                tab == MainTab.MORE -> MoreScreen(
+                tab == MainTab.MORE || hub == "settings" -> MoreScreen(
                     token, api, store, status, sessions, blocked, messages, outbox, ep,
                     friendshipSettings, opened, onTheme, onLogout, serverProfile, onServerProfile,
+                    onExit = if (hub == "settings") ({ hub = null }) else null,
+                    onAccounts = { hub = "accounts" },
                     castleExperiment = castleExperiment,
-                    onCastleExperiment = { store.setCastleExperiment(it); castleExperiment = it; appMode = store.appMode; tab = appMode.startTab },
+                    onCastleExperiment = { store.setCastleExperiment(it); castleExperiment = it; appMode = store.appMode; tab = appMode.startTab; hub = null; topicScope = null },
                     creativeEligible = creativeEligible,
                     creativeSwitch = creativeSwitch,
                     onCreativeSwitch = { store.setCreativeMode(it); creativeSwitch = it },
                     onRecovery = { recoveryCode = it }, onProof = { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } },
                     onOpenLetter = ::openLetter, onLockedTap = ::lockedLetterTap, act = ::act,
                 )
-                tab == MainTab.CASTLES -> CastlesScreen(
+                tab == MainTab.CASTLES -> villageStateHolder.SaveableStateProvider("village_${store.serverProfile.key}_${store.name}") { CastlesScreen(
                     ownUserId = status?.userId, friends = friends, settings = friendshipSettings,
                     ep = ep, letters = messages + outbox, builds = castleBuilds,
                     creativeActive = creativeActive,
@@ -422,7 +445,20 @@ fun LayerHome(
                     topics = topics, onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
                     onChat = { id -> tab = appMode.startTab; openThreadFriend = id },
                     onGroups = { hub = "groups" }, onGlossary = { hub = "glossary" },
-                )
+                    onDestination = { destination ->
+                        when (destination) {
+                            ValleyDestination.CONVERSATIONS -> hub = "conversations"
+                            ValleyDestination.TOPICS -> hub = "topics"
+                            ValleyDestination.GROUPS -> hub = "groups"
+                            ValleyDestination.PEOPLE -> peopleOpen = true
+                            ValleyDestination.GLOSSARY -> hub = "glossary"
+                            ValleyDestination.SPARKS -> sparksOpen = true
+                            ValleyDestination.ARCHIVE -> hub = "archive"
+                            ValleyDestination.EP -> hub = "ep"
+                            ValleyDestination.SETTINGS -> hub = "settings"
+                        }
+                    },
+                ) }
             }
             if (busy) CircularProgressIndicator(Modifier.align(Alignment.Center))
             currentDialog?.let { request -> RequestDialog(
@@ -2274,6 +2310,7 @@ private fun MoreScreen(
     creativeEligible: Boolean, creativeSwitch: Boolean, onCreativeSwitch: (Boolean) -> Unit,
     onRecovery: (String) -> Unit, onProof: (ApiClient.Message) -> Unit, onOpenLetter: (ApiClient.Message) -> Unit,
     onLockedTap: (ApiClient.Message) -> Unit, act: ((suspend () -> Unit) -> Unit),
+    onExit: (() -> Unit)? = null, onAccounts: (() -> Unit)? = null,
 ) {
     var dest by remember { mutableStateOf<MoreDest?>(null) }
     BackHandler(enabled = dest != null) { dest = null }
@@ -2284,10 +2321,16 @@ private fun MoreScreen(
         MoreDest.EP -> SubScreen("Ebenen-Punkte", onBack = { dest = null }) {
             EpScreen(token, api, settings, ep, draft = null, onDraftConsumed = {}, act = act)
         }
-        null -> MoreHub(token, api, store, status, sessions, blocked, ep, onTheme, onLogout,
-            serverProfile, onServerProfile, castleExperiment, onCastleExperiment,
-            creativeEligible, creativeSwitch, onCreativeSwitch, onRecovery,
-            onDest = { dest = it }, act = act)
+        null -> Column(Modifier.fillMaxSize()) {
+            if (onExit != null) Row(Modifier.fillMaxWidth()) {
+                TextButton(onClick = onExit) { Text("← Tal") }
+                if (onAccounts != null) TextButton(onClick = onAccounts) { Text("Konten wechseln") }
+            }
+            Box(Modifier.weight(1f)) { MoreHub(token, api, store, status, sessions, blocked, ep, onTheme, onLogout,
+                serverProfile, onServerProfile, castleExperiment, onCastleExperiment,
+                creativeEligible, creativeSwitch, onCreativeSwitch, onRecovery,
+                onDest = { dest = it }, act = act) }
+        }
     }
 }
 

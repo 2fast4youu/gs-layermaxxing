@@ -119,6 +119,7 @@ internal fun CastlesScreen(
     onSeenEarned: (Long, Int) -> Unit,
     topics: List<ApiClient.Topic>, onTopics: (Long) -> Unit, onChat: (Long) -> Unit,
     onGroups: () -> Unit, onGlossary: () -> Unit,
+    onDestination: (ValleyDestination) -> Unit,
 ) {
     // Sound follows the same "removed animations" switch as the idle motion: with
     // animations off the valley falls silent instead of ticking and thudding.
@@ -129,7 +130,7 @@ internal fun CastlesScreen(
             ownUserId, friends, settings, ep, letters, builds, creativeActive, onBuild, onBack, onPeople,
             onComposeLetter, letterAccess, opened, act, token, api, onOpenLetter, onLockedTap,
             onProof, epLinkedLetterIds, dismissedEpLetters, onProposeEp, seenEarned, onSeenEarned,
-            topics, onTopics, onChat, onGroups, onGlossary,
+            topics, onTopics, onChat, onGroups, onGlossary, onDestination,
         )
     }
 }
@@ -162,15 +163,17 @@ private fun CastlesScreenContent(
     onSeenEarned: (Long, Int) -> Unit,
     topics: List<ApiClient.Topic>, onTopics: (Long) -> Unit, onChat: (Long) -> Unit,
     onGroups: () -> Unit, onGlossary: () -> Unit,
+    onDestination: (ValleyDestination) -> Unit,
 ) {
     val lockedByFriend = letters.filter { !it.unlocked }.groupingBy { it.peerId }.eachCount()
     val vales = Castles.vales(
         friends, settings, ep?.history.orEmpty(), lockedByFriend, builds, ownUserId, creativeActive,
     )
-    var selectedId by remember { mutableStateOf<Long?>(null) }
+    var selectedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Long?>(null) }
     val vale = vales.firstOrNull { it.friendId == selectedId } ?: vales.firstOrNull()
 
-    var place by remember { mutableStateOf(CastlePlace.VALE) }
+    var place by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(CastlePlace.VALE) }
+    var previousFriendId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Long?>(null) }
     var sheet by remember { mutableStateOf<FiefSheet?>(null) }
     // The step just built, so the scene it lands in can settle it with a dust puff.
     var justBuilt by remember { mutableStateOf<BuildStep?>(null) }
@@ -194,13 +197,13 @@ private fun CastlesScreenContent(
 
     LaunchedEffect(vale?.friendId) {
         // Switching friendship leaves no sheet, no camera and no place behind.
-        place = CastlePlace.VALE
+        if (previousFriendId != vale?.friendId) { place = CastlePlace.VALE; previousFriendId = vale?.friendId }
         sheet = null
         justBuilt = null
     }
 
     if (vale == null) {
-        EmptyValley(onBack = onBack, onPeople = onPeople)
+        EmptyValley(onBack = onBack, onPeople = onPeople, onDestination = onDestination)
         return
     }
     val built = vale.built
@@ -223,7 +226,7 @@ private fun CastlesScreenContent(
                 onSignpost = { sheet = FiefSheet.Signpost },
                 onDelivery = { letterId -> focusLetterId = letterId; place = CastlePlace.BOARD },
                 onTopics = { onTopics(vale.friendId) }, onChat = { onChat(vale.friendId) },
-                onGroups = onGroups, onGlossary = onGlossary,
+                onGroups = onGroups, onGlossary = onGlossary, onDestination = onDestination,
                 openTopics = TopicScope.friend(vale.friendId).filter(topics).count { it.completedAt == null },
             )
             CastlePlace.FRIEND -> FriendCourtScreen(
@@ -308,6 +311,7 @@ private fun CastlesScreenContent(
                     if (option.friendId == vale.friendId) Text("✓", color = MaterialTheme.colorScheme.primary)
                 }
             }
+            TextButton(onClick = { sheet = null; onPeople() }) { Text("Freunde finden und verwalten") }
             TextButton(onClick = { sheet = FiefSheet.About }) { Text("Über dieses Tal") }
         }
         FiefSheet.About -> FiefSheet(onDismiss = { sheet = null }) {
@@ -457,7 +461,9 @@ private fun SceneMap(
                     contentScale = ContentScale.FillBounds,
                 )
                 scene.sprites.forEach { sprite ->
-                    if (sprite.asset == FiefAssets.PATH_OVERLAY) {
+                    if (sprite.asset == VillageScenes.HIT) {
+                        // The village artwork already contains the building; only its hit target is added.
+                    } else if (sprite.asset == FiefAssets.PATH_OVERLAY) {
                         PathOverlay(plateWidth, plateHeight)
                     } else {
                         SpriteImage(
@@ -589,9 +595,10 @@ private fun ValleyScreen(
     onSignpost: () -> Unit,
     onDelivery: (Long) -> Unit,
     onTopics: () -> Unit, onChat: () -> Unit, onGroups: () -> Unit, onGlossary: () -> Unit,
+    onDestination: (ValleyDestination) -> Unit,
     openTopics: Int,
 ) {
-    val scene = remember(vale, built) { FiefScenes.valleyScene(vale, built) }
+    val scene = remember(vale.friendName) { VillageScenes.valley(vale.friendName) }
     var homeToken by remember(vale.friendId) { mutableStateOf(0) }
     var dockHeight by remember { mutableStateOf(0) }
     val dockDensity = LocalDensity.current
@@ -610,39 +617,27 @@ private fun ValleyScreen(
                 when (sprite.id) {
                     "home" -> onEnterCourtyard()
                     "friend" -> onVisitFriend()
-                    "signpost" -> onSignpost()
+                    "signpost", "PEOPLE" -> onSignpost()
+                    else -> ValleyDestination.entries.firstOrNull { it.name == sprite.id }?.let(onDestination)
                 }
             },
             overlay = {
-                // Every figure on the road is exactly one existing sealed letter,
-                // standing where its own release rule puts it. No letter, no motion.
-                deliveries.forEach { stop ->
-                    CourierOnRoad(stop, width, height) { onDelivery(stop.letterId) }
+                ValleyDestination.entries.forEach { destination ->
+                    PlaceSign(destination.label, null, MapPoint(destination.anchor.x, destination.anchor.y + .065f), this)
                 }
-                // The post office lives in my yard, so its sign hangs at my hut:
-                // one glance answers "are there letters, and do any wait on me".
-                PlaceSign(
-                    headline = "Deine Poststelle", post = post,
-                    anchor = MapPoint(FiefScenes.OWN_CLEARING.x, .585f), scope = this,
-                )
-                // The other side gets its own sign, so the two ends of the road are
-                // named places instead of two anonymous huts.
-                PlaceSign(
-                    headline = vale.friendName, post = null,
-                    anchor = MapPoint(FiefScenes.FRIEND_CLEARING.x, .148f), scope = this,
-                    subline = "besuchen",
-                )
-                revealAnchor?.let { DustReveal(it, onRevealed) }
+                PlaceSign("Dein Hof", post, MapPoint(VillageScenes.HOME.x, .735f), this, subline = "${built.size} Ausbauten")
+                PlaceSign(vale.friendName, null, MapPoint(VillageScenes.FRIEND.x, .735f), this, subline = "besuchen")
+                if (justBuilt != null) DustReveal(VillageScenes.HOME, onRevealed)
             },
         )
         FiefPlaceBar("Zurück zur Übersicht", onBack, "Tal mit ${vale.friendName}", vale.creative)
         ValleyDashboard(
             post = post, openTopics = openTopics,
             onOverview = { center(MapPoint(.5f, .5f), 1f) },
-            onHomeFocus = { center(FiefScenes.OWN_CLEARING, 1.35f) },
-            onFriendFocus = { center(FiefScenes.FRIEND_CLEARING, 1.35f) },
+            onHomeFocus = { center(VillageScenes.HOME, 1.6f) },
+            onFriendFocus = { center(VillageScenes.FRIEND, 1.6f) },
             onHome = onEnterCourtyard, onChat = onChat, onTopics = onTopics,
-            guide = { ValleyActionGuide(vale.friendName, openTopics, onChat, onTopics, onGroups, onGlossary, onEnterCourtyard, onVisitFriend, onSignpost, Modifier.fillMaxWidth()) },
+            guide = { VillageDirectory({ d -> if (d == ValleyDestination.PEOPLE) onSignpost() else onDestination(d) }, onEnterCourtyard, onVisitFriend) },
             modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { dockHeight = it.height }.navigationBarsPadding().padding(12.dp),
         )
     }
@@ -662,23 +657,24 @@ private fun FriendCourtScreen(
     onBack: () -> Unit,
     onPlaque: () -> Unit,
 ) {
-    val scene = remember(vale) { FiefScenes.friendCourtScene(vale) }
+    val scene = remember(vale) { VillageScenes.valley(vale.friendName).copy(id = "village-visit", sprites = emptyList()) }
     val visit = remember(letters) { FiefScenes.visitStatus(letters) }
     Box(Modifier.fillMaxSize()) {
         SceneMap(
             scene = scene,
+            initialFocus = VillageScenes.FRIEND, initialZoom = 1.8f,
             onPinchOut = onBack,
             onSprite = {},
             overlay = {
                 PlaceSign(
                     headline = "${vale.friendName}s Hof", post = visit,
-                    anchor = MapPoint(.225f, .555f), scope = this,
+                    anchor = MapPoint(VillageScenes.FRIEND.x, .735f), scope = this,
                     countLabel = "von dir",
                 )
                 WoodSign(
                     "Nur Geteiltes",
                     "Was ${vale.friendName} hier selbst gebaut hat, weiß nur ihr Gerät. " +
-                        "Dieser Hof wächst aus den Ebenen-Punkten, die sie von dir angenommen hat.",
+                        "Die Dorfansicht ist eine feste Illustration. Bestätigte EP und freigegebene Briefe bleiben die tatsächlichen Daten; fremde lokale Bauten werden nicht übertragen.",
                     MapPoint(.50f, .845f), this,
                 )
             },
@@ -702,12 +698,13 @@ private fun CourtyardScreen(
     onBuildSite: () -> Unit,
 ) {
     val scene = remember(vale, built, lettersEnabled) {
-        FiefScenes.courtyardScene(vale, built, vale.epEnabled, lettersEnabled)
+        VillageScenes.courtyard()
     }
     val revealAnchor = justBuilt?.let(FiefScenes::courtyardRevealAnchor)
     Box(Modifier.fillMaxSize()) {
         SceneMap(
             scene = scene,
+            initialFocus = MapPoint(.5f, .75f), initialZoom = 1.5f,
             onPinchOut = onBack,
             onSprite = { sprite ->
                 when (sprite.id) {
@@ -719,7 +716,7 @@ private fun CourtyardScreen(
             overlay = {
                 PlaceSign(
                     headline = "Poststelle", post = post,
-                    anchor = MapPoint(.225f, .432f), scope = this,
+                    anchor = MapPoint(.42f, .90f), scope = this,
                 )
                 revealAnchor?.let { DustReveal(it, onRevealed) }
             },
@@ -1549,28 +1546,20 @@ private fun FiefSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun EmptyValley(onBack: () -> Unit, onPeople: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(FIEF_BACKDROP)) {
-        Image(
-            painter = painterResource(drawableFor(FiefAssets.VALLEY_PLATE)),
-            contentDescription = "Stilles, leeres Tal",
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-        )
-        Surface(
-            modifier = Modifier.align(Alignment.Center).padding(24.dp)
-                .semantics { role = Role.Button }
-                .pointerInput(Unit) { detectTapGestures(onTap = { onPeople() }) },
-            shape = RoundedCornerShape(10.dp),
-            color = Color(0xE6463B2C),
-            contentColor = Color(0xFFF0E6D2),
-        ) {
-            Text(
-                "Noch kein Tal", Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        WoodToken("←", "Zurück zu Chats", Modifier.align(Alignment.TopStart), onBack)
+private fun EmptyValley(onBack: () -> Unit, onPeople: () -> Unit, onDestination: (ValleyDestination) -> Unit) {
+    val scene = remember { VillageScenes.valley(null) }
+    Box(Modifier.fillMaxSize()) {
+        SceneMap(scene, onSprite = { sprite ->
+            when (sprite.id) {
+                "home" -> onDestination(ValleyDestination.SETTINGS)
+                "friend" -> onPeople()
+                else -> ValleyDestination.entries.firstOrNull { it.name == sprite.id }?.let(onDestination)
+            }
+        }, overlay = {
+            ValleyDestination.entries.forEach { d -> PlaceSign(d.label, null, MapPoint(d.anchor.x, d.anchor.y + .065f), this) }
+        })
+        FiefPlaceBar("Zurück", onBack, "Dein Dorf", false)
+        androidx.compose.material3.FilledTonalButton(onClick = onPeople, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp)) { Text("Freunde hinzufügen · alle Dorf-Orte sind bereits erreichbar") }
     }
 }
 
@@ -1590,6 +1579,7 @@ private fun rememberReducedMotion(): Boolean {
 
 /** The one place base names become resources. */
 private fun drawableFor(asset: String): Int = when (asset) {
+    VillageScenes.PLATE -> R.drawable.village_plate
     FiefAssets.VALLEY_PLATE -> R.drawable.fief_valley_base
     FiefAssets.COURTYARD_PLATE -> R.drawable.fief_courtyard_base
     FiefAssets.BOARD_PLATE -> R.drawable.fief_board_closeup

@@ -5,11 +5,29 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun VillageDirectory(onOpen: (ValleyDestination) -> Unit, onHome: () -> Unit, onFriend: () -> Unit) {
+    var visible by remember { mutableStateOf(false) }
+    FilledTonalButton(onClick = { visible = true }, modifier = Modifier.fillMaxWidth()) { Text("Dorf-Orte · Gebäude antippen") }
+    if (visible) ModalBottomSheet(onDismissRequest = { visible = false }) {
+        LazyColumn(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+            item { Text("Alles hat seinen Ort", style = MaterialTheme.typography.titleLarge) }
+            item { ExtensionEntry("🏠 Dein Hof", "Poststelle, Schatzkammer und Ausbau") { visible = false; onHome() } }
+            item { ExtensionEntry("🏡 Freund besuchen", "Geteiltes ansehen, kein Zugriff auf dessen Gerät") { visible = false; onFriend() } }
+            items(ValleyDestination.entries, key = { it.keyName() }) { d -> ExtensionEntry(d.label, d.detail) { visible = false; onOpen(d) } }
+        }
+    }
+}
+private fun ValleyDestination.keyName() = name
 
 /** Screen-fixed controls: never drift off-screen when the illustrated world is panned. */
 @Composable
@@ -36,13 +54,6 @@ internal fun ValleyDashboard(
                 listOf("Übersicht" to onOverview, "Mein Hof" to onHomeFocus, "Freund" to onFriendFocus).forEach { (label, action) ->
                     OutlinedButton(onClick = action, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) {
                         Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color(0xFFF4F4E7))
-                    }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Hof & Post" to onHome, "Themen" to onTopics, "Chat" to onChat).forEach { (label, action) ->
-                    FilledTonalButton(onClick = action, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) {
-                        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
