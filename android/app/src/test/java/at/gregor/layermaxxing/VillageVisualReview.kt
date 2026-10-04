@@ -255,7 +255,7 @@ class VillageVisualReview {
     )
 
     @Composable
-    private fun Isles(withFriends: Boolean = true, start: String = "map") {
+    private fun Isles(withFriends: Boolean = true, start: String = "map", placeKey: String? = null) {
         val pals = if (!withFriends) emptyList() else listOf(
             ApiClient.UserSummary(2, "Gerfried", "friends", "🦊", "#2E7D32"),
             ApiClient.UserSummary(3, "Anna", "friends", "🐻", "#1565C0"),
@@ -264,7 +264,10 @@ class VillageVisualReview {
             ApiClient.UserSummary(6, "Mara", "friends", "🐰", "#C2185B"),
         )
         IslandWorld(
-            ownName = "Gregor", ownEmoji = "🦉", friends = pals, groups = emptyList(),
+            ownName = "Gregor", ownEmoji = "🦉", friends = pals,
+            groups = if (!withFriends) emptyList() else listOf(
+                ApiClient.Group(1, "Bergfreunde", 1, pals.take(4)), ApiClient.Group(2, "WG", 1, pals.drop(2)),
+            ),
             islands = ApiClient.Islands(140, listOf(
                 ApiClient.IslandInfo(2, 320, 2, 326, 4, null), ApiClient.IslandInfo(3, 130, 0, 130, 3, 300),
                 ApiClient.IslandInfo(4, 50, 0, 50, 2, 120), ApiClient.IslandInfo(5, 0, 0, 0, 1, 40),
@@ -275,7 +278,10 @@ class VillageVisualReview {
             topics = emptyList(), opened = emptyMap(), onBack = {}, onChat = {}, onComposeLetter = {}, onOpenLetter = {},
             onLockedTap = {}, onTopics = {}, onAllTopics = {}, onGlossary = {}, onPeople = {},
             onCreateQuest = { _, _, _, _, _, _ -> }, onQuestDone = { _, _ -> }, onQuestDelete = {},
-            ownId = 1, startView = start,
+            ownId = 1, startView = start, startPlace = placeKey,
+            incoming = if (withFriends) listOf(ApiClient.IncomingRequest(9, 7, "Jonas", 0)) else emptyList(),
+            outgoing = if (withFriends) listOf(ApiClient.OutgoingRequest(10, 8, "Sophie", 0)) else emptyList(),
+            glossary = { GlossaryScreen() },
             loadIsland = { id ->
                 val items = IsleDecor.labels.keys.mapIndexed { i, k -> ApiClient.DecorItem(k, i * 20, i < 6) }
                 if (id == 1L) ApiClient.HomeIsland(1, mapOf(0 to "flowers", 1 to "palm", 3 to "bench", 5 to "lantern"), 140, items)
@@ -292,5 +298,11 @@ class VillageVisualReview {
     }
 
     @Test fun islandsMap() = shot("20-inseln") { Isles() }
+    @Test fun islandPlacePost() = shot("30-post") { Isles(start = "home", placeKey = "POST") }
+    @Test fun islandPlaceHarbour() = shot("31-hafen") { Isles(start = "home", placeKey = "HARBOUR") }
+    @Test fun islandPlaceLighthouse() = shot("32-leuchtturm") { Isles(start = "home", placeKey = "LIGHTHOUSE") }
+    @Test fun islandPlaceLibrary() = shot("33-bibliothek") { Isles(start = "home", placeKey = "LIBRARY") }
+    @Test fun islandPlaceHall() = shot("34-gemeindehaus") { Isles(start = "home", placeKey = "CAMPFIRE") }
+    @Test fun islandPlaceHouse() = shot("35-haus") { Isles(start = "home", placeKey = "HOUSE") }
     @Test fun islandsEmpty() = shot("21-inseln-leer") { Isles(false) }
 }

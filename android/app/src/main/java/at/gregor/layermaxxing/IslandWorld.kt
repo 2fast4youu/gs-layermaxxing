@@ -192,16 +192,23 @@ internal fun IslandWorld(
     onPlace: (IsleBuilding) -> Unit = {},
     onError: (String) -> Unit = {},
     startView: String = "map",
+    incoming: List<ApiClient.IncomingRequest> = emptyList(),
+    outgoing: List<ApiClient.OutgoingRequest> = emptyList(),
+    onRespondFriend: (Long, Boolean) -> Unit = { _, _ -> },
+    ownColor: String = "#17A2A6",
+    startPlace: String? = null,
+    glossary: @Composable () -> Unit = {},
 ) {
     val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
     var selectedFriend by rememberSaveable { mutableStateOf<Long?>(null) }
-    var harbourOpen by rememberSaveable { mutableStateOf(false) }
     var newQuestFor by remember { mutableStateOf<Pair<Long?, Long?>?>(null) }
     val openQuests = quests.count { it.completedAt == null }
     // "map" = archipelago, "home" = my island up close, "visit:<id>" = a friend's island.
     var view by rememberSaveable { mutableStateOf(startView) }
     var editing by rememberSaveable { mutableStateOf(false) }
+    // A building's own place, drawn natively on top of the island (null = none open).
+    var place by rememberSaveable { mutableStateOf(startPlace) }
     var home by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
     var visited by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
     var slotPick by remember { mutableStateOf<Int?>(null) }
@@ -209,7 +216,9 @@ internal fun IslandWorld(
     LaunchedEffect(ownId, islands?.score) { ownId?.let { id -> home = runCatching { loadIsland(id) }.getOrNull() ?: home } }
     val visitId = view.removePrefix("visit:").toLongOrNull()
     LaunchedEffect(visitId) { visited = null; visitId?.let { id -> visited = runCatching { loadIsland(id) }.getOrNull() } }
-    BackHandler(enabled = view != "map" || editing) { if (editing) editing = false else view = "map" }
+    BackHandler(enabled = view != "map" || editing || place != null) {
+        when { place != null -> place = null; editing -> editing = false; else -> view = "map" }
+    }
     val homeBadges = mapOf(
         IsleBuilding.HARBOUR to openQuests,
         IsleBuilding.POST to letters.count { it.incoming && it.unlocked && it.readAt == null && opened[it.id] == null },
@@ -224,7 +233,7 @@ internal fun IslandWorld(
                 HubIsland(
                     decor = home?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), seed = ownId ?: 1L,
                     badges = homeBadges,
-                    onBuilding = { b -> if (b == IsleBuilding.HARBOUR) harbourOpen = true else onPlace(b) },
+                    onBuilding = { b -> place = b.name },
                     onSlot = if (editing) ({ slotPick = it }) else null,
                 )
             }
@@ -279,7 +288,7 @@ internal fun IslandWorld(
                 view == "home" -> {
                     BarItem("🗺", "Karte") { view = "map" }
                     BarItem("✎", "Bearbeiten") { editing = true }
-                    BarItem("⚓", "Hafen", badge = openQuests) { harbourOpen = true }
+                    BarItem("⚓", "Hafen", badge = openQuests) { place = IsleBuilding.HARBOUR.name }
                 }
                 visitId != null -> {
                     BarItem("🗺", "Karte") { view = "map" }
@@ -288,9 +297,43 @@ internal fun IslandWorld(
                 }
                 else -> {
                     BarItem("🏝", "Meine Insel") { view = "home" }
-                    BarItem("⚓", "Hafen", badge = openQuests) { harbourOpen = true }
-                    BarItem("👥", "Freunde") { onPeople() }
+                    BarItem("⚓", "Hafen", badge = openQuests) { place = IsleBuilding.HARBOUR.name }
+                    BarItem("🗼", "Freunde", badge = incoming.size) { place = IsleBuilding.LIGHTHOUSE.name }
                 }
+            }
+        }
+        val openPlace = place?.let { key -> IsleBuilding.entries.firstOrNull { it.name == key } }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = openPlace != null,
+            enter = androidx.compose.animation.slideInVertically { it / 3 } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it / 3 } + androidx.compose.animation.fadeOut(),
+        ) {
+            val close = { place = null }
+            when (openPlace ?: IsleBuilding.HOUSE) {
+                IsleBuilding.POST -> PostOffice(
+                    pals = pals, letters = letters, opened = opened,
+                    onOpen = onOpenLetter, onLocked = onLockedTap, onWrite = onComposeLetter, onClose = close,
+                )
+                IsleBuilding.HARBOUR -> HarbourBoard(
+                    quests = quests, topics = topics, onQuestDone = onQuestDone, onQuestDelete = onQuestDelete,
+                    onNewQuest = { newQuestFor = null to null }, onAllTopics = onAllTopics, onClose = close,
+                )
+                IsleBuilding.LIGHTHOUSE -> LighthouseView(
+                    pals = pals, levels = infoById.mapValues { it.value.level }, incoming = incoming, outgoing = outgoing,
+                    onRespond = onRespondFriend, onFriend = { selectedFriend = it }, onFind = onPeople, onClose = close,
+                )
+                IsleBuilding.LIBRARY -> LibraryBook(onClose = close, glossary = glossary)
+                IsleBuilding.CAMPFIRE -> CommunityHall(
+                    groups = groups, quests = quests, onGroupQuest = { newQuestFor = null to it },
+                    onManage = { onPlace(IsleBuilding.CAMPFIRE) }, onClose = close,
+                )
+                IsleBuilding.HOUSE -> MyHouse(
+                    name = ownName, emoji = ownEmoji, color = ownColor, friends = pals.size,
+                    questsDone = quests.count { it.completedAt != null },
+                    letters = letters.size, qp = islands?.qp ?: 0,
+                    onSettings = { onPlace(IsleBuilding.HOUSE) },
+                    onEdit = { place = null; view = "home"; editing = true }, onClose = close,
+                )
             }
         }
     }
@@ -317,18 +360,6 @@ internal fun IslandWorld(
                 onQuestDone = onQuestDone,
             )
         }
-    }
-    if (harbourOpen) ModalBottomSheet(
-        onDismissRequest = { harbourOpen = false },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Isle.Card,
-    ) {
-        HarbourSheet(
-            quests = quests, groups = groups, openTopics = topics.count { it.completedAt == null },
-            onAllTopics = { harbourOpen = false; onAllTopics() },
-            onNewQuest = { newQuestFor = null to null },
-            onQuestDone = onQuestDone, onQuestDelete = onQuestDelete,
-        )
     }
     slotPick?.let { slot ->
         val island = home
@@ -589,64 +620,6 @@ private fun LetterColumn(
             }
         }
         if (letters.size > 4) Text("+${letters.size - 4} weitere", fontSize = 11.sp, color = Isle.Muted)
-    }
-}
-
-@Composable
-private fun HarbourSheet(
-    quests: List<ApiClient.Quest>,
-    groups: List<ApiClient.Group>,
-    openTopics: Int,
-    onAllTopics: () -> Unit,
-    onNewQuest: () -> Unit,
-    onQuestDone: (ApiClient.Quest, Boolean) -> Unit,
-    onQuestDelete: (ApiClient.Quest) -> Unit,
-) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
-    Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.b_board), null, Modifier.width(52.dp))
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text("Hafen", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Isle.Ink)
-                Text("Schwarzes Brett für Quests und Themen", fontSize = 13.sp, color = Isle.Muted)
-            }
-        }
-        TabRow(selectedTabIndex = tab, containerColor = Isle.Card, contentColor = Isle.TealDark, modifier = Modifier.padding(top = 8.dp)) {
-            Tab(tab == 0, { tab = 0 }, text = { Text("Quests") })
-            Tab(tab == 1, { tab = 1 }, text = { Text("Themen") })
-        }
-        if (tab == 0) {
-            val open = quests.filter { it.completedAt == null }
-            val done = quests.filter { it.completedAt != null }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp).padding(horizontal = 20.dp)) {
-                if (quests.isEmpty()) item {
-                    Text(
-                        "Quests sind echte Vorhaben mit Freunden oder Gruppen – Wandern, Grillen, Radtour. " +
-                            "Erledigt lassen sie eure Inseln wachsen.",
-                        color = Isle.Muted, fontSize = 14.sp, modifier = Modifier.padding(vertical = 16.dp),
-                    )
-                }
-                if (open.isNotEmpty()) item { SectionTitle("Offen") }
-                items(open, key = { "o${it.id}" }) { QuestRow(it, onQuestDone, onQuestDelete) }
-                if (done.isNotEmpty()) item { SectionTitle("Erledigt") }
-                items(done.take(10), key = { "d${it.id}" }) { QuestRow(it, onQuestDone, onQuestDelete) }
-            }
-            IsleButton("+ Neue Quest", onNewQuest, Modifier.padding(20.dp).fillMaxWidth())
-        } else {
-            Column(Modifier.padding(20.dp)) {
-                Text(
-                    if (openTopics == 0) "Keine offenen Themen." else "$openTopics offene Themen hängen am Brett.",
-                    color = Isle.Ink, fontSize = 15.sp,
-                )
-                Spacer(Modifier.height(12.dp))
-                IsleButton("Themen öffnen", onAllTopics, Modifier.fillMaxWidth())
-            }
-        }
-        if (groups.isNotEmpty() && tab == 0) Text(
-            "Gruppen-Quests lassen die Inseln aller Mitglieder wachsen.",
-            color = Isle.Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
-        )
     }
 }
 
