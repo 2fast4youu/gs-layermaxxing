@@ -200,6 +200,18 @@ class VillageVisualReview {
         }
     }
 
+    @Test fun lifeDay() = shot("15-life-day") {
+        androidx.compose.runtime.CompositionLocalProvider(LocalVillageHour provides 12) { Village(friends, emptyList()) }
+    }
+
+    @Test fun lifeEvening() = shot("16-life-evening") {
+        androidx.compose.runtime.CompositionLocalProvider(LocalVillageHour provides 19) { Village(friends, emptyList()) }
+    }
+
+    @Test fun lifeNight() = shot("17-life-night") {
+        androidx.compose.runtime.CompositionLocalProvider(LocalVillageHour provides 23) { Village(friends, emptyList()) }
+    }
+
     @Test fun emptyVillage() = shot("01-empty") { Village(emptyList(), emptyList()) }
 
     @Test fun buildingRoom() = shot("03-room") {

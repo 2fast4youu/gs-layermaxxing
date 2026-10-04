@@ -1,5 +1,10 @@
 package at.gregor.layermaxxing
 
+import kotlinx.coroutines.launch
+
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
@@ -351,6 +356,8 @@ private fun SceneMap(
     /** Fill the whole screen with the painting (no letterbox), like a game camera. */
     cover: Boolean = false,
     onBackgroundTap: (() -> Unit)? = null,
+    /** Where on the plate the player touched open ground (plate-normalised). */
+    onGroundTap: ((MapPoint) -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
@@ -362,6 +369,8 @@ private fun SceneMap(
     var pressed by remember { mutableStateOf<String?>(null) }
     var settled by remember(scene.id) { mutableStateOf(false) }
     val minTouchPx = with(density) { 48.dp.toPx() }
+    val flingScope = androidx.compose.runtime.rememberCoroutineScope()
+    var flingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     val baseZoom = if (cover) FiefMap.coverZoom(viewport, scene.image) else 1f
     LaunchedEffect(viewport, scene.id) {
@@ -418,6 +427,39 @@ private fun SceneMap(
             .background(FIEF_BACKDROP)
             .clipToBounds()
             .onSizeChanged { viewport = MapSize(it.width.toFloat(), it.height.toFloat()) }
+            // The camera keeps its swing after a swipe and glides out, like a game camera
+            // (observes only — the transform detector below still owns the gesture).
+            .pointerInput(scene.id, viewport) {
+                val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    flingJob?.cancel()
+                    tracker.resetTracking()
+                    tracker.addPosition(down.uptimeMillis, down.position)
+                    var multi = false
+                    do {
+                        val ev = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        if (ev.changes.count { it.pressed } > 1) multi = true
+                        ev.changes.firstOrNull { it.id == down.id }?.let { tracker.addPosition(it.uptimeMillis, it.position) }
+                    } while (ev.changes.any { it.pressed })
+                    if (multi || reducedMotion) return@awaitEachGesture
+                    val v = tracker.calculateVelocity()
+                    if (kotlin.math.hypot(v.x, v.y) < 600f) return@awaitEachGesture
+                    flingJob = flingScope.launch {
+                        var vx = v.x; var vy = v.y
+                        var last = androidx.compose.runtime.withFrameMillis { it }
+                        while (kotlin.math.hypot(vx, vy) > 40f) {
+                            androidx.compose.runtime.withFrameMillis { now ->
+                                val dt = ((now - last).coerceIn(1L, 48L)) / 1000f
+                                last = now
+                                pan = FiefMap.clampPan(viewport, scene.image, zoom, MapPoint(pan.x + vx * dt, pan.y + vy * dt))
+                                val k = kotlin.math.exp(-4.2f * dt)
+                                vx *= k; vy *= k
+                            }
+                        }
+                    }
+                }
+            }
             .pointerInput(scene.id, viewport) {
                 detectTransformGestures { centroid, gesturePan, gestureZoom, _ ->
                     val nextZoom = (zoom * gestureZoom).coerceIn(FiefMap.MIN_ZOOM * baseZoom, scene.maxZoom * baseZoom)
@@ -435,7 +477,15 @@ private fun SceneMap(
                 }
             }
             .pointerInput(scene.id, viewport, zoom, pan) {
-                detectTapGestures(onTap = { onBackgroundTap?.invoke() }, onDoubleTap = { offset ->
+                detectTapGestures(onTap = { offset ->
+                    onBackgroundTap?.invoke()
+                    onGroundTap?.let { cb ->
+                        val f = FiefMap.fittedSize(viewport, scene.image)
+                        val left = (viewport.width - f.width * zoom) / 2f + pan.x
+                        val top = (viewport.height - f.height * zoom) / 2f + pan.y
+                        cb(MapPoint((offset.x - left) / (f.width * zoom), (offset.y - top) / (f.height * zoom)))
+                    }
+                }, onDoubleTap = { offset ->
                     val hit = FiefMap.hitTest(
                         MapPoint(offset.x, offset.y), viewport, scene.image, zoom, pan, scene.sprites, minTouchPx,
                     )
@@ -674,6 +724,7 @@ private fun VillageWorld(
         focus = MapPoint(at.x, (at.y + .07f).coerceAtMost(1f)); focusZoom = 1.75f; token += 1
     }
     fun count(d: ValleyDestination) = activities.firstOrNull { it.destination == d }
+    var groundTap by remember { mutableStateOf<Pair<MapPoint, Long>?>(null) }
     BackHandler(enabled = pick != null) { pick = null }
 
     Box(Modifier.fillMaxSize().background(FIEF_BACKDROP)) {
@@ -684,6 +735,7 @@ private fun VillageWorld(
             initialZoom = focusZoom,
             focusToken = token,
             onBackgroundTap = { pick = null },
+            onGroundTap = { groundTap = it to android.os.SystemClock.uptimeMillis() },
             onSprite = { sprite ->
                 when (sprite.id) {
                     "home" -> select(VillagePick.Home, VillageScenes.HOME)
@@ -694,6 +746,7 @@ private fun VillageWorld(
                 }
             },
             overlay = {
+                VillageLifeLayer(hud.unlocked, hud.friendColors, reduced, groundTap)
                 CloudShadows(reduced)
                 // Not yet grown into: a soft fog patch instead of a marker.
                 ValleyDestination.entries.filter { it !in hud.unlocked }.forEach { FogPatch(it.anchor, this) }

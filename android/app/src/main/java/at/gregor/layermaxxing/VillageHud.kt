@@ -129,6 +129,8 @@ internal data class VillageHudInfo(
     /** Places that appeared since the player last looked: celebrated once. */
     val fresh: Set<ValleyDestination> = emptySet(),
     val onFreshSeen: () -> Unit = {},
+    /** Real friends walk the village in their own profile colour. */
+    val friendColors: List<Color> = emptyList(),
 )
 
 internal fun ValleyDestination.iconRes(): Int = when (this) {

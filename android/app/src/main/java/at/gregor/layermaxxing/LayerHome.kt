@@ -420,6 +420,7 @@ fun LayerHome(
                         exitLabel = "Messenger",
                         unlocked = villageUnlocked, fresh = villageFresh,
                         onFreshSeen = { villageFresh = villageFresh.drop(1).toSet(); store.setVillageFresh(villageFresh) },
+                        friendColors = friends.filter { it.relationship == "friend" }.take(4).map { profileColor(it.displayColor) },
                     ),
                     onDestination = { destination ->
                         when (destination) {
