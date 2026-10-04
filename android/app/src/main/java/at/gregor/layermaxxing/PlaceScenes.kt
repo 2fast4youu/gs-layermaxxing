@@ -113,48 +113,117 @@ internal fun IsleBuilding.placeName(): String = when (this) {
     IsleBuilding.HOUSE -> "Mein Haus"
 }
 
-/** Shell: the building stands at the top in its own light, then the place itself. */
+/** Painted background (Crop) plus a mapper from image fractions to on-screen boxes. */
+internal class SceneMap(val left: Dp, val top: Dp, val w: Dp, val h: Dp) {
+    fun x(f: Float): Dp = left + w * f
+    fun y(f: Float): Dp = top + h * f
+    fun region(x0: Float, y0: Float, x1: Float, y1: Float): Modifier =
+        Modifier.offset(x = x(x0), y = y(y0)).size(width = w * (x1 - x0), height = h * (y1 - y0))
+}
+
+@Composable
+internal fun PaintedScene(bg: Int, imgAspect: Float, content: @Composable androidx.compose.foundation.layout.BoxScope.(SceneMap) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val sw = maxWidth; val sh = maxHeight
+        // Crop: scale until both sides are covered, centered.
+        val byHeight = sw / sh < imgAspect
+        val iw = if (byHeight) sh * imgAspect else sw
+        val ih = if (byHeight) sh else sw / imgAspect
+        val map = SceneMap((sw - iw) / 2, (sh - ih) / 2, iw, ih)
+        Image(
+            painterResource(bg), null, Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        )
+        content(map)
+    }
+}
+
+private val Display = Kit.Display
+private val Body = Kit.Body
+
+/** Shell: painted place, a wooden sign as title, round back button, golden action. */
 @Composable
 internal fun PlaceStage(
     place: IsleBuilding,
     onClose: () -> Unit,
     action: Pair<String, () -> Unit>? = null,
-    content: @Composable () -> Unit,
+    bg: Int = place.background(),
+    imgAspect: Float = 1024f / 1536f,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.(SceneMap) -> Unit,
 ) {
     val st = place.style()
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(st.top, st.bottom)))) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(44.dp).shadow(3.dp, CircleShape).background(Color.White, CircleShape).clip(CircleShape)
-                        .clickable(onClickLabel = "Zurück zur Insel", onClick = onClose),
-                    Alignment.Center,
-                ) { Text("‹", fontSize = 24.sp, color = Isle.Ink, fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.width(10.dp))
-                Image(painterResource(place.sprite()), null, Modifier.size(64.dp))
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(place.placeName(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = st.ink, maxLines = 1)
-                    Text(st.tagline, fontSize = 13.sp, color = st.ink.copy(alpha = .75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Box(Modifier.fillMaxSize().background(st.bottom)) {
+        PaintedScene(bg, imgAspect) { map -> content(map) }
+        // Soft top vignette so the sign always reads.
+        Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0x66000000), Color.Transparent))))
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(46.dp).shadow(6.dp, CircleShape)
+                    .background(Brush.verticalGradient(listOf(Color(0xFFFFF6E5), Color(0xFFF1DDB4))), CircleShape)
+                    .border(2.dp, Color(0xFF8A5A2B), CircleShape).clip(CircleShape)
+                    .clickable(onClickLabel = "Zurück zur Insel", onClick = onClose),
+                Alignment.Center,
+            ) { Text("‹", fontSize = 28.sp, color = Color(0xFF5A3A12), fontFamily = Display) }
+            Spacer(Modifier.width(10.dp))
+            // The wooden sign.
+            Box(Modifier.height(58.dp).width(230.dp), Alignment.Center) {
+                Image(painterResource(R.drawable.p_sign), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.FillBounds)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        place.placeName(), fontFamily = Display, fontSize = 22.sp, color = Color(0xFFFFF6E5),
+                        style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xAA3B2410), Offset(0f, 3f), 2f)),
+                    )
                 }
             }
-            Box(Modifier.weight(1f).fillMaxWidth()) { content() }
         }
-        action?.let { (label, onClick) ->
-            Box(
-                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 18.dp)
-                    .shadow(8.dp, RoundedCornerShape(28.dp)).background(Isle.Teal, RoundedCornerShape(28.dp))
-                    .clip(RoundedCornerShape(28.dp)).clickable(onClick = onClick)
-                    .padding(horizontal = 22.dp, vertical = 14.dp)
-                    .semantics { role = Role.Button },
-            ) { Text(label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-        }
+        action?.let { (label, onClick) -> GoldButton(label, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 18.dp), onClick) }
     }
 }
 
+internal fun IsleBuilding.background(): Int = when (this) {
+    IsleBuilding.POST -> R.drawable.bg_post
+    IsleBuilding.HARBOUR -> R.drawable.bg_harbour
+    IsleBuilding.LIGHTHOUSE -> R.drawable.bg_lighthouse
+    IsleBuilding.LIBRARY -> R.drawable.bg_library
+    IsleBuilding.CAMPFIRE -> R.drawable.bg_hall
+    IsleBuilding.HOUSE -> R.drawable.bg_house
+}
+
+@Composable
+internal fun GoldButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.shadow(10.dp, RoundedCornerShape(30.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xFFFFE18C), Color(0xFFF2B33D), Color(0xFFD48A12))), RoundedCornerShape(30.dp))
+            .border(2.dp, Color(0xFF9C6410), RoundedCornerShape(30.dp))
+            .clip(RoundedCornerShape(30.dp)).clickable(onClick = onClick)
+            .padding(horizontal = 26.dp, vertical = 13.dp)
+            .semantics { role = Role.Button },
+    ) {
+        Text(
+            label, color = Color(0xFF5A3200), fontFamily = Display, fontSize = 18.sp,
+            style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0x88FFFFFF), Offset(0f, 2f), 0f)),
+        )
+    }
+}
+
+/** Small cream label (name tags on cubbies, plaques under trophies). */
+@Composable
+private fun Tag(text: String, modifier: Modifier = Modifier, size: Int = 12, ink: Color = Color(0xFF3B2410), bg: Color = Color(0xF2FFF6E5)) {
+    Text(
+        text, fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = size.sp, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = modifier.shadow(2.dp, RoundedCornerShape(50)).background(bg, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
+@Composable
+private fun Sprite(res: Int, modifier: Modifier) = Image(painterResource(res), null, modifier)
+
 // ---------------------------------------------------------------- Post
 
-/** One pigeonhole per friend; envelopes inside show how and when they open. */
+/** The back wall holds one wooden cubby per friend; letters sit inside as sealed envelopes. */
 @Composable
 internal fun PostOffice(
     pals: List<ApiClient.UserSummary>,
@@ -167,34 +236,34 @@ internal fun PostOffice(
 ) {
     var fach by rememberSaveable { mutableStateOf<Long?>(null) }
     var choosing by rememberSaveable { mutableStateOf(false) }
-    PlaceStage(IsleBuilding.POST, onClose, action = "✒  Brief schreiben" to { choosing = true }) {
+    PlaceStage(IsleBuilding.POST, onClose, action = "Brief schreiben" to { choosing = true }) { map ->
         val selected = fach?.let { id -> pals.firstOrNull { it.id == id } }
+        val wall = Modifier.padding(top = 96.dp, bottom = 92.dp).fillMaxSize()
         if (selected == null) {
-            if (pals.isEmpty()) EmptyPlace("Noch keine Fächer", "Für jeden Freund entsteht hier ein eigenes Postfach.")
+            if (pals.isEmpty()) Box(wall, Alignment.Center) { Parchment("Noch keine Fächer", "Für jeden Freund entsteht hier ein eigenes Postfach.") }
             else LazyVerticalGrid(
-                GridCells.Fixed(3), Modifier.fillMaxSize().padding(horizontal = 14.dp),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                GridCells.Fixed(3), wall.padding(horizontal = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(pals, key = { it.id }) { f ->
                     val mine = letters.filter { it.peerId == f.id && it.groupId == null }
                     val ready = mine.count { it.incoming && Conversations.letterState(it, opened[it.id] != null) == LetterState.READY }
                     val travelling = mine.count { Conversations.letterState(it, opened[it.id] != null).locked }
-                    Pigeonhole(f, mine.size, ready, travelling) { fach = f.id }
+                    Cubby(f, mine.size, ready, travelling) { fach = f.id }
                 }
             }
         } else {
             val mine = letters.filter { it.peerId == selected.id && it.groupId == null }.sortedByDescending { it.createdAt }
-            Column(Modifier.fillMaxSize()) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("‹ Alle Fächer", color = Color(0xFF5A3A12), fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { fach = null }.padding(8.dp))
+            Column(wall) {
+                Row(Modifier.padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Tag("‹ Alle Fächer", Modifier.clickable { fach = null }, size = 14)
                     Spacer(Modifier.weight(1f))
-                    Text("${selected.avatarEmoji} ${selected.name}", color = Color(0xFF5A3A12), fontWeight = FontWeight.Bold)
+                    Tag("${selected.avatarEmoji} Fach von ${selected.name}", size = 14)
                 }
-                if (mine.isEmpty()) EmptyPlace("Fach ist leer", "Schreib ${selected.name} den ersten Brief.")
+                if (mine.isEmpty()) Box(Modifier.fillMaxSize(), Alignment.Center) { Parchment("Fach ist leer", "Schreib ${selected.name} den ersten Brief.") }
                 else LazyColumn(
-                    Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    contentPadding = PaddingValues(top = 6.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
+                    Modifier.fillMaxSize().padding(horizontal = 18.dp),
+                    contentPadding = PaddingValues(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     items(mine, key = { it.id }) { m ->
                         val state = Conversations.letterState(m, opened[m.id] != null)
@@ -208,44 +277,34 @@ internal fun PostOffice(
 }
 
 @Composable
-private fun Pigeonhole(friend: ApiClient.UserSummary, total: Int, ready: Int, travelling: Int, onClick: () -> Unit) {
+private fun Cubby(friend: ApiClient.UserSummary, total: Int, ready: Int, travelling: Int, onClick: () -> Unit) {
     Column(
-        Modifier.shadow(4.dp, RoundedCornerShape(10.dp)).background(Color(0xFF8A5A2B), RoundedCornerShape(10.dp))
-            .clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Fach von ${friend.name} öffnen", onClick = onClick).padding(6.dp),
+        Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Fach von ${friend.name} öffnen", onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // The dark opening with envelopes peeking out.
-        Box(Modifier.fillMaxWidth().aspectRatio(1.25f).background(Color(0xFF3B2410), RoundedCornerShape(6.dp)), Alignment.BottomCenter) {
-            Canvas(Modifier.fillMaxSize().padding(6.dp)) {
-                val n = total.coerceAtMost(4)
-                for (i in 0 until n) {
-                    val w = size.width * .78f; val h = size.height * .42f
-                    val x = (size.width - w) / 2 + (i - n / 2f) * size.width * .05f
-                    val y = size.height - h - i * size.height * .1f
-                    drawRoundRect(Color(0xFFFFF6E5), Offset(x, y), Size(w, h), androidx.compose.ui.geometry.CornerRadius(4f))
-                    val flap = Path().apply { moveTo(x, y); lineTo(x + w / 2, y + h * .55f); lineTo(x + w, y) }
-                    drawPath(flap, Color(0xFFD9C7A3), style = Stroke(2.5f))
-                }
-            }
-            if (ready > 0) Box(
-                Modifier.align(Alignment.TopEnd).padding(4.dp).size(22.dp).background(Color(0xFFC62828), CircleShape),
-                Alignment.Center,
-            ) { Text("$ready", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-            if (travelling > 0) Text(
-                "⛵ $travelling unterwegs", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopStart).padding(4.dp).background(Color(0x66000000), RoundedCornerShape(50)).padding(horizontal = 5.dp, vertical = 1.dp),
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            Sprite(R.drawable.p_cubby, Modifier.fillMaxSize())
+            // Envelopes stacked inside the opening.
+            val n = total.coerceAtMost(3)
+            for (i in 0 until n) Sprite(
+                if (ready > 0 && i == n - 1) R.drawable.p_env else R.drawable.p_env,
+                Modifier.align(Alignment.Center).offset(x = ((i - (n - 1) / 2f) * 6).dp, y = (10 - i * 7).dp).fillMaxWidth(.56f).rotate((i - 1) * 6f),
             )
-            if (total == 0) Text("leer", fontSize = 11.sp, color = Color.White.copy(alpha = .5f), modifier = Modifier.align(Alignment.Center))
+            if (ready > 0) Box(
+                Modifier.align(Alignment.TopEnd).size(24.dp).shadow(3.dp, CircleShape).background(Color(0xFFD32F2F), CircleShape).border(2.dp, Color.White, CircleShape),
+                Alignment.Center,
+            ) { Text("$ready", color = Color.White, fontSize = 12.sp, fontFamily = Display) }
+            if (travelling > 0) Row(
+                Modifier.align(Alignment.TopStart).shadow(2.dp, RoundedCornerShape(50)).background(Color(0xFF17A2A6), RoundedCornerShape(50)).padding(horizontal = 5.dp, vertical = 1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Sprite(R.drawable.boat_sail, Modifier.size(14.dp))
+                Text(" $travelling", color = Color.White, fontSize = 11.sp, fontFamily = Display)
+            }
         }
-        // Brass name plate.
-        Row(
-            Modifier.padding(top = 6.dp).background(Brush.verticalGradient(listOf(Color(0xFFF3D58A), Color(0xFFC99A3D))), RoundedCornerShape(4.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(friend.avatarEmoji, fontSize = 12.sp)
-            Spacer(Modifier.width(3.dp))
-            Text(friend.name, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3B2410), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box(Modifier.offset(y = (-8).dp).fillMaxWidth(.95f).height(26.dp), Alignment.Center) {
+            Sprite(R.drawable.p_plate, Modifier.fillMaxSize())
+            Text(friend.name, fontFamily = Display, fontSize = 12.sp, color = Color(0xFF4A2A08), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 12.dp))
         }
     }
 }
@@ -253,51 +312,37 @@ private fun Pigeonhole(friend: ApiClient.UserSummary, total: Int, ready: Int, tr
 @Composable
 private fun Envelope(m: ApiClient.Message, state: LetterState, onClick: () -> Unit) {
     val boat = LetterBoat.forMode(m.mode)
-    val seal = when {
-        state.locked -> Color(0xFF8D99A6)
-        state == LetterState.READY -> Color(0xFFC62828)
-        else -> Color(0xFFB08A5A)
-    }
-    Box(
-        Modifier.fillMaxWidth().aspectRatio(2.4f).shadow(4.dp, RoundedCornerShape(8.dp))
-            .background(Color(0xFFFFF8EA), RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))
-            .clickable(onClickLabel = if (state.locked) "Versiegelt" else "Brief öffnen", onClick = onClick),
+    Row(
+        Modifier.fillMaxWidth().shadow(5.dp, RoundedCornerShape(14.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xFFFFFBF1), Color(0xFFF6E7C8))), RoundedCornerShape(14.dp))
+            .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClickLabel = if (state.locked) "Versiegelt" else "Brief öffnen", onClick = onClick).padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val flap = Path().apply { moveTo(0f, 0f); lineTo(size.width / 2, size.height * .55f); lineTo(size.width, 0f) }
-            drawPath(flap, Color(0xFFE9DCC0), style = Stroke(4f))
-            drawCircle(seal, size.height * .14f, Offset(size.width / 2, size.height * .55f))
-            drawCircle(Color.White.copy(alpha = .25f), size.height * .07f, Offset(size.width / 2 - size.height * .04f, size.height * .51f))
-        }
-        Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-            Text(
-                (if (m.incoming) "von " else "an ") + m.peerName, fontSize = 11.sp, color = Color(0xFF8A6A3A),
-            )
-            Text(Conversations.letterPreviewText(m), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3B2410), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        // Stamp corner: how the letter travels.
-        Column(
-            Modifier.align(Alignment.TopEnd).padding(8.dp).border(2.dp, Color(0xFFB08A5A), RoundedCornerShape(4.dp))
-                .background(Color.White, RoundedCornerShape(4.dp)).padding(4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Image(painterResource(boat.res), null, Modifier.size(34.dp))
+        Sprite(if (state.locked || state == LetterState.READY) R.drawable.p_env else R.drawable.p_env_open, Modifier.size(64.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text((if (m.incoming) "von " else "an ") + m.peerName, fontSize = 12.sp, color = Color(0xFF8A6A3A), fontFamily = Body)
+            Text(Conversations.letterPreviewText(m), fontSize = 16.sp, fontFamily = Display, color = Color(0xFF3B2410), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 when {
-                    state.locked -> "unterwegs"
-                    state == LetterState.READY -> "neu!"
-                    m.incoming -> "gelesen"
-                    else -> "zugestellt"
+                    state.locked -> "${boat.label.substringBefore(" ·")} ist noch unterwegs"
+                    state == LetterState.READY -> "Neu – zum Öffnen tippen"
+                    m.incoming -> "Gelesen"
+                    else -> "Zugestellt"
                 },
-                fontSize = 9.sp, color = Color(0xFF5A3A12), fontWeight = FontWeight.Bold,
+                fontSize = 12.sp, fontFamily = Body, fontWeight = FontWeight.Bold,
+                color = if (state == LetterState.READY) Color(0xFFD32F2F) else Color(0xFF0E7F84),
             )
         }
+        Sprite(boat.res, Modifier.size(44.dp))
     }
 }
 
 // ---------------------------------------------------------------- Hafen
 
-/** Cork board: quests as pinned notes, topics as sticky notes. */
+/** The harbour's cork board: quest notes are pinned straight onto the painted cork. */
 @Composable
 internal fun HarbourBoard(
     quests: List<ApiClient.Quest>,
@@ -309,48 +354,36 @@ internal fun HarbourBoard(
     onClose: () -> Unit,
 ) {
     var showDone by rememberSaveable { mutableStateOf(false) }
-    PlaceStage(IsleBuilding.HARBOUR, onClose, action = "📌  Quest anpinnen" to onNewQuest) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-            // The board itself.
-            Box(
-                Modifier.weight(1f).fillMaxWidth().padding(bottom = 86.dp)
-                    .shadow(6.dp, RoundedCornerShape(14.dp))
-                    .background(Color(0xFF7A4B26), RoundedCornerShape(14.dp)).padding(8.dp)
-                    .background(Brush.radialGradient(listOf(Color(0xFFD6A46B), Color(0xFFB98149))), RoundedCornerShape(8.dp)),
+    PlaceStage(IsleBuilding.HARBOUR, onClose, action = "Quest anpinnen" to onNewQuest) { map ->
+        val shown = quests.filter { (it.completedAt != null) == showDone }
+        Column(map.region(.17f, .315f, .83f, .615f).padding(horizontal = 6.dp)) {
+            Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                BoardTab("Offen ${quests.count { it.completedAt == null }}", !showDone) { showDone = false }
+                BoardTab("Erledigt ${quests.count { it.completedAt != null }}", showDone) { showDone = true }
+            }
+            LazyVerticalGrid(
+                GridCells.Fixed(2), Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 8.dp),
             ) {
-                val shown = quests.filter { (it.completedAt != null) == showDone }
-                LazyVerticalGrid(
-                    GridCells.Fixed(2), Modifier.fillMaxSize().padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 12.dp),
-                ) {
-                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            BoardTab("Offen · ${quests.count { it.completedAt == null }}", !showDone) { showDone = false }
-                            BoardTab("Erledigt · ${quests.count { it.completedAt != null }}", showDone) { showDone = true }
-                        }
-                    }
-                    if (shown.isEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-                        Text(
-                            if (showDone) "Noch nichts abgehakt." else "Das Brett ist leer – pinn die erste Quest an!",
-                            color = Color(0xFF3B2410), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                        )
-                    }
-                    items(shown, key = { it.id }) { q -> QuestNote(q, onQuestDone, if (q.canDelete) onQuestDelete else null) }
-                    val open = topics.count { it.completedAt == null }
-                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-                        Box(
-                            Modifier.padding(top = 6.dp).rotate(-1.5f).shadow(3.dp).background(Color(0xFFFFF176))
-                                .clickable(onClickLabel = "Themen öffnen", onClick = onAllTopics).padding(14.dp).fillMaxWidth(),
-                        ) {
-                            Column {
-                                Text("💬 Themen fürs nächste Treffen", fontWeight = FontWeight.Bold, color = Color(0xFF4A3B00))
-                                Text(openTopics(open), color = Color(0xFF6B5A10), fontSize = 13.sp)
-                            }
-                        }
+                if (shown.isEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                    Box(Modifier.fillMaxWidth().padding(top = 18.dp), Alignment.Center) {
+                        Tag(if (showDone) "Noch nichts abgehakt" else "Das Brett ist leer", size = 14)
                     }
                 }
+                items(shown, key = { it.id }) { q -> QuestNote(q, onQuestDone, if (q.canDelete) onQuestDelete else null) }
+            }
+        }
+        // Topics: a yellow sticky note slapped on the post below the board.
+        val open = topics.count { it.completedAt == null }
+        Box(
+            map.region(.58f, .655f, .86f, .775f).clickable(onClickLabel = "Themen öffnen", onClick = onAllTopics),
+            Alignment.Center,
+        ) {
+            Sprite(R.drawable.p_sticky, Modifier.fillMaxSize().rotate(4f))
+            Column(Modifier.rotate(4f).padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Themen", fontFamily = Display, fontSize = 16.sp, color = Color(0xFF4A3B00))
+                Text(if (open == 0) "alles besprochen" else "$open offen", fontFamily = Body, fontSize = 11.sp, color = Color(0xFF6B5A10), textAlign = TextAlign.Center, maxLines = 1)
             }
         }
     }
@@ -359,62 +392,52 @@ internal fun HarbourBoard(
 @Composable
 private fun BoardTab(text: String, selected: Boolean, onClick: () -> Unit) {
     Text(
-        text, fontWeight = FontWeight.Bold, fontSize = 13.sp,
-        color = if (selected) Color.White else Color(0xFF3B2410),
-        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (selected) Color(0xFF3B2410) else Color(0x33FFFFFF))
-            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
+        text, fontFamily = Display, fontSize = 13.sp,
+        color = if (selected) Color(0xFFFFF6E5) else Color(0xFF5A3A12),
+        modifier = Modifier.shadow(if (selected) 3.dp else 0.dp, RoundedCornerShape(50)).clip(RoundedCornerShape(50))
+            .background(if (selected) Color(0xFF7A4B26) else Color(0xCCFFF6E5))
+            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 5.dp),
     )
 }
 
-private val noteColors = listOf(Color(0xFFFFFDF5), Color(0xFFE8F6FF), Color(0xFFFFEFEF), Color(0xFFEFFFF0))
-
 @Composable
 private fun QuestNote(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> Unit, onDelete: ((ApiClient.Quest) -> Unit)?) {
-    val tilt = ((q.id % 5) - 2) * 1.2f
+    val tilt = ((q.id % 5) - 2) * 1.6f
     val done = q.completedAt != null
-    Box(Modifier.rotate(tilt)) {
-        Column(
-            Modifier.padding(top = 8.dp).fillMaxWidth().shadow(4.dp).background(noteColors[(q.id % 4).toInt()]).padding(12.dp),
-        ) {
+    Box(Modifier.rotate(tilt).aspectRatio(.95f)) {
+        Sprite(R.drawable.p_note, Modifier.fillMaxSize().padding(top = 6.dp))
+        Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 12.dp, top = 22.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(Isle.questEmoji(q.icon), fontSize = 24.sp)
+                Text(Isle.questEmoji(q.icon), fontSize = 18.sp)
                 Spacer(Modifier.weight(1f))
-                Text("⭐${q.points}", fontWeight = FontWeight.Bold, color = Color(0xFF9A6B00), fontSize = 13.sp)
+                Sprite(R.drawable.p_star, Modifier.size(15.dp))
+                Text("${q.points}", fontFamily = Display, color = Color(0xFF9A6B00), fontSize = 13.sp)
             }
-            Text(q.title, fontWeight = FontWeight.Bold, color = Isle.Ink, fontSize = 15.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            Text(
-                if (q.targetType == "group") "Gruppe ${q.targetName}" else "mit ${q.targetName}",
-                fontSize = 11.sp, color = Isle.Muted, maxLines = 1,
-            )
-            Spacer(Modifier.height(8.dp))
+            Text(q.title, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 14.sp, lineHeight = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(if (q.targetType == "group") q.targetName else "mit ${q.targetName}", fontFamily = Body, fontSize = 10.sp, color = Color(0xFF8A6A3A), maxLines = 1)
+            Spacer(Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (done) "✓ Erledigt" else "Abhaken",
-                    fontWeight = FontWeight.Bold, fontSize = 12.sp,
-                    color = if (done) Color(0xFF2E7D32) else Color.White,
-                    modifier = Modifier.clip(RoundedCornerShape(50))
-                        .background(if (done) Color(0x222E7D32) else Isle.Teal)
-                        .clickable { onDone(q, !done) }.padding(horizontal = 10.dp, vertical = 5.dp),
+                    if (done) "✓" else "Abhaken", fontFamily = Display, fontSize = 11.sp,
+                    color = Color.White,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(if (done) Color(0xFF4CAF50) else Color(0xFF17A2A6))
+                        .clickable { onDone(q, !done) }.padding(horizontal = 9.dp, vertical = 3.dp),
                 )
                 Spacer(Modifier.weight(1f))
-                if (onDelete != null) Text("✕", color = Isle.Muted, modifier = Modifier.clip(CircleShape).clickable { onDelete(q) }.padding(6.dp))
+                if (onDelete != null) Text("✕", color = Color(0xFF8A6A3A), fontSize = 12.sp, modifier = Modifier.clip(CircleShape).clickable { onDelete(q) }.padding(4.dp))
             }
         }
-        // The pin.
-        Box(
-            Modifier.align(Alignment.TopCenter).size(16.dp).shadow(2.dp, CircleShape)
-                .background(Brush.radialGradient(listOf(Color(0xFFFF8A80), Color(0xFFC62828))), CircleShape),
-        )
+        Sprite(R.drawable.p_pin, Modifier.align(Alignment.TopCenter).size(22.dp))
         if (done) Text(
-            "ERLEDIGT", color = Color(0x992E7D32), fontWeight = FontWeight.Bold, fontSize = 18.sp,
-            modifier = Modifier.align(Alignment.Center).rotate(-18f).border(2.dp, Color(0x992E7D32), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp),
+            "ERLEDIGT", color = Color(0xB32E7D32), fontFamily = Display, fontSize = 16.sp,
+            modifier = Modifier.align(Alignment.Center).rotate(-18f).border(2.dp, Color(0xB32E7D32), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp),
         )
     }
 }
 
 // ---------------------------------------------------------------- Leuchtturm
 
-/** Night sea, a sweeping beam; friends as portholes, requests drift in as bottles. */
+/** From the lighthouse gallery at night: the beam sweeps, friends glow in brass portholes. */
 @Composable
 internal fun LighthouseView(
     pals: List<ApiClient.UserSummary>,
@@ -427,133 +450,132 @@ internal fun LighthouseView(
     onClose: () -> Unit,
 ) {
     val t = rememberInfiniteTransition(label = "beam")
-    val angle by t.animateFloat(0f, 1f, infiniteRepeatable(tween(7000, easing = LinearEasing), RepeatMode.Restart), label = "a")
+    val angle by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(5200, easing = LinearEasing), RepeatMode.Reverse), label = "a")
     val bob by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(1800), RepeatMode.Reverse), label = "bob")
-    PlaceStage(IsleBuilding.LIGHTHOUSE, onClose, action = "🔭  Freunde finden" to onFind) {
-        Box(Modifier.fillMaxSize()) {
-            Canvas(Modifier.fillMaxSize()) {
-                val origin = Offset(size.width * .5f, -size.height * .02f)
-                val a = (angle * 2 * PI).toFloat()
-                val spread = .28f
-                val len = size.height * 1.3f
-                val p = Path().apply {
-                    moveTo(origin.x, origin.y)
-                    lineTo(origin.x + len * sin(a - spread), origin.y + len * cos(a - spread).let { kotlin.math.abs(it) })
-                    lineTo(origin.x + len * sin(a + spread), origin.y + len * cos(a + spread).let { kotlin.math.abs(it) })
-                    close()
-                }
-                drawPath(p, Brush.radialGradient(listOf(Color(0x55FFF3B0), Color(0x00FFF3B0)), origin, len))
-                for (i in 0 until 40) {
-                    val x = ((i * 0.618f) % 1f) * size.width; val y = ((i * 0.377f) % 1f) * size.height * .5f
-                    drawCircle(Color.White.copy(alpha = .25f + (i % 3) * .15f), 1.6f + (i % 2), Offset(x, y))
-                }
+    PlaceStage(IsleBuilding.LIGHTHOUSE, onClose, action = "Freunde finden" to onFind, imgAspect = 941f / 1672f) { map ->
+        Canvas(Modifier.fillMaxSize()) {
+            val origin = Offset(size.width * .5f, size.height * 1.02f)
+            val a = angle * .9f
+            val len = size.height * 1.4f
+            val spread = .16f
+            val p = Path().apply {
+                moveTo(origin.x, origin.y)
+                lineTo(origin.x + len * sin(a - spread), origin.y - len * cos(a - spread))
+                lineTo(origin.x + len * sin(a + spread), origin.y - len * cos(a + spread))
+                close()
             }
-            LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (incoming.isNotEmpty()) {
-                    item { Text("Flaschenpost angespült", color = Color(0xFFFFE9A8), fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-                    items(incoming, key = { "in-${it.id}" }) { r -> Bottle(r.senderName, bob, onYes = { onRespond(r.id, true) }, onNo = { onRespond(r.id, false) }) }
-                }
-                item {
-                    Text(
-                        if (pals.isEmpty()) "Noch leuchtet niemand zurück." else "Im Lichtkegel · ${pals.size} ${if (pals.size == 1) "Freund" else "Freunde"}",
-                        color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                    )
-                }
-                item {
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        pals.forEach { f -> Porthole(f, levels[f.id] ?: 1) { onFriend(f.id) } }
-                    }
-                }
-                if (outgoing.isNotEmpty()) {
-                    item { Text("Deine Signale draußen", color = Color.White.copy(alpha = .8f), fontWeight = FontWeight.Bold, fontSize = 14.sp) }
-                    items(outgoing, key = { "out-${it.id}" }) { r ->
-                        Text("📡  ${r.recipientName} hat noch nicht geantwortet", color = Color.White.copy(alpha = .8f), fontSize = 13.sp)
-                    }
-                }
+            drawPath(p, Brush.radialGradient(listOf(Color(0x66FFF3B0), Color(0x22FFF3B0), Color(0x00FFF3B0)), origin, len))
+        }
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 18.dp),
+            contentPadding = PaddingValues(top = 100.dp, bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (incoming.isNotEmpty()) {
+                item { NightTitle("Flaschenpost angespült") }
+                items(incoming, key = { "in-${it.id}" }) { r -> Bottle(r.senderName, bob, onYes = { onRespond(r.id, true) }, onNo = { onRespond(r.id, false) }) }
+            }
+            item { NightTitle(if (pals.isEmpty()) "Noch leuchtet niemand zurück" else "Im Lichtkegel") }
+            item {
+                LazyVerticalGrid(
+                    GridCells.Fixed(3), Modifier.fillMaxWidth().heightIn(max = 520.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp), userScrollEnabled = false,
+                ) { items(pals, key = { it.id }) { f -> Porthole(f, levels[f.id] ?: 1) { onFriend(f.id) } } }
+            }
+            if (outgoing.isNotEmpty()) items(outgoing, key = { "out-${it.id}" }) { r ->
+                Tag("Signal an ${r.recipientName} – noch keine Antwort", ink = Color(0xFFFFF3B0), bg = Color(0x66000000), size = 12)
             }
         }
     }
 }
 
 @Composable
+private fun NightTitle(text: String) {
+    Text(
+        text, fontFamily = Display, fontSize = 19.sp, color = Color(0xFFFFE9A8),
+        style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xCC000000), Offset(0f, 2f), 6f)),
+    )
+}
+
+@Composable
 private fun Porthole(f: ApiClient.UserSummary, level: Int, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(84.dp).clickable(onClickLabel = "${f.name} öffnen", onClick = onClick)) {
-        Box(
-            Modifier.size(74.dp).shadow(6.dp, CircleShape)
-                .background(Brush.radialGradient(listOf(Color(0xFFE8C66A), Color(0xFF9C7524))), CircleShape).padding(6.dp)
-                .background(profileColor(f.displayColor).copy(alpha = .9f), CircleShape),
-            Alignment.Center,
-        ) { Text(f.avatarEmoji, fontSize = 32.sp) }
-        Text(f.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(Isle.levelName(level), color = Color(0xFFFFE9A8), fontSize = 11.sp, maxLines = 1)
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "${f.name} öffnen", onClick = onClick)) {
+        Box(Modifier.size(88.dp), Alignment.Center) {
+            Box(
+                Modifier.size(56.dp).background(Brush.radialGradient(listOf(Color(0xFFFFF3B0), profileColor(f.displayColor))), CircleShape),
+                Alignment.Center,
+            ) { Text(f.avatarEmoji, fontSize = 28.sp) }
+            Sprite(R.drawable.p_porthole, Modifier.fillMaxSize())
+        }
+        Text(
+            f.name, color = Color.White, fontFamily = Display, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.background(Color(0x99102040), RoundedCornerShape(50)).padding(horizontal = 8.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            repeat(level.coerceIn(1, 4)) { Sprite(R.drawable.p_star, Modifier.size(11.dp)) }
+        }
     }
 }
 
 @Composable
 private fun Bottle(name: String, bob: Float, onYes: () -> Unit, onNo: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().offset(y = (bob * 3).dp).background(Color(0x33FFFFFF), RoundedCornerShape(20.dp)).padding(12.dp),
+        Modifier.fillMaxWidth().offset(y = (bob * 3).dp).shadow(6.dp, RoundedCornerShape(22.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xF2FFFBF1), Color(0xF2F6E7C8))), RoundedCornerShape(22.dp))
+            .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(22.dp)).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("🍾", fontSize = 30.sp, modifier = Modifier.rotate(-30f + bob * 6))
-        Spacer(Modifier.width(10.dp))
+        Sprite(R.drawable.p_bottle, Modifier.size(52.dp).rotate(-35f + bob * 6))
+        Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
-            Text(name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            Text("möchte dein Freund werden", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+            Text(name, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 16.sp)
+            Text("möchte dein Freund werden", fontFamily = Body, color = Color(0xFF8A6A3A), fontSize = 12.sp)
         }
-        Text("Nein", color = Color.White, modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onNo).padding(horizontal = 10.dp, vertical = 8.dp))
+        Text("Nein", fontFamily = Body, fontWeight = FontWeight.Bold, color = Color(0xFF8A6A3A), modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onNo).padding(horizontal = 8.dp, vertical = 8.dp))
         Text(
-            "Annehmen", color = Color(0xFF0F1D3D), fontWeight = FontWeight.Bold,
-            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFFFFE9A8)).clickable(onClick = onYes).padding(horizontal = 12.dp, vertical = 8.dp),
+            "Annehmen", fontFamily = Display, color = Color.White, fontSize = 14.sp,
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF17A2A6)).clickable(onClick = onYes).padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
 }
 
 // ---------------------------------------------------------------- Bibliothek
 
-/** The glossary as a book: leather cover, spine with A–Z, parchment page. */
+/** The glossary lies open on the reading desk among the shelves. */
 @Composable
 internal fun LibraryBook(onClose: () -> Unit, glossary: @Composable () -> Unit) {
-    PlaceStage(IsleBuilding.LIBRARY, onClose) {
-        Row(
-            Modifier.fillMaxSize().padding(start = 10.dp, end = 10.dp, bottom = 12.dp).navigationBarsPadding()
-                .shadow(10.dp, RoundedCornerShape(16.dp))
-                .background(Color(0xFF5B3A8C), RoundedCornerShape(16.dp)).padding(6.dp),
+    PlaceStage(IsleBuilding.LIBRARY, onClose) { map ->
+        Box(
+            Modifier.fillMaxSize().padding(top = 92.dp, start = 14.dp, end = 14.dp, bottom = 14.dp).navigationBarsPadding(),
         ) {
-            // Spine with the alphabet stamped in gold.
-            Column(
-                Modifier.width(22.dp).fillMaxSize().padding(vertical = 10.dp),
-                verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                "ABCDEFGHIJKLMNOPRSTUWZ".forEach { Text("$it", color = Color(0xFFE9C46A), fontSize = 9.sp, fontWeight = FontWeight.Bold) }
-            }
+            // Leather cover peeking out behind the page.
             Box(
-                Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp, topStart = 4.dp, bottomStart = 4.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFFE9DFC8), Color(0xFFFFF9EC), Color(0xFFFFF9EC)))),
+                Modifier.fillMaxSize().shadow(14.dp, RoundedCornerShape(18.dp))
+                    .background(Brush.verticalGradient(listOf(Color(0xFF7B4FB0), Color(0xFF4E2F80))), RoundedCornerShape(18.dp))
+                    .border(2.dp, Color(0xFFE9C46A), RoundedCornerShape(18.dp)).padding(7.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Brush.horizontalGradient(listOf(Color(0xFFE6D6B4), Color(0xFFFFF9EC), Color(0xFFFFF9EC), Color(0xFFF3E6CA)))),
             ) {
                 MaterialTheme(
                     colorScheme = lightColorScheme(
                         primary = Color(0xFF5B3A8C), onPrimary = Color.White,
                         primaryContainer = Color(0xFFE6DAF5), onPrimaryContainer = Color(0xFF2E2150),
-                        surface = Color(0xFFFFF9EC), onSurface = Color(0xFF2E2150),
+                        secondaryContainer = Color(0xFFF1E3C4), onSecondaryContainer = Color(0xFF3B2410),
+                        surface = Color.Transparent, onSurface = Color(0xFF2E2150),
+                        surfaceContainer = Color(0x14FFFFFF), surfaceContainerLow = Color(0x14FFFFFF), surfaceContainerHigh = Color(0x22FFFFFF),
                         surfaceVariant = Color(0xFFF1E7D2), onSurfaceVariant = Color(0xFF6B5B48),
-                        background = Color(0xFFFFF9EC), outline = Color(0xFFC9B48E),
+                        background = Color.Transparent, outline = Color(0xFFC9B48E), outlineVariant = Color(0xFFE2D3B0),
                     ),
                     typography = MaterialTheme.typography,
                 ) { glossary() }
-                // Silk bookmark ribbon.
-                Box(Modifier.align(Alignment.TopEnd).padding(end = 22.dp).size(width = 14.dp, height = 46.dp).background(Color(0xFFC62828)))
             }
+            Sprite(R.drawable.p_quill, Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 4.dp).size(64.dp))
         }
     }
 }
 
 // ---------------------------------------------------------------- Gemeindehaus
 
-/** Each group is a round table; its members sit around it. */
+/** The hall floor: every group is a round table with its members on stools. */
 @Composable
 internal fun CommunityHall(
     groups: List<ApiClient.Group>,
@@ -562,12 +584,12 @@ internal fun CommunityHall(
     onManage: () -> Unit,
     onClose: () -> Unit,
 ) {
-    PlaceStage(IsleBuilding.CAMPFIRE, onClose, action = "🪑  Gruppen verwalten" to onManage) {
-        if (groups.isEmpty()) EmptyPlace("Noch keine Tische", "Gründe eine Gruppe – sie bekommt hier ihren eigenen Tisch.")
+    PlaceStage(IsleBuilding.CAMPFIRE, onClose, action = "Gruppen verwalten" to onManage) { map ->
+        if (groups.isEmpty()) Box(Modifier.fillMaxSize(), Alignment.Center) { Parchment("Noch keine Tische", "Gründe eine Gruppe – sie bekommt hier ihren eigenen Tisch.") }
         else LazyVerticalGrid(
-            GridCells.Fixed(2), Modifier.fillMaxSize().padding(horizontal = 14.dp),
-            contentPadding = PaddingValues(top = 6.dp, bottom = 100.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            GridCells.Fixed(2), Modifier.fillMaxSize().padding(horizontal = 10.dp),
+            contentPadding = PaddingValues(top = map.y(.3f).coerceAtLeast(120.dp), bottom = 100.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             items(groups, key = { it.id }) { g ->
                 val open = quests.count { it.targetType == "group" && it.targetId == g.id && it.completedAt == null }
@@ -582,38 +604,42 @@ private fun RoundTable(g: ApiClient.Group, openQuests: Int, onClick: () -> Unit)
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "Quest für ${g.name}", onClick = onClick)) {
         BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f)) {
             val w = maxWidth
-            val seat: Dp = 34.dp
-            Box(
-                Modifier.align(Alignment.Center).size(w * .52f).shadow(6.dp, CircleShape)
-                    .background(Brush.radialGradient(listOf(Color(0xFFC88A55), Color(0xFF8A5A2B))), CircleShape),
-                Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (openQuests > 0) "⭐$openQuests" else "🕯", fontSize = 16.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                    if (openQuests > 0) Text("offen", fontSize = 10.sp, color = Color.White)
-                }
-            }
+            val seat: Dp = w * .25f
             val members = g.members.take(8)
-            members.forEachIndexed { i, m ->
+            // Stools first (behind), then the table, then the people on the front stools.
+            val placed = members.mapIndexed { i, m ->
                 val a = (i.toFloat() / members.size) * 2f * PI.toFloat() - PI.toFloat() / 2
-                val r = w * .38f
+                Triple(m, w / 2 + w * .37f * cos(a) - seat / 2, w / 2 + w * .33f * sin(a) - seat / 2)
+            }
+            placed.forEach { (_, x, y) -> Sprite(R.drawable.p_stool, Modifier.offset(x = x, y = y + seat * .25f).size(seat)) }
+            Sprite(R.drawable.p_table, Modifier.align(Alignment.Center).size(w * .58f))
+            if (openQuests > 0) Row(
+                Modifier.align(Alignment.Center).offset(y = (-4).dp).shadow(2.dp, RoundedCornerShape(50)).background(Color(0xF2FFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp, vertical = 1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Sprite(R.drawable.p_star, Modifier.size(13.dp))
+                Text(" $openQuests", fontFamily = Display, fontSize = 12.sp, color = Color(0xFF9A6B00))
+            }
+            placed.forEach { (m, x, y) ->
                 Box(
-                    Modifier.offset(x = w / 2 + r * cos(a) - seat / 2, y = w / 2 + r * sin(a) - seat / 2).size(seat)
-                        .shadow(3.dp, CircleShape).background(Color.White, CircleShape).padding(2.dp)
-                        .background(profileColor(m.displayColor).copy(alpha = .35f), CircleShape)
+                    Modifier.offset(x = x + seat * .1f, y = y - seat * .05f).size(seat * .8f)
+                        .shadow(4.dp, CircleShape).background(Color.White, CircleShape).padding(2.dp)
+                        .background(Brush.radialGradient(listOf(Color.White, profileColor(m.displayColor).copy(alpha = .55f))), CircleShape)
                         .semantics { contentDescription = m.name },
                     Alignment.Center,
-                ) { Text(m.avatarEmoji, fontSize = 17.sp) }
+                ) { Text(m.avatarEmoji, fontSize = 16.sp) }
             }
         }
-        Text(g.name, fontWeight = FontWeight.Bold, color = Color(0xFF4A2414), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("${g.members.size} am Tisch", fontSize = 12.sp, color = Color(0xFF7A4B30))
+        Tag(g.name, size = 14, modifier = Modifier.offset(y = (-6).dp))
+        Text("${g.members.size} am Tisch", fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFFFFF6E5),
+            style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xAA3B2410), Offset(0f, 1f), 3f)),
+            modifier = Modifier.offset(y = (-4).dp))
     }
 }
 
 // ---------------------------------------------------------------- Mein Haus
 
-/** My room: portrait on the wall, trophies on the shelf, the door to settings. */
+/** The cottage living room: portrait on the wall, trophies on the painted shelf. */
 @Composable
 internal fun MyHouse(
     name: String,
@@ -627,67 +653,63 @@ internal fun MyHouse(
     onEdit: () -> Unit,
     onClose: () -> Unit,
 ) {
-    PlaceStage(IsleBuilding.HOUSE, onClose, action = "⚙  Profil & Einstellungen" to onSettings) {
-        Column(
-            Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(bottom = 90.dp),
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            // Wall: window onto the sea on the left, framed portrait in the middle, a plant on the right.
+    PlaceStage(IsleBuilding.HOUSE, onClose, action = "Profil & Einstellungen" to onSettings) { map ->
+        // Portrait in a golden frame, centred on the empty wall.
+        Box(map.region(.36f, .16f, .7f, .43f), Alignment.Center) {
             Box(
-                Modifier.fillMaxWidth().weight(1f).shadow(4.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))
-                    .background(Brush.verticalGradient(listOf(Color(0xFFFFF3DC), Color(0xFFF6E2BD)))),
-            ) {
-                // Wainscot / floor.
-                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(70.dp).background(Brush.verticalGradient(listOf(Color(0xFFC89463), Color(0xFFA9743F)))))
-                Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 70.dp).fillMaxWidth().height(4.dp).background(Color(0xFF8A5A2B)))
-                // Window with sea and sky.
-                Box(
-                    Modifier.align(Alignment.TopStart).padding(18.dp).size(width = 74.dp, height = 92.dp)
-                        .border(5.dp, Color.White, RoundedCornerShape(6.dp)).clip(RoundedCornerShape(6.dp))
-                        .background(Brush.verticalGradient(listOf(Color(0xFFBFE9FF), Color(0xFF8FE3E0), Color(0xFF4FC3C7)))),
-                ) {
-                    Box(Modifier.align(Alignment.Center).fillMaxWidth().height(4.dp).background(Color.White))
-                    Box(Modifier.align(Alignment.Center).width(4.dp).fillMaxSize().background(Color.White))
+                Modifier.fillMaxSize(.72f).background(Brush.radialGradient(listOf(Color.White, profileColor(color).copy(alpha = .6f)))),
+                Alignment.Center,
+            ) { Text(emoji, fontSize = 54.sp) }
+            Sprite(R.drawable.p_frame, Modifier.fillMaxSize())
+        }
+        Box(Modifier.offset(x = map.x(.36f), y = map.y(.425f)).width(map.w * .34f), Alignment.TopCenter) { Tag(name, size = 15) }
+        // Trophies standing on the shelf: their bottoms touch the shelf top.
+        val shelfTop = map.y(.535f)
+        val items = listOf(
+            Triple(R.drawable.p_medal, "$friends", "Freunde"),
+            Triple(R.drawable.p_trophy, "$questsDone", if (questsDone == 1) "Quest" else "Quests"),
+            Triple(R.drawable.p_env, "$letters", "Briefe"),
+            Triple(R.drawable.p_star, "$qp", "Punkte"),
+        )
+        Row(
+            Modifier.fillMaxWidth().offset(y = shelfTop - 64.dp).padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            items.forEach { (res, v, l) ->
+                Column(Modifier.width(76.dp).semantics(mergeDescendants = true) {}, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Sprite(res, Modifier.size(56.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text(v, fontFamily = Display, fontSize = 20.sp, color = Color(0xFF3B2410))
+                    Text(l, fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF3B2410),
+                        modifier = Modifier.background(Color(0xCCFFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp))
                 }
-                Image(painterResource(R.drawable.n_flowerbush), null, Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 54.dp).size(64.dp))
-                Column(Modifier.align(Alignment.TopCenter).padding(top = 26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        Modifier.size(120.dp).shadow(8.dp, RoundedCornerShape(10.dp))
-                            .background(Brush.linearGradient(listOf(Color(0xFFE8C66A), Color(0xFF9C7524))), RoundedCornerShape(10.dp))
-                            .padding(9.dp).background(profileColor(color).copy(alpha = .85f), RoundedCornerShape(4.dp)),
-                        Alignment.Center,
-                    ) { Text(emoji, fontSize = 58.sp) }
-                    Spacer(Modifier.height(8.dp))
-                    Text(name, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5A3A12))
-                }
-                Text(
-                    "✎ Insel bearbeiten", color = Isle.TealDark, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp).shadow(3.dp, RoundedCornerShape(50))
-                        .clip(RoundedCornerShape(50)).background(Color.White)
-                        .clickable(onClick = onEdit).padding(horizontal = 16.dp, vertical = 9.dp),
-                )
-            }
-            // Shelf with trophies.
-            Text("Trophäenregal", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF173F26), modifier = Modifier.fillMaxWidth())
-            Column(Modifier.fillMaxWidth().background(Color(0x22FFFFFF), RoundedCornerShape(12.dp)).padding(top = 8.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    Trophy("👥", "$friends", "Freunde")
-                    Trophy("🏅", "$questsDone", "Quests")
-                    Trophy("✉", "$letters", "Briefe")
-                    Trophy("⭐", "$qp", "Punkte")
-                }
-                Box(Modifier.fillMaxWidth().height(12.dp).shadow(3.dp, RoundedCornerShape(3.dp)).background(Color(0xFF8A5A2B), RoundedCornerShape(3.dp)))
             }
         }
+        Box(Modifier.fillMaxWidth().offset(y = map.y(.7f)), Alignment.TopCenter) { GoldButtonSmall("Insel bearbeiten", Modifier.width(170.dp), onEdit) }
     }
 }
 
 @Composable
-private fun Trophy(icon: String, value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.semantics(mergeDescendants = true) {}) {
-        Text(icon, fontSize = 28.sp)
-        Text(value, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF173F26))
-        Text(label, fontSize = 11.sp, color = Color(0xFF3F6B4C))
+private fun GoldButtonSmall(label: String, modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.shadow(6.dp, RoundedCornerShape(24.dp)).background(Color(0xFFFFFBF1), RoundedCornerShape(24.dp))
+            .border(2.dp, Color(0xFF17A2A6), RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onClick).padding(vertical = 10.dp),
+        Alignment.Center,
+    ) { Text(label, fontFamily = Display, fontSize = 15.sp, color = Color(0xFF0E7F84)) }
+}
+
+/** Cream parchment card for empty states inside a place. */
+@Composable
+private fun Parchment(title: String, text: String) {
+    Column(
+        Modifier.padding(30.dp).shadow(8.dp, RoundedCornerShape(18.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xFFFFFBF1), Color(0xFFF6E7C8))), RoundedCornerShape(18.dp))
+            .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(18.dp)).padding(22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(title, fontFamily = Display, fontSize = 20.sp, color = Color(0xFF3B2410), textAlign = TextAlign.Center)
+        Text(text, fontFamily = Body, color = Color(0xFF6B5B48), textAlign = TextAlign.Center)
     }
 }
 

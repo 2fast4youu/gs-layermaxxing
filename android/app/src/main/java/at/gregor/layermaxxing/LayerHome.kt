@@ -392,7 +392,14 @@ fun LayerHome(
             else Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
         ) {
             if (tab == MainTab.CASTLES) { villageStateHolder.SaveableStateProvider("isles_${store.serverProfile.key}_${store.name}") {
+                val labelAccount = "${store.serverProfile.key}_${store.name}"
+                var friendLabels by remember(labelAccount) { mutableStateOf(FriendLabels.load(context, labelAccount)) }
                 IslandWorld(
+                    labels = friendLabels,
+                    onLabel = { id, label ->
+                        friendLabels = friendLabels.toMutableMap().apply { if (label == null) remove(id) else put(id, label) }
+                        FriendLabels.save(context, labelAccount, friendLabels)
+                    },
                     ownName = status?.name ?: store.name, ownEmoji = status?.avatarEmoji ?: "🙂",
                     friends = friends, groups = groups, islands = islands, quests = quests,
                     letters = messages + outbox, topics = topics, opened = opened,

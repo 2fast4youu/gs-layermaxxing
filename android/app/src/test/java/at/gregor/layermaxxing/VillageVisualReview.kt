@@ -260,8 +260,8 @@ class VillageVisualReview {
             ApiClient.UserSummary(2, "Gerfried", "friends", "🦊", "#2E7D32"),
             ApiClient.UserSummary(3, "Anna", "friends", "🐻", "#1565C0"),
             ApiClient.UserSummary(4, "Lena", "friends", "🦉", "#EF6C00"),
-            ApiClient.UserSummary(5, "Max", "friends", "🐺", "#6A1B9A"),
-            ApiClient.UserSummary(6, "Mara", "friends", "🐰", "#C2185B"),
+            ApiClient.UserSummary(5, "Ida", "friends", "🐺", "#6A1B9A"),
+            ApiClient.UserSummary(6, "Luki", "friends", "🐰", "#C2185B"),
         )
         IslandWorld(
             ownName = "Gregor", ownEmoji = "🦉", friends = pals,
@@ -279,6 +279,7 @@ class VillageVisualReview {
             onLockedTap = {}, onTopics = {}, onAllTopics = {}, onGlossary = {}, onPeople = {},
             onCreateQuest = { _, _, _, _, _, _ -> }, onQuestDone = { _, _ -> }, onQuestDelete = {},
             ownId = 1, startView = start, startPlace = placeKey,
+            labels = mapOf(2L to "Allerbester Freund", 3L to "Verlobte", 4L to "Schwester", 5L to "Schwesterherz", 6L to "Süßer"),
             incoming = if (withFriends) listOf(ApiClient.IncomingRequest(9, 7, "Jonas", 0)) else emptyList(),
             outgoing = if (withFriends) listOf(ApiClient.OutgoingRequest(10, 8, "Sophie", 0)) else emptyList(),
             glossary = { GlossaryScreen() },

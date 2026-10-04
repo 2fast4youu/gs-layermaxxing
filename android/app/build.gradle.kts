@@ -35,8 +35,8 @@ android {
         applicationId = "at.gregor.layermaxxing.gerfried"
         minSdk = 26
         targetSdk = 36
-        versionCode = 38
-        versionName = "6.4-eigene-orte"
+        versionCode = 39
+        versionName = "6.5-gemalte-orte"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GREGOR_API_BASE_URL", "\"$gregorApiBaseUrl\"")
         buildConfigField("String", "GERFRIED_API_BASE_URL", "\"$gerfriedApiBaseUrl\"")

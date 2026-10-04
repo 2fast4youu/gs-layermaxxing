@@ -198,6 +198,8 @@ internal fun IslandWorld(
     ownColor: String = "#17A2A6",
     startPlace: String? = null,
     glossary: @Composable () -> Unit = {},
+    labels: Map<Long, String> = emptyMap(),
+    onLabel: (Long, String?) -> Unit = { _, _ -> },
 ) {
     val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
@@ -244,7 +246,7 @@ internal fun IslandWorld(
                 }
             }
             else -> IslandMap(
-                ownName = ownName, pals = pals, infoById = infoById, letters = letters, homeDecor = home?.decor.orEmpty(),
+                ownName = ownName, pals = pals, infoById = infoById, letters = letters, homeDecor = home?.decor.orEmpty(), labels = labels,
                 onHome = { view = "home" }, onFriend = { selectedFriend = it }, ownSeed = ownId ?: 1L,
             )
         }
@@ -346,7 +348,7 @@ internal fun IslandWorld(
             containerColor = Isle.Card,
         ) {
             FriendSheet(
-                friend = friend, info = infoById[id],
+                friend = friend, info = infoById[id], label = labels[id], onLabel = { onLabel(id, it) },
                 letters = letters.filter { it.peerId == id && it.groupId == null }, opened = opened,
                 quests = quests.filter { it.targetType == "friend" && it.targetId == id },
                 topicCount = Conversations.topicsWith(id, friend.name, topics).count { it.completedAt == null },
@@ -392,6 +394,7 @@ private fun IslandMap(
     infoById: Map<Long, ApiClient.IslandInfo>,
     letters: List<ApiClient.Message>,
     homeDecor: Map<Int, String>,
+    labels: Map<Long, String> = emptyMap(),
     onHome: () -> Unit,
     onFriend: (Long) -> Unit,
     ownSeed: Long = 1L,
@@ -445,7 +448,7 @@ private fun IslandMap(
             val (x, y) = spots[i]
             IslandSprite(
                 level, friend.id, Isle.islandWidth(level), w * x, h * y,
-                friend.name, Isle.levelName(level), profileColor(friend.displayColor),
+                friend.name, FriendLabels.display(labels[friend.id], level), profileColor(friend.displayColor),
             ) { onFriend(friend.id) }
         }
         // Boats in transit: one per locked letter (max 2 per route keeps the sea calm).
@@ -528,6 +531,8 @@ private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name
 private fun FriendSheet(
     friend: ApiClient.UserSummary,
     info: ApiClient.IslandInfo?,
+    label: String?,
+    onLabel: (String?) -> Unit,
     letters: List<ApiClient.Message>,
     opened: Map<Long, OpenedMessage>,
     quests: List<ApiClient.Quest>,
@@ -542,6 +547,8 @@ private fun FriendSheet(
     onQuestDone: (ApiClient.Quest, Boolean) -> Unit,
 ) {
     val level = info?.level ?: 1
+    var naming by rememberSaveable { mutableStateOf(false) }
+    if (naming) LabelDialog(friend.name, label, onDismiss = { naming = false }) { onLabel(it); naming = false }
     LazyColumn(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding()) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -551,7 +558,15 @@ private fun FriendSheet(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(friend.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Isle.Ink)
-                    Text("${Isle.levelName(level)} · Stufe $level", color = Isle.Muted, fontSize = 13.sp)
+                    Text(
+                        (label?.let { "$it · " } ?: "") + "${Isle.levelName(level)} · Stufe $level",
+                        color = Isle.Muted, fontSize = 13.sp,
+                    )
+                    Text(
+                        if (label == null) "✎ Wie nennst du ${friend.name}?" else "✎ Namen ändern",
+                        color = Isle.TealDark, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).clickable { naming = true }.padding(vertical = 4.dp),
+                    )
                 }
                 DynamicIsland(remember(level, friend.id) { IslandPlans.friend(level, friend.id) }, Modifier.width(84.dp), animate = false)
             }
@@ -777,4 +792,38 @@ private fun rememberIsleReducedMotion(): Boolean {
             android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
         }.getOrDefault(false)
     }
+}
+
+
+/** Pick or type a personal name for a friend; empty = back to the level name. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun LabelDialog(name: String, current: String?, onDismiss: () -> Unit, onSave: (String?) -> Unit) {
+    var text by rememberSaveable { mutableStateOf(current ?: "") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Wie nennst du $name?") },
+        text = {
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    text, { text = it.take(28) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("z. B. Allerbester Freund") },
+                )
+                Spacer(Modifier.height(10.dp))
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FriendLabels.suggestions.forEach { s ->
+                        androidx.compose.material3.FilterChip(selected = text == s, onClick = { text = s }, label = { Text(s) })
+                    }
+                }
+                Text("Nur du siehst diesen Namen.", color = Isle.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(FriendLabels.clean(text)) }) { Text("Speichern") } },
+        dismissButton = {
+            Row {
+                if (current != null) TextButton(onClick = { onSave(null) }) { Text("Entfernen") }
+                TextButton(onClick = onDismiss) { Text("Abbrechen") }
+            }
+        },
+    )
 }
