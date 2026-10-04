@@ -409,6 +409,20 @@ fun LayerHome(
                     },
                     onQuestDone = { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } },
                     onQuestDelete = { quest -> act { api.deleteQuest(token, quest.id) } },
+                    ownId = status?.userId,
+                    loadIsland = { id -> api.island(token, id) },
+                    saveDecor = { decor -> api.setDecor(token, decor) },
+                    onError = { error = it },
+                    onPlace = { place ->
+                        when (place) {
+                            IsleBuilding.HOUSE -> hub = "settings"
+                            IsleBuilding.LIGHTHOUSE -> peopleOpen = true
+                            IsleBuilding.POST -> hub = "archive"
+                            IsleBuilding.LIBRARY -> hub = "glossary"
+                            IsleBuilding.CAMPFIRE -> hub = "groups"
+                            IsleBuilding.HARBOUR -> hub = "topics"
+                        }
+                    },
                 )
             } }
             val roomPlace = when {
@@ -424,6 +438,11 @@ fun LayerHome(
                 else -> ValleyDestination.SETTINGS
             }
             val roomTitle = when {
+                hub == "settings" -> "Mein Haus"
+                hub == "archive" -> "Post"
+                hub == "groups" -> "Lagerfeuer · Gruppen"
+                peopleOpen -> "Leuchtturm · Freunde"
+                hub == "topics" -> "Hafen · Themen"
                 openThreadFriend != null -> friends.firstOrNull { it.id == openThreadFriend }?.name ?: roomPlace.title
                 topicScope != null -> topicName
                 hub == "accounts" -> "Konten"

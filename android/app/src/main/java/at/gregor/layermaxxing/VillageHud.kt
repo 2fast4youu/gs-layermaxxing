@@ -552,38 +552,38 @@ internal fun BuildingCard(
     }
 }
 
-/** Header for in-world building rooms: breadcrumb back to the village, then a navy title bar. */
+/** Header for rooms inside the island world: breadcrumb back to the island, then a teal title bar. */
 @Composable
 internal fun RoomHeader(icon: Int, title: String, onBack: (() -> Unit)?, onClose: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(bottom = 8.dp).heightIn(min = 40.dp)
-                .background(Kit.Glass, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp))
+                .shadow(3.dp, RoundedCornerShape(20.dp))
+                .background(Color.White, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp))
                 .clickable(onClick = onClose).padding(start = 12.dp, end = 16.dp)
-                .semantics { contentDescription = "Zurück ins Dorf"; role = Role.Button },
+                .semantics { contentDescription = "Zurück zur Insel"; role = Role.Button },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            GameText("‹", size = 22.sp, color = Kit.Gold)
+            Text("‹", fontSize = 22.sp, color = Isle.Teal, fontWeight = FontWeight.Bold)
             Spacer(Modifier.width(8.dp))
-            GameText("Dorf", size = 15.sp)
-            GameText("  ›  ", size = 15.sp, color = Color.White.copy(alpha = .5f))
-            GameText(title, size = 15.sp, color = Kit.Gold)
+            Text("Insel", fontSize = 15.sp, color = Isle.Ink, fontWeight = FontWeight.Bold)
+            Text("  ›  ", fontSize = 15.sp, color = Isle.Muted)
+            Text(title, fontSize = 15.sp, color = Isle.TealDark, fontWeight = FontWeight.Bold, maxLines = 1)
         }
         Row(
             Modifier.fillMaxWidth().height(60.dp)
-                .background(Brush.verticalGradient(listOf(Kit.NavyLight, Kit.Navy)), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .background(Brush.verticalGradient(listOf(Isle.Teal, Isle.TealDark)), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .padding(start = 10.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).background(Color.White, CircleShape).padding(2.dp)
-                    .background(Brush.radialGradient(listOf(Color.White, Kit.Ivory, Kit.IvoryDeep)), CircleShape),
+                Modifier.size(44.dp).background(Color.White, CircleShape).padding(4.dp),
                 contentAlignment = Alignment.Center,
             ) { Image(painterResource(icon), null, Modifier.size(34.dp)) }
-            GameText(title, size = 22.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
+            Text(title, fontSize = 20.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f).padding(start = 12.dp))
             if (onBack != null) SmallRound("‹", "Zurück", onBack)
             Spacer(Modifier.width(6.dp))
-            SmallRound("✕", "Zurück ins Dorf", onClose)
+            SmallRound("✕", "Zurück zur Insel", onClose)
         }
     }
 }

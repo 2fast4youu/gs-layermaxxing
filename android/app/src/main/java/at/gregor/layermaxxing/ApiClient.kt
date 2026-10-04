@@ -112,7 +112,9 @@ class ApiClient(
         val createdAt: Long, val completedAt: Long?, val completedByName: String?, val canDelete: Boolean,
     )
     data class IslandInfo(val friendId: Long, val qp: Int, val ep: Int, val score: Int, val level: Int, val nextAt: Int?)
-    data class Islands(val qp: Int, val friends: List<IslandInfo>)
+    data class Islands(val qp: Int, val friends: List<IslandInfo>, val score: Int = qp)
+    data class DecorItem(val key: String, val unlockAt: Int, val unlocked: Boolean)
+    data class HomeIsland(val userId: Long, val decor: Map<Int, String>, val score: Int, val items: List<DecorItem>)
     data class Topic(
         val id: Long, val title: String, val details: String, val creatorName: String,
         val targetType: String, val targetName: String, val targetId: Long?, val createdAt: Long, val completedAt: Long?,
@@ -397,12 +399,26 @@ class ApiClient(
     suspend fun islands(token: String): Islands = io {
         val j = execute(authorized(token, "api/islands").get().build())
         val arr = j.getJSONArray("friends")
-        Islands(j.optInt("qp"), (0 until arr.length()).map { i ->
+        Islands(j.optInt("qp"), score = j.optInt("score", j.optInt("qp")), friends = (0 until arr.length()).map { i ->
             val f = arr.getJSONObject(i)
             IslandInfo(f.getLong("friend_id"), f.getInt("qp"), f.getInt("ep"), f.getInt("score"), f.getInt("level"),
                 if (f.isNull("next_at")) null else f.getInt("next_at"))
         })
     }
+    suspend fun island(token: String, userId: Long): HomeIsland = io {
+        val j = execute(authorized(token, "api/island/$userId").get().build())
+        val d = j.getJSONObject("decor")
+        val items = j.getJSONArray("items")
+        HomeIsland(
+            j.getLong("user_id"), d.keys().asSequence().associate { it.toInt() to d.getString(it) }, j.getInt("score"),
+            (0 until items.length()).map { i -> items.getJSONObject(i).let { DecorItem(it.getString("key"), it.getInt("unlock_at"), it.getBoolean("unlocked")) } },
+        )
+    }
+    suspend fun setDecor(token: String, decor: Map<Int, String>) = unitCall(
+        authorized(token, "api/island/decor").put(
+            JSONObject().put("slots", JSONObject().apply { decor.forEach { (k, v) -> put(k.toString(), v) } }).body()
+        ).build()
+    )
     suspend fun topics(token: String): List<Topic> = array(token, "api/topics", ::parseTopic)
     suspend fun createTopic(token: String, title: String, details: String, peerId: Long?, groupId: Long?) = io {
         val encrypted = CryptoBox.encrypt(JSONObject().put("title", title.trim()).put("details", details.trim()).toString())

@@ -227,6 +227,13 @@ def initialize_database() -> None:
             FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
             FOREIGN KEY(completed_by_id) REFERENCES users(id) ON DELETE SET NULL
         );
+        CREATE TABLE IF NOT EXISTS island_decor (
+            user_id INTEGER NOT NULL,
+            slot INTEGER NOT NULL CHECK(slot BETWEEN 0 AND 5),
+            item TEXT NOT NULL,
+            PRIMARY KEY(user_id,slot),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         CREATE INDEX IF NOT EXISTS idx_quests_peer ON quests(peer_user_id,completed_at);
         CREATE INDEX IF NOT EXISTS idx_quests_group ON quests(group_id,completed_at);
         CREATE TABLE IF NOT EXISTS glossary_terms (
@@ -570,6 +577,11 @@ class QuestCreate(BaseModel):
 
 class QuestUpdate(BaseModel):
     completed: bool
+
+
+class DecorUpdate(BaseModel):
+    # slot index ("0".."5") -> item key; missing slots stay empty
+    slots: dict[str, str] = Field(default_factory=dict)
 
 
 class GlossaryTermCreate(BaseModel):
@@ -1489,6 +1501,64 @@ def pair_ep(conn: sqlite3.Connection, a: int, b: int) -> int:
                             (a, b, b, a)).fetchone()[0])
 
 
+# Decoration for the player's own home island. Items unlock with the player's
+# total score (quest points + rare EP, weighted); nothing is spent, nothing
+# grants rights. Friends may look at each other's island.
+DECOR_SLOTS = 6
+DECOR_ITEMS = {
+    "flowers": 0, "bench": 0, "lantern": 20, "flag": 20, "palm": 40,
+    "campfire": 60, "hammock": 80, "fountain": 120, "windmill": 200, "maibaum": 300,
+}
+
+
+def own_score(conn: sqlite3.Connection, me: int) -> tuple[int, int]:
+    qp = int(conn.execute("""SELECT COALESCE(SUM(q.points),0) FROM quests q WHERE q.completed_at IS NOT NULL AND
+                          ((q.peer_user_id IS NOT NULL AND (q.creator_id=? OR q.peer_user_id=?)) OR EXISTS(
+                          SELECT 1 FROM group_members gm WHERE gm.group_id=q.group_id AND gm.user_id=?))""",
+                          (me, me, me)).fetchone()[0])
+    ep = int(conn.execute("""SELECT COALESCE(SUM(points),0) FROM ep_proposals WHERE status='accepted' AND
+                          (proposer_id=? OR beneficiary_id=?)""", (me, me)).fetchone()[0])
+    return qp, ep
+
+
+def decor_of(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
+    return {str(r["slot"]): r["item"] for r in conn.execute(
+        "SELECT slot,item FROM island_decor WHERE user_id=? ORDER BY slot", (user_id,))}
+
+
+@app.get("/api/island/{user_id}")
+def island_of(user_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        if user_id != user["id"] and (blocked(conn, user["id"], user_id) or not are_friends(conn, user["id"], user_id)):
+            raise HTTPException(404, "Insel nicht gefunden")
+        qp, ep = own_score(conn, user_id)
+        score = qp + EP_WEIGHT * ep
+        return {
+            "user_id": user_id, "decor": decor_of(conn, user_id), "score": score,
+            "items": [{"key": k, "unlock_at": v, "unlocked": score >= v} for k, v in DECOR_ITEMS.items()],
+        }
+
+
+@app.put("/api/island/decor")
+def set_decor(payload: DecorUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        qp, ep = own_score(conn, user["id"])
+        score = qp + EP_WEIGHT * ep
+        clean: dict[int, str] = {}
+        for slot, item in payload.slots.items():
+            if not slot.isdigit() or not 0 <= int(slot) < DECOR_SLOTS:
+                raise HTTPException(422, "Unbekannter Platz")
+            if item not in DECOR_ITEMS:
+                raise HTTPException(422, "Unbekannte Deko")
+            if DECOR_ITEMS[item] > score:
+                raise HTTPException(403, "Diese Deko ist noch nicht freigeschaltet")
+            clean[int(slot)] = item
+        conn.execute("DELETE FROM island_decor WHERE user_id=?", (user["id"],))
+        conn.executemany("INSERT INTO island_decor(user_id,slot,item) VALUES (?,?,?)",
+                         [(user["id"], s_, i_) for s_, i_ in clean.items()])
+    return {"ok": True, "decor": {str(k): v for k, v in clean.items()}}
+
+
 @app.get("/api/islands")
 def islands(user: sqlite3.Row = Depends(current_user)) -> dict:
     me = user["id"]
@@ -1510,7 +1580,9 @@ def islands(user: sqlite3.Row = Depends(current_user)) -> dict:
                                   ((q.peer_user_id IS NOT NULL AND (q.creator_id=? OR q.peer_user_id=?)) OR EXISTS(
                                   SELECT 1 FROM group_members gm WHERE gm.group_id=q.group_id AND gm.user_id=?))""",
                                   (me, me, me)).fetchone()[0])
-    return {"qp": own_qp, "thresholds": list(ISLAND_THRESHOLDS), "ep_weight": EP_WEIGHT, "friends": result}
+        my_qp, my_ep = own_score(conn, me)
+    return {"qp": own_qp, "score": my_qp + EP_WEIGHT * my_ep, "thresholds": list(ISLAND_THRESHOLDS),
+            "ep_weight": EP_WEIGHT, "friends": result}
 
 
 # ---------------------------------------------------------------------------

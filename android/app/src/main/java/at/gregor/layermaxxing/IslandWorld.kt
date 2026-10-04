@@ -46,7 +46,11 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -146,8 +150,8 @@ internal object IsleLayout {
             val n = if (ring == 0) inner else count - inner
             val k = if (ring == 0) i else i - inner
             val angle = -PI / 2 + 2 * PI * k / n + if (ring == 1) PI / n else 0.0
-            val rx = if (ring == 0) .33 else .44
-            val ry = if (ring == 0) .30 else .40
+            val rx = if (ring == 0) .36 else .45
+            val ry = if (ring == 0) .31 else .40
             (.5 + rx * cos(angle)).toFloat() to (.5 + ry * sin(angle)).toFloat()
         }
     }
@@ -186,6 +190,12 @@ internal fun IslandWorld(
     onCreateQuest: (title: String, details: String, icon: String, points: Int, peerId: Long?, groupId: Long?) -> Unit,
     onQuestDone: (ApiClient.Quest, Boolean) -> Unit,
     onQuestDelete: (ApiClient.Quest) -> Unit,
+    ownId: Long? = null,
+    loadIsland: suspend (Long) -> ApiClient.HomeIsland? = { null },
+    saveDecor: suspend (Map<Int, String>) -> Unit = {},
+    onPlace: (IsleBuilding) -> Unit = {},
+    onError: (String) -> Unit = {},
+    startView: String = "map",
 ) {
     val pals = remember(friends) { friends.filter { it.relationship == "friend" } }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
@@ -193,18 +203,52 @@ internal fun IslandWorld(
     var harbourOpen by rememberSaveable { mutableStateOf(false) }
     var newQuestFor by remember { mutableStateOf<Pair<Long?, Long?>?>(null) }
     val openQuests = quests.count { it.completedAt == null }
+    // "map" = archipelago, "home" = my island up close, "visit:<id>" = a friend's island.
+    var view by rememberSaveable { mutableStateOf(startView) }
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var home by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
+    var visited by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
+    var slotPick by remember { mutableStateOf<Int?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(ownId, islands?.score) { ownId?.let { id -> home = runCatching { loadIsland(id) }.getOrNull() ?: home } }
+    val visitId = view.removePrefix("visit:").toLongOrNull()
+    LaunchedEffect(visitId) { visited = null; visitId?.let { id -> visited = runCatching { loadIsland(id) }.getOrNull() } }
+    BackHandler(enabled = view != "map" || editing) { if (editing) editing = false else view = "map" }
+    val homeBadges = mapOf(
+        IsleBuilding.HARBOUR to openQuests,
+        IsleBuilding.POST to letters.count { it.incoming && it.unlocked && it.readAt == null && opened[it.id] == null },
+    )
 
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Isle.SeaTop, Isle.SeaBottom)))) {
-        IslandMap(
-            ownName = ownName, pals = pals, infoById = infoById, letters = letters,
-            onHome = { harbourOpen = true }, onFriend = { selectedFriend = it },
-        )
+        when {
+            view == "home" -> CloseIsland(
+                title = if (editing) "Insel bearbeiten" else "Meine Insel",
+                subtitle = if (editing) "Tippe auf einen freien Platz" else "Tippe auf ein Gebäude",
+            ) {
+                HubIsland(
+                    decor = home?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(),
+                    badges = homeBadges,
+                    onBuilding = { b -> if (b == IsleBuilding.HARBOUR) harbourOpen = true else onPlace(b) },
+                    onSlot = if (editing) ({ slotPick = it }) else null,
+                )
+            }
+            visitId != null -> {
+                val friend = pals.firstOrNull { it.id == visitId }
+                CloseIsland(title = "Insel von ${friend?.name ?: "…"}", subtitle = "Du bist zu Besuch") {
+                    HubIsland(decor = visited?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), labels = false)
+                }
+            }
+            else -> IslandMap(
+                ownName = ownName, pals = pals, infoById = infoById, letters = letters, homeDecor = home?.decor.orEmpty(),
+                onHome = { view = "home" }, onFriend = { selectedFriend = it },
+            )
+        }
         // Calm HUD: who I am, my quest points, letters waiting, nothing else.
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Pill(Modifier.clickable(onClick = onBack)) { Text("‹", fontSize = 20.sp, color = Isle.Ink, fontWeight = FontWeight.Bold) }
+            Pill(Modifier.clickable { if (editing) editing = false else if (view != "map") view = "map" else onBack() }) { Text("‹", fontSize = 20.sp, color = Isle.Ink, fontWeight = FontWeight.Bold) }
             Spacer(Modifier.width(8.dp))
             Pill { Text("$ownEmoji  $ownName", color = Isle.Ink, fontWeight = FontWeight.Bold, maxLines = 1) }
             Spacer(Modifier.weight(1f))
@@ -215,7 +259,7 @@ internal fun IslandWorld(
             val ready = letters.count { it.incoming && it.unlocked && it.readAt == null && opened[it.id] == null }
             Pill { Text("✉ $ready", color = Isle.Ink, fontWeight = FontWeight.Bold) }
         }
-        if (pals.isEmpty()) {
+        if (pals.isEmpty() && view == "map") {
             Column(
                 Modifier.align(Alignment.BottomCenter).padding(24.dp).padding(bottom = 76.dp)
                     .shadow(6.dp, RoundedCornerShape(22.dp)).background(Isle.Card, RoundedCornerShape(22.dp)).padding(18.dp),
@@ -234,9 +278,24 @@ internal fun IslandWorld(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            BarItem("⚓", "Hafen", badge = openQuests) { harbourOpen = true }
-            BarItem("📖", "Wörterbuch") { onGlossary() }
-            BarItem("👥", "Freunde") { onPeople() }
+            when {
+                editing -> BarItem("✓", "Fertig") { editing = false }
+                view == "home" -> {
+                    BarItem("🗺", "Karte") { view = "map" }
+                    BarItem("✎", "Bearbeiten") { editing = true }
+                    BarItem("⚓", "Hafen", badge = openQuests) { harbourOpen = true }
+                }
+                visitId != null -> {
+                    BarItem("🗺", "Karte") { view = "map" }
+                    BarItem("💬", "Chat") { onChat(visitId) }
+                    BarItem("✉", "Brief") { onComposeLetter(visitId) }
+                }
+                else -> {
+                    BarItem("🏝", "Meine Insel") { view = "home" }
+                    BarItem("⚓", "Hafen", badge = openQuests) { harbourOpen = true }
+                    BarItem("👥", "Freunde") { onPeople() }
+                }
+            }
         }
     }
 
@@ -257,6 +316,7 @@ internal fun IslandWorld(
                 onOpenLetter = { selectedFriend = null; onOpenLetter(it) },
                 onLockedTap = onLockedTap,
                 onTopics = { selectedFriend = null; onTopics(id) },
+                onVisit = { selectedFriend = null; view = "visit:$id" },
                 onNewQuest = { newQuestFor = id to null },
                 onQuestDone = onQuestDone,
             )
@@ -274,6 +334,21 @@ internal fun IslandWorld(
             onQuestDone = onQuestDone, onQuestDelete = onQuestDelete,
         )
     }
+    slotPick?.let { slot ->
+        val island = home
+        if (island == null) slotPick = null else DecorPicker(
+            current = island.decor[slot], items = island.items, score = island.score,
+            onPick = { item ->
+                val before = island
+                val next = island.decor.toMutableMap().apply { if (item == null) remove(slot) else put(slot, item) }
+                home = island.copy(decor = next); slotPick = null
+                scope.launch {
+                    runCatching { saveDecor(next) }.onFailure { home = before; onError(ApiErrors.friendly(it.message)) }
+                }
+            },
+            onDismiss = { slotPick = null },
+        )
+    }
     newQuestFor?.let { (peer, group) ->
         NewQuestSheet(
             pals = pals, groups = groups, presetPeer = peer, presetGroup = group,
@@ -289,6 +364,7 @@ private fun IslandMap(
     pals: List<ApiClient.UserSummary>,
     infoById: Map<Long, ApiClient.IslandInfo>,
     letters: List<ApiClient.Message>,
+    homeDecor: Map<Int, String>,
     onHome: () -> Unit,
     onFriend: (Long) -> Unit,
 ) {
@@ -335,7 +411,6 @@ private fun IslandMap(
             }
         }
         // Home island.
-        IslandSprite(R.drawable.isle_home, 190.dp, w * .5f, h * .5f, ownName, "Dein Hafen", Isle.Teal, onHome)
         ordered.forEachIndexed { i, friend ->
             val info = infoById[friend.id]
             val level = info?.level ?: 1
@@ -368,6 +443,33 @@ private fun IslandMap(
                 }
             }
         }
+        val hubW = 200.dp
+        Column(
+            Modifier.offset(x = w * .5f - hubW / 2, y = h * .5f - hubW * .42f).width(hubW)
+                .clickable(onClickLabel = "Meine Insel öffnen", onClick = onHome),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false)
+            Row(
+                Modifier.offset(y = (-6).dp).shadow(3.dp, RoundedCornerShape(50)).background(Isle.Teal, RoundedCornerShape(50))
+                    .padding(horizontal = 10.dp, vertical = 3.dp),
+            ) { Text("$ownName · Meine Insel", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1) }
+        }
+    }
+}
+
+/** Close-up of one island: calm sea, title card, the island filling the width. */
+@Composable
+private fun CloseIsland(title: String, subtitle: String, content: @Composable () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().statusBarsPadding().padding(top = 64.dp, bottom = 96.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Isle.Ink)
+        Text(subtitle, fontSize = 13.sp, color = Isle.Ink.copy(alpha = .7f))
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { content() }
     }
 }
 
@@ -407,6 +509,7 @@ private fun FriendSheet(
     onOpenLetter: (ApiClient.Message) -> Unit,
     onLockedTap: (ApiClient.Message) -> Unit,
     onTopics: () -> Unit,
+    onVisit: () -> Unit,
     onNewQuest: () -> Unit,
     onQuestDone: (ApiClient.Quest, Boolean) -> Unit,
 ) {
@@ -435,6 +538,8 @@ private fun FriendSheet(
                 color = Isle.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
             )
             Spacer(Modifier.height(14.dp))
+            OutlinedButton(onClick = onVisit, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("🏝 Insel von ${friend.name} besuchen") }
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = onChat, Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Chat") }
                 Button(

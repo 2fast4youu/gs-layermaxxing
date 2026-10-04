@@ -15,6 +15,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.unit.dp
 
@@ -254,7 +255,7 @@ class VillageVisualReview {
     )
 
     @Composable
-    private fun Isles(withFriends: Boolean = true) {
+    private fun Isles(withFriends: Boolean = true, start: String = "map") {
         val pals = if (!withFriends) emptyList() else listOf(
             ApiClient.UserSummary(2, "Gerfried", "friend", "🦊", "#2E7D32"),
             ApiClient.UserSummary(3, "Anna", "friend", "🐻", "#1565C0"),
@@ -274,7 +275,20 @@ class VillageVisualReview {
             topics = emptyList(), opened = emptyMap(), onBack = {}, onChat = {}, onComposeLetter = {}, onOpenLetter = {},
             onLockedTap = {}, onTopics = {}, onAllTopics = {}, onGlossary = {}, onPeople = {},
             onCreateQuest = { _, _, _, _, _, _ -> }, onQuestDone = { _, _ -> }, onQuestDelete = {},
+            ownId = 1, startView = start,
+            loadIsland = { id ->
+                val items = IsleDecor.labels.keys.mapIndexed { i, k -> ApiClient.DecorItem(k, i * 20, i < 6) }
+                if (id == 1L) ApiClient.HomeIsland(1, mapOf(0 to "flowers", 1 to "palm", 3 to "bench", 5 to "lantern"), 140, items)
+                else ApiClient.HomeIsland(id, mapOf(0 to "windmill", 2 to "fountain", 4 to "maibaum", 1 to "hammock", 5 to "campfire"), 400, items)
+            },
         )
+    }
+    @Test fun islandHome() = shot("22-meine-insel") { Isles(start = "home") }
+    @Test fun islandVisit() = shot("23-besuch") { Isles(start = "visit:2") }
+    @Test fun decorPicker() = shot("24-deko-wahl") {
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().padding(top = 300.dp).then(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color.White))) {
+            DecorPickerContent("palm", IsleDecor.labels.keys.mapIndexed { i, k -> ApiClient.DecorItem(k, i * 20, i < 6) }, 140, {}, {})
+        }
     }
 
     @Test fun islandsMap() = shot("20-inseln") { Isles() }

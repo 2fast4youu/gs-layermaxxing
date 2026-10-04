@@ -98,3 +98,22 @@ def test_outsider_cannot_see_or_touch(tmp_path):
 def test_island_levels():
     import app.main as main
     assert [main.island_level(s) for s in (0, 39, 40, 119, 120, 299, 300, 9999)] == [1, 1, 2, 2, 3, 3, 4, 4]
+
+
+def test_decor_unlocks_with_points_and_friends_can_look(tmp_path):
+    main = load_app(tmp_path)
+    with TestClient(main.app) as c:
+        a, b, x = register(c, "A"), register(c, "B"), register(c, "X")
+        befriend(c, a, b)
+        assert c.put("/api/island/decor", headers=auth(a), json={"slots": {"0": "flowers", "1": "bench"}}).status_code == 200
+        assert c.put("/api/island/decor", headers=auth(a), json={"slots": {"0": "palm"}}).status_code == 403
+        assert c.put("/api/island/decor", headers=auth(a), json={"slots": {"9": "flowers"}}).status_code == 422
+        assert c.put("/api/island/decor", headers=auth(a), json={"slots": {"0": "ufo"}}).status_code == 422
+        qid = c.post("/api/quests", headers=auth(a), json={"peer_user_id": b["user_id"], "title": "Gipfel", "points": 50}).json()["id"]
+        c.patch(f"/api/quests/{qid}", headers=auth(b), json={"completed": True})
+        assert c.put("/api/island/decor", headers=auth(a), json={"slots": {"2": "palm", "0": "flowers"}}).status_code == 200
+        seen = c.get(f"/api/island/{a['user_id']}", headers=auth(b)).json()
+        assert seen["decor"] == {"0": "flowers", "2": "palm"} and seen["score"] == 50
+        assert {i["key"]: i["unlocked"] for i in seen["items"]}["campfire"] is False
+        assert c.get(f"/api/island/{a['user_id']}", headers=auth(x)).status_code == 404
+        assert c.get("/api/islands", headers=auth(a)).json()["score"] == 50
