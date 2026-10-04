@@ -43,6 +43,13 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.shadow
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -208,7 +215,7 @@ class MainActivity : FragmentActivity() {
 private enum class AuthMode { LOGIN, REGISTER, RECOVER }
 
 @Composable
-private fun AuthScreen(
+internal fun AuthScreen(
     api: ApiClient, profile: ServerProfile, onProfile: (ServerProfile) -> Unit,
     notice: String? = null, onCancel: (() -> Unit)? = null,
     onAuthenticated: (ApiClient.Auth) -> Unit,
@@ -221,12 +228,24 @@ private fun AuthScreen(
     var code by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(notice) }
+    // The village greets you before you even log in: same painting, softly dimmed.
+    Box(Modifier.fillMaxSize().background(Color(0xFF14202F))) {
+        Image(
+            painterResource(R.drawable.village_plate), contentDescription = null,
+            modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop, alpha = .55f,
+        )
+        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(
+            listOf(Color(0x3314202F), Color(0x9914202F), Color(0xE614202F)),
+        )))
+    }
     Box(
-        Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 24.dp),
+        Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 20.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            Modifier.fillMaxWidth().widthIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(vertical = 24.dp),
+            Modifier.fillMaxWidth().widthIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(vertical = 24.dp)
+                .shadow(16.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp))
+                .background(MaterialTheme.colorScheme.surface).padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(13.dp),
         ) {
             Image(
@@ -234,25 +253,31 @@ private fun AuthScreen(
                 contentDescription = "GS Layermaxxing Logo",
                 modifier = Modifier.size(92.dp).clip(RoundedCornerShape(24.dp)).align(Alignment.CenterHorizontally),
             )
-            Text("GS Layermaxxing", fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterHorizontally))
+            Text("GS Layermaxxing", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.align(Alignment.CenterHorizontally))
             Text(
                 "Geheime Nachrichten – sichtbar, wenn die Zeit reif ist.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
-            ServerProfileSelector(profile, onProfile)
             if (!profile.isConfigured()) Text(
                 "${profile.label} ist in diesem Build nicht konfiguriert.",
                 color = MaterialTheme.colorScheme.error,
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (mode == AuthMode.LOGIN) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text("Anmelden") }
-                else OutlinedButton(onClick = { mode = AuthMode.LOGIN; error = null }, modifier = Modifier.weight(1f)) { Text("Anmelden") }
-                if (mode == AuthMode.REGISTER) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text("Registrieren") }
-                else OutlinedButton(onClick = { mode = AuthMode.REGISTER; error = null }, modifier = Modifier.weight(1f)) { Text("Registrieren") }
-            }
-            TextButton(onClick = { mode = AuthMode.RECOVER; error = null }, modifier = Modifier.align(Alignment.End)) {
-                Text("Passwort vergessen?")
+            // Tabs, not buttons: only the big button at the bottom submits.
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surfaceVariant).padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                listOf(AuthMode.LOGIN to "Ich habe ein Konto", AuthMode.REGISTER to "Neu hier").forEach { (m, label) ->
+                    val on = mode == m || (m == AuthMode.LOGIN && mode == AuthMode.RECOVER)
+                    Box(
+                        Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(50))
+                            .background(if (on) MaterialTheme.colorScheme.surface else Color.Transparent)
+                            .clickable { mode = m; error = null },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(label, fontWeight = if (on) FontWeight.ExtraBold else FontWeight.Medium, fontSize = 14.sp,
+                        color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
             }
             OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Benutzername") }, singleLine = true)
             if (mode == AuthMode.RECOVER) {
@@ -270,6 +295,9 @@ private fun AuthScreen(
                 )
             }
             if (mode != AuthMode.LOGIN) Text("Mindestens 8 Zeichen", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (mode == AuthMode.LOGIN) TextButton(onClick = { mode = AuthMode.RECOVER; error = null }, modifier = Modifier.align(Alignment.End)) {
+                Text("Passwort vergessen?")
+            }
             error?.let {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
@@ -287,7 +315,7 @@ private fun AuthScreen(
                                 AuthMode.LOGIN -> api.login(name.trim(), password)
                                 AuthMode.RECOVER -> api.recover(name.trim(), code.trim(), password)
                             }
-                        }.onSuccess(onAuthenticated).onFailure { error = it.message ?: "Vorgang fehlgeschlagen" }
+                        }.onSuccess(onAuthenticated).onFailure { error = ApiErrors.friendly(it.message) }
                         busy = false
                     }
                 },
@@ -299,6 +327,7 @@ private fun AuthScreen(
                 if (busy) CircularProgressIndicator(strokeWidth = 2.dp)
                 else Text(when (mode) { AuthMode.REGISTER -> "Konto erstellen"; AuthMode.LOGIN -> "Anmelden"; AuthMode.RECOVER -> "Konto wiederherstellen" })
             }
+            ServerProfileSelector(profile, onProfile)
             onCancel?.let { cancel ->
                 TextButton(onClick = cancel, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Abbrechen") }
             }
@@ -308,12 +337,30 @@ private fun AuthScreen(
 
 @Composable
 fun ServerProfileSelector(selected: ServerProfile, onSelected: (ServerProfile) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Server", fontWeight = FontWeight.SemiBold)
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            ServerProfile.entries.forEach { profile ->
-                if (selected == profile) Button(onClick = {}, modifier = Modifier.fillMaxWidth()) { Text("✓ " + profile.label) }
-                else OutlinedButton(onClick = { onSelected(profile) }, modifier = Modifier.fillMaxWidth()) { Text(profile.label) }
+    // One quiet line; the choice opens on tap. Still always visible, so nobody
+    // logs into the wrong server by accident.
+    var open by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Server", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Spacer(Modifier.width(10.dp))
+            Text(selected.label, Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(if (open) "▴" else "▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (open) ServerProfile.entries.forEach { profile ->
+            Row(
+                Modifier.fillMaxWidth().clickable { onSelected(profile); open = false }
+                    .background(if (profile == selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(profile.label, Modifier.weight(1f), fontSize = 14.sp)
+                if (profile == selected) Text("✓", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -387,9 +434,30 @@ fun LayermaxxingTheme(mode: String, content: @Composable () -> Unit) {
     ), typography = if (mode == "antique") MaterialTheme.typography.copy(
         headlineLarge = MaterialTheme.typography.headlineLarge.copy(fontFamily = FontFamily.Serif),
         titleLarge = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Serif),
-    ) else MaterialTheme.typography) {
+    ) else BrandType.typography()) {
         if (mode == "antique") CompositionLocalProvider(
             LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = FontFamily.Serif), content = content,
-        ) else content()
+        ) else CompositionLocalProvider(LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = Kit.Body), content = content)
+    }
+}
+
+/**
+ * One voice across messenger and village: Lilita One for headings (the same
+ * letters as the village HUD), Nunito for everything you read.
+ */
+internal object BrandType {
+    fun typography(): Typography {
+        val b = Typography()
+        fun androidx.compose.ui.text.TextStyle.body() = copy(fontFamily = Kit.Body)
+        fun androidx.compose.ui.text.TextStyle.display() = copy(fontFamily = Kit.Display, fontWeight = FontWeight.Normal)
+        return Typography(
+            displayLarge = b.displayLarge.display(), displayMedium = b.displayMedium.display(), displaySmall = b.displaySmall.display(),
+            headlineLarge = b.headlineLarge.display(), headlineMedium = b.headlineMedium.display(), headlineSmall = b.headlineSmall.display(),
+            titleLarge = b.titleLarge.display(),
+            titleMedium = b.titleMedium.body().copy(fontWeight = FontWeight.ExtraBold), titleSmall = b.titleSmall.body().copy(fontWeight = FontWeight.ExtraBold),
+            bodyLarge = b.bodyLarge.body(), bodyMedium = b.bodyMedium.body(), bodySmall = b.bodySmall.body(),
+            labelLarge = b.labelLarge.body().copy(fontWeight = FontWeight.ExtraBold), labelMedium = b.labelMedium.body().copy(fontWeight = FontWeight.Bold),
+            labelSmall = b.labelSmall.body(),
+        )
     }
 }

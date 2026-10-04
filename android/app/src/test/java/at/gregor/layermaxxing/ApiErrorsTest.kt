@@ -67,4 +67,18 @@ class ApiErrorsTest {
         assertTrue(error.message!!.startsWith("[LM-NET-IO]"))
         assertFalse(error.message!!.contains("broken pipe"))
     }
+
+    @Test fun friendlyHidesCodesAndKeepsServerWords() {
+        val net = ApiErrors.fromNetworkFailure(UnknownHostException("x")).message
+        assertTrue(ApiErrors.isOffline(net))
+        assertEquals("Keine Verbindung zum Server. Ich versuche es gleich wieder.", ApiErrors.friendly(net))
+        // Server's own explanation wins, but without the bracket code.
+        val wrong = ApiErrors.fromHttpResponse(401, "{\"detail\":\"Benutzername oder Passwort falsch\"}").message
+        assertEquals("Benutzername oder Passwort falsch", ApiErrors.friendly(wrong))
+        assertFalse(ApiErrors.isOffline(wrong))
+        // Generic texts get a human sentence.
+        assertEquals("Diese Funktion gibt es auf diesem Server noch nicht.", ApiErrors.friendly(ApiErrors.fromHttpResponse(404, "").message))
+        assertTrue(ApiErrors.friendly(ApiErrors.fromHttpResponse(502, "").message).startsWith("Der Server hat gerade ein Problem"))
+        assertFalse(ApiErrors.friendly(null).contains("["))
+    }
 }

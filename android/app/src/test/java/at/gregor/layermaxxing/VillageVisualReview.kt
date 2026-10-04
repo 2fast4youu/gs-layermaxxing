@@ -69,7 +69,7 @@ class VillageVisualReview {
     )
 
     @Test fun chatList() = shot("05-chats") {
-        androidx.compose.material3.MaterialTheme {
+        LayermaxxingTheme("light") {
             androidx.compose.material3.Surface {
                 ChatsScreen(
                     conversations = listOf(
@@ -86,9 +86,27 @@ class VillageVisualReview {
         }
     }
 
+    @Test fun login() = shot("13-login") {
+        LayermaxxingTheme("light") {
+            AuthScreen(api = ApiClient(), profile = ServerProfile.GREGOR_TEST, onProfile = {}, onAuthenticated = {})
+        }
+    }
+
+    @Test fun emptyChats() = shot("12-empty-chats") {
+        LayermaxxingTheme("light") {
+            androidx.compose.material3.Surface {
+                ChatsScreen(
+                    conversations = emptyList(), requests = emptyList(), sparkInbox = emptyList(), sparkSent = emptyList(),
+                    onOpen = {}, onRespond = { _, _ -> }, onGoPeople = {}, onOpenSparks = {}, onSendSpark = {}, sparkEnabled = false,
+                    onGroups = {}, onTopicsHub = {}, onGlossary = {}, onValley = {}, groupCount = 0, topicCount = 0, showValley = true,
+                )
+            }
+        }
+    }
+
     @Test fun chatThread() = shot("06-thread") {
         val now = java.time.Instant.now().epochSecond
-        androidx.compose.material3.MaterialTheme {
+        LayermaxxingTheme("light") {
             androidx.compose.material3.Surface {
                 androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
                     androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f).fillMaxSize().chatWallpaper()) {

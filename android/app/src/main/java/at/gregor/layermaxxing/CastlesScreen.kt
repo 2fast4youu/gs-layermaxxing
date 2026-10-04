@@ -666,7 +666,9 @@ private fun VillageWorld(
     var token by remember(friendName) { mutableStateOf(0) }
     var focus by remember(friendName) { mutableStateOf(MapPoint(.5f, .5f)) }
     var focusZoom by remember(friendName) { mutableStateOf(1f) }
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     fun select(p: VillagePick, at: MapPoint) {
+        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
         pick = p
         // Keep the building above the rising card: aim the camera a bit below it.
         focus = MapPoint(at.x, (at.y + .07f).coerceAtMost(1f)); focusZoom = 1.75f; token += 1

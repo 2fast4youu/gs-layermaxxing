@@ -19,6 +19,9 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
@@ -181,6 +184,9 @@ fun LayerHome(
     var epProposal by remember { mutableStateOf<EpOpportunity?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(true) }
+    // Background refresh failures never shout: they only flip this quiet chip.
+    var offline by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
     var recoveryCode by remember { mutableStateOf(initialRecoveryCode) }
     var castleExperiment by remember { mutableStateOf(store.castleExperiment) }
     var castleBuilds by remember { mutableStateOf(store.fiefBuilds()) }
@@ -230,12 +236,15 @@ fun LayerHome(
                 )
                 jobs.awaitAll()
             }
-            error = null
-        }.onFailure { error = it.message ?: "Aktualisierung fehlgeschlagen" }
+            offline = false
+        }.onFailure {
+            if (ApiErrors.isOffline(it.message)) offline = true
+            else if (status == null) error = ApiErrors.friendly(it.message)
+        }
         busy = false
     }
     fun act(block: suspend () -> Unit) {
-        scope.launch { runCatching { block(); refresh() }.onFailure { error = it.message ?: "Vorgang fehlgeschlagen" } }
+        scope.launch { runCatching { block(); refresh() }.onFailure { error = ApiErrors.friendly(it.message) } }
     }
     fun openLetter(message: ApiClient.Message) = act {
         val content = api.content(token, message.id)
@@ -262,8 +271,9 @@ fun LayerHome(
         appMode = store.appMode; tab = appMode.startTab
         creativeSwitch = store.creativeMode
         fogVisible = false; lockedTapTracker.reset(); lockedLetterSounds.stopAll()
-        busy = true; error = null
-        while (true) { refresh(); delay(30_000) }
+        busy = true; error = null; offline = false
+        // Offline? retry sooner, so the app comes back by itself.
+        while (true) { refresh(); delay(if (offline) 8_000 else 30_000) }
     }
     if (recoveryCode != null) RecoveryDialog(recoveryCode!!) { recoveryCode = null; onRecoveryCodeSeen() }
     proof?.let { ProofDialog(it, onDismiss = { proof = null }) }
@@ -463,6 +473,7 @@ fun LayerHome(
                         onGroups = { hub = "groups" }, onTopicsHub = { hub = "topics" },
                         onGlossary = { hub = "glossary" }, onValley = { hub = null },
                         groupCount = groups.size, topicCount = topics.count { it.completedAt == null }, showValley = false,
+                    refreshing = refreshing, onRefresh = { scope.launch { refreshing = true; refresh(); refreshing = false } },
                     )
                 }
                 hub == "archive" -> SubScreen("Postarchiv", onBack = { hub = null }, backLabel = "Tal") {
@@ -526,6 +537,7 @@ fun LayerHome(
                     onGroups = { hub = "groups" }, onTopicsHub = { hub = "topics" },
                     onGlossary = { hub = "glossary" }, onValley = { store.setCastleExperiment(true); castleExperiment = true; tab = MainTab.CASTLES },
                     groupCount = groups.size, topicCount = topics.count { it.completedAt == null }, showValley = appMode.showsValley,
+                    refreshing = refreshing, onRefresh = { scope.launch { refreshing = true; refresh(); refreshing = false } },
                 )
                 tab == MainTab.MORE || hub == "settings" -> MoreScreen(
                     token, api, store, status, sessions, blocked, messages, outbox, ep,
@@ -542,7 +554,9 @@ fun LayerHome(
                 )
                 tab == MainTab.CASTLES -> Unit
             }
-            if (busy) CircularProgressIndicator(Modifier.align(Alignment.Center))
+            // First load: one calm spinner. Later refreshes never cover the screen.
+            if (busy && status == null) CircularProgressIndicator(Modifier.align(Alignment.Center))
+            if (offline) OfflineChip(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 6.dp))
             currentDialog?.let { request -> RequestDialog(
                 request,
                 onAccept = { respondRequest(request, true); dismissedRequests[request.key] = true },
@@ -558,13 +572,10 @@ fun LayerHome(
                 }; epProposal = null },
                 onDismiss = { dismissedEpLetters[opportunity.letterId] = true; epProposal = null },
             ) }
-            error?.let { message -> Card(
-                Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-            ) { Row(Modifier.fillMaxWidth().padding(start = 14.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.onErrorContainer)
-                TextButton(onClick = { error = null }) { Text("Schließen") }
-            } } }
+            error?.let { message ->
+                LaunchedEffect(message) { delay(6_000); if (error == message) error = null }
+                NoticeToast(message, onDismiss = { error = null }, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 96.dp))
+            }
             } }
         }
     }
@@ -689,15 +700,20 @@ internal fun ChatsScreen(
     onOpenSparks: () -> Unit, onSendSpark: () -> Unit, sparkEnabled: Boolean,
     onGroups: () -> Unit, onTopicsHub: () -> Unit, onGlossary: () -> Unit, onValley: () -> Unit,
     groupCount: Int, topicCount: Int, showValley: Boolean,
+    refreshing: Boolean = false, onRefresh: () -> Unit = {},
 ) {
     var search by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(ChatTools.ListFilter.ALL) }
     val now = remember(conversations) { Instant.now().epochSecond }
     val matches = ChatTools.filterConversations(conversations, search, filter)
+    @OptIn(ExperimentalMaterial3Api::class)
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize()) {
             // WhatsApp layout: one search pill, one row of chips, then the list.
-            item {
+            // A brand-new account has nothing to search or filter: hide both.
+            val firstRun = conversations.isEmpty() && requests.isEmpty()
+            if (!firstRun) item {
                 androidx.compose.material3.TextField(
                     search, { search = it },
                     Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp).heightIn(min = 48.dp),
@@ -711,7 +727,7 @@ internal fun ChatsScreen(
                     ),
                 )
             }
-            item {
+            if (!firstRun) item {
                 androidx.compose.foundation.lazy.LazyRow(
                     contentPadding = PaddingValues(horizontal = 14.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -735,9 +751,12 @@ internal fun ChatsScreen(
             }
             if (conversations.isEmpty()) item {
                 Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.height(60.dp))
                     Text("💬", fontSize = 42.sp)
-                    Text("Noch keine Chats", fontWeight = FontWeight.Bold)
-                    Text("Tippe auf ＋ und finde deine erste Person.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                    Text("Noch keine Chats", style = MaterialTheme.typography.titleLarge)
+                    Text("Füge eine Person über ihren Benutzernamen hinzu. Sobald sie annimmt, könnt ihr schreiben.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(6.dp))
+                    Button(onClick = onGoPeople, modifier = Modifier.height(48.dp)) { Text("＋  Person hinzufügen") }
                 }
             } else if (matches.isEmpty()) item {
                 Text(
@@ -763,7 +782,7 @@ internal fun ChatsScreen(
                 onClick = onSendSpark,
                 size = 46,
             )
-            RoundAction(
+            if (conversations.isNotEmpty() || requests.isNotEmpty()) RoundAction(
                 glyph = "＋",
                 description = "Neuer Chat: Person finden oder Freundschaftsanfrage senden",
                 container = MaterialTheme.colorScheme.primary,
@@ -771,6 +790,7 @@ internal fun ChatsScreen(
                 onClick = onGoPeople,
             )
         }
+    }
     }
 }
 
@@ -2369,7 +2389,7 @@ private fun FriendsScreen(
             } }
         } }
         item { SectionTitle("Freunde") }
-        if (friends.isEmpty()) item { InfoCard("Noch keine Freunde.") }
+        if (friends.isEmpty()) item { EmptyHint("🤝", "Noch keine Freunde", "Suche oben nach einem Benutzernamen und schick eine Anfrage – sobald sie annimmt, wächst dein Dorf.") }
         else items(friends, key = { "friend-${it.id}" }) { friend ->
             val rules = settings.firstOrNull { it.friendId == friend.id }
             FriendRow(
@@ -2403,7 +2423,7 @@ private fun FriendsScreen(
             Spacer(Modifier.weight(1f))
             TextButton(onClick = { creatingGroup = !creatingGroup }) { Text(if (creatingGroup) "Schließen" else "+ Neue Gruppe") }
         } }
-        if (groups.isEmpty()) item { InfoCard("Noch keine Gruppe.") }
+        if (groups.isEmpty()) item { EmptyHint("👥", "Noch keine Gruppe", "Mit „+ Neue Gruppe“ holst du mehrere Freunde an einen Tisch.") }
         else items(groups, key = { "group-${it.id}" }) { group -> InfoCard("👥 ${group.name}: ${group.members.joinToString { it.name }}") }
         if (friends.isNotEmpty() && creatingGroup) item {
             Card { Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2865,6 +2885,13 @@ private fun ActionCard(text: String, actions: @Composable RowScope.() -> Unit) {
 @Composable
 internal fun SectionTitle(text: String) = Text(text, fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
 @Composable
+internal fun EmptyHint(glyph: String, title: String, hint: String) =
+    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(glyph, fontSize = 34.sp)
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(hint, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, fontSize = 14.sp)
+    }
+@Composable
 internal fun InfoCard(text: String) = Card(Modifier.fillMaxWidth()) { Text(text, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
 @Composable
 private fun ToggleSetting(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) =
@@ -2955,4 +2982,33 @@ private fun epLineFor(ep: ApiClient.EpOverview?, ownUserId: Long?, friend: ApiCl
     val received = history.filter { it.beneficiaryId == ownUserId && it.proposerId == friend.id }.sumOf { it.points }
     val given = history.filter { it.proposerId == ownUserId && it.beneficiaryId == friend.id }.sumOf { it.points }
     return "Von ${friend.name} angenommen: ${formatEpPoints(received)} · an ${friend.name} gegeben: ${formatEpPoints(given)}"
+}
+
+
+/** Quiet "no connection" chip: the app keeps working with what it has. */
+@Composable
+private fun OfflineChip(modifier: Modifier = Modifier) {
+    Row(
+        modifier.clip(RoundedCornerShape(50)).background(Color(0xE61C2A3E)).padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFF2C14E)))
+        Spacer(Modifier.width(8.dp))
+        Text("Offline – verbinde neu …", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** One toast for every failed action: readable sentence, auto-hides, tap to close. */
+@Composable
+private fun NoticeToast(message: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth().shadow(8.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.inverseSurface).clickable(onClick = onDismiss)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("⚠", color = Color(0xFFF2C14E), fontSize = 16.sp)
+        Spacer(Modifier.width(10.dp))
+        Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.inverseOnSurface, fontSize = 14.sp, maxLines = 3)
+    }
 }
