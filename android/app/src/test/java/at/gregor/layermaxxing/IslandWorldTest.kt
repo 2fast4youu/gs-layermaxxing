@@ -37,4 +37,22 @@ class IslandWorldTest {
         assertEquals("Neu", Isle.levelName(0)); assertEquals("Beste Freunde", Isle.levelName(9))
         assertEquals("⭐", Isle.questEmoji("??")); assertEquals("🥾", Isle.questEmoji("hike"))
     }
+
+    @Test fun serverFriendsAppearOnMap() {
+        val f = listOf(
+            ApiClient.UserSummary(2, "Gerfried", "friends", "🦉", "#336699"),
+            ApiClient.UserSummary(3, "Fremd", "none", "🙂", "#336699"),
+        )
+        assertEquals(listOf(2L), IsleLayout.friendsOnMap(f).map { it.id })
+    }
+
+    @Test fun friendIslandGrowsWithLevel() {
+        val counts = (1..4).map { IslandPlans.friend(it, 7L).pieces.size }
+        assertTrue(counts.zipWithNext().all { (a, b) -> b > a })
+    }
+
+    @Test fun homeLawnsAndBuildingsStayOnLand() {
+        IslandPlans.homeSlots.forEach { (x, y) -> assertTrue(IslandPlans.inside(x, y)) }
+        IslandPlans.homeBuildings.values.forEach { assertTrue(IslandPlans.inside(it.x, it.y, radius = .95f)) }
+    }
 }

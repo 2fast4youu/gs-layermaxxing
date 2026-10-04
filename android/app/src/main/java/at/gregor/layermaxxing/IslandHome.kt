@@ -49,24 +49,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * The player's home island, drawn from one painted base: its buildings ARE the
- * menus (harbour, post, library, campfire, lighthouse, house), the open lawns
- * are decoration slots. Positions are fractions of the isle_hub sprite and were
- * checked against the artwork so labels and decor sit on buildings and grass.
+ * The player's home island, assembled at runtime (see [DynamicIsland]): its
+ * buildings ARE the menus (harbour, post, library, hall, lighthouse, house),
+ * the open lawns are decoration slots.
  */
-internal enum class IsleBuilding(val emoji: String, val label: String, val x: Float, val y: Float) {
-    HOUSE("🏠", "Mein Haus", .47f, .03f),
-    LIGHTHOUSE("👥", "Freunde", .82f, .06f),
-    POST("✉", "Post", .15f, .22f),
-    LIBRARY("📖", "Wörterbuch", .86f, .33f),
-    CAMPFIRE("🔥", "Gruppen", .20f, .80f),
-    HARBOUR("⚓", "Hafen", .62f, .95f),
+internal enum class IsleBuilding(val emoji: String, val label: String) {
+    HOUSE("🏠", "Mein Haus"),
+    LIGHTHOUSE("👥", "Freunde"),
+    POST("✉", "Post"),
+    LIBRARY("📖", "Wörterbuch"),
+    CAMPFIRE("🔥", "Gruppen"),
+    HARBOUR("⚓", "Hafen"),
 }
 
 internal object IsleDecor {
-    /** Open lawns on isle_hub (fractions of the sprite). */
-    val slots = listOf(.36f to .30f, .66f to .36f, .47f to .50f, .70f to .47f, .30f to .49f, .62f to .58f)
-    const val HUB_ASPECT = 900f / 744f
 
     val labels = linkedMapOf(
         "flowers" to "Blumen", "bench" to "Bank", "lantern" to "Laterne", "flag" to "Fahne", "palm" to "Palme",
@@ -88,6 +84,13 @@ internal object IsleDecor {
         else -> null
     }
 
+    /** Sprite size as share of the island width. */
+    fun share(key: String): Float = when (key) {
+        "windmill", "maibaum", "palm" -> .12f
+        "flowers", "campfire" -> .075f
+        else -> .09f
+    }
+
     /** Taller items get a bit more room so they read at the same visual weight. */
     fun size(key: String, islandWidth: Dp): Dp = islandWidth * when (key) {
         "windmill", "maibaum", "palm" -> .15f
@@ -107,48 +110,54 @@ internal fun HubIsland(
     modifier: Modifier = Modifier,
     labels: Boolean = true,
     badges: Map<IsleBuilding, Int> = emptyMap(),
+    seed: Long = 1L,
+    animate: Boolean = true,
     onBuilding: ((IsleBuilding) -> Unit)? = null,
     onSlot: ((Int) -> Unit)? = null,
 ) {
-    BoxWithConstraints(modifier.aspectRatio(IsleDecor.HUB_ASPECT)) {
-        val w = maxWidth; val h = maxHeight
-        Image(painterResource(R.drawable.isle_hub), null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
-        IsleDecor.slots.forEachIndexed { i, (x, y) ->
-            val item = decor[i]
-            item?.let(IsleDecor::res)?.let { res ->
-                val s = IsleDecor.size(item, w)
-                Image(
-                    painterResource(res), IsleDecor.labels[item],
-                    Modifier.offset(x = w * x - s / 2, y = h * y - s * .85f).size(s),
-                )
-            }
-            if (onSlot != null) {
-                val s = 34.dp
-                Box(
-                    Modifier.offset(x = w * x - s / 2, y = h * y - s / 2).size(s).clip(CircleShape)
-                        .background(Color.White.copy(alpha = if (item == null) .85f else .55f))
-                        .border(2.dp, Isle.Teal, CircleShape)
-                        .clickable(onClickLabel = if (item == null) "Deko setzen" else "Deko ändern") { onSlot(i) },
-                    Alignment.Center,
-                ) { Text(if (item == null) "+" else "✎", color = Isle.TealDark, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-            }
+    val plan = androidx.compose.runtime.remember(seed, decor) {
+        val base = IslandPlans.home(seed)
+        val decorPieces = IslandPlans.homeSlots.mapIndexedNotNull { i, (x, y) ->
+            val key = decor[i] ?: return@mapIndexedNotNull null
+            IsleDecor.res(key)?.let { IslandPiece(it, x, y, IsleDecor.share(key), sway = key == "palm" || key == "flag", name = IsleDecor.labels[key]) }
         }
-        if (labels && onSlot == null) IsleBuilding.entries.forEach { b ->
+        base.copy(pieces = base.pieces + decorPieces)
+    }
+    DynamicIsland(plan, modifier, animate = animate) {
+        val w = maxWidth; val h = maxHeight
+        if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (x, y) ->
+            val item = decor[i]
+            val s = 34.dp
+            Box(
+                Modifier.offset(x = w * x - s / 2, y = h * y - s / 2).size(s).clip(CircleShape)
+                    .background(Color.White.copy(alpha = if (item == null) .85f else .55f))
+                    .border(2.dp, Isle.Teal, CircleShape)
+                    .clickable(onClickLabel = if (item == null) "Deko setzen" else "Deko ändern") { onSlot(i) },
+                Alignment.Center,
+            ) { Text(if (item == null) "+" else "✎", color = Isle.TealDark, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        }
+        if (labels && onSlot == null) IslandPlans.homeBuildings.forEach { (b, piece) ->
             val count = badges[b] ?: 0
+            val box = w * piece.size
+            // The whole building is the touch target; the pill sits at its foot.
+            if (onBuilding != null) Box(
+                Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box)
+                    .clickable(onClickLabel = "${b.label} öffnen") { onBuilding(b) },
+            )
             Row(
-                Modifier.offset(x = w * b.x - 50.dp, y = h * b.y - 15.dp).width(100.dp)
+                Modifier.offset(x = w * piece.x - 50.dp, y = h * piece.y + 1.dp).width(100.dp)
                     .then(if (onBuilding != null) Modifier.clickable(onClickLabel = "${b.label} öffnen") { onBuilding(b) } else Modifier)
                     .semantics { contentDescription = b.label; if (onBuilding != null) role = Role.Button },
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Row(
                     Modifier.shadow(3.dp, RoundedCornerShape(50)).background(Isle.Card, RoundedCornerShape(50))
-                        .heightIn(min = 30.dp).padding(horizontal = 8.dp, vertical = 4.dp),
+                        .heightIn(min = 22.dp).padding(horizontal = 7.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(b.emoji, fontSize = 12.sp)
+                    Text(b.emoji, fontSize = 11.sp)
                     Spacer(Modifier.width(3.dp))
-                    Text(b.label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Isle.Ink, maxLines = 1)
+                    Text(b.label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Isle.Ink, maxLines = 1)
                     if (count > 0) Text(
                         " $count", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(start = 3.dp).background(Isle.Teal, CircleShape).padding(horizontal = 4.dp),

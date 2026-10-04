@@ -106,13 +106,6 @@ internal object Isle {
     val levelNames = listOf("Neu", "Freunde", "Vertraut", "Beste Freunde")
     fun levelName(level: Int) = levelNames[(level - 1).coerceIn(0, 3)]
 
-    fun islandRes(level: Int) = when (level.coerceIn(1, 4)) {
-        1 -> R.drawable.isle_1
-        2 -> R.drawable.isle_2
-        3 -> R.drawable.isle_3
-        else -> R.drawable.isle_4
-    }
-
     /** Relative size on the map: closer, bigger friendships read at a glance. */
     fun islandWidth(level: Int): Dp = when (level.coerceIn(1, 4)) { 1 -> 104.dp; 2 -> 118.dp; 3 -> 134.dp; else -> 156.dp }
 
@@ -141,6 +134,9 @@ internal enum class LetterBoat(val res: Int, val badge: String, val label: Strin
 
 /** Pure placement maths, kept testable: friends sit on rings around the home island. */
 internal object IsleLayout {
+    /** The server marks accepted friends as "friends"; everyone in that list gets an island. */
+    fun friendsOnMap(friends: List<ApiClient.UserSummary>) = friends.filter { it.relationship == "friends" || it.relationship == "friend" }
+
     /** Returns map positions in units of the map width (0..1) / height (0..1). */
     fun positions(count: Int): List<Pair<Float, Float>> {
         if (count == 0) return emptyList()
@@ -197,7 +193,7 @@ internal fun IslandWorld(
     onError: (String) -> Unit = {},
     startView: String = "map",
 ) {
-    val pals = remember(friends) { friends.filter { it.relationship == "friend" } }
+    val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
     var selectedFriend by rememberSaveable { mutableStateOf<Long?>(null) }
     var harbourOpen by rememberSaveable { mutableStateOf(false) }
@@ -226,7 +222,7 @@ internal fun IslandWorld(
                 subtitle = if (editing) "Tippe auf einen freien Platz" else "Tippe auf ein Gebäude",
             ) {
                 HubIsland(
-                    decor = home?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(),
+                    decor = home?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), seed = ownId ?: 1L,
                     badges = homeBadges,
                     onBuilding = { b -> if (b == IsleBuilding.HARBOUR) harbourOpen = true else onPlace(b) },
                     onSlot = if (editing) ({ slotPick = it }) else null,
@@ -235,12 +231,12 @@ internal fun IslandWorld(
             visitId != null -> {
                 val friend = pals.firstOrNull { it.id == visitId }
                 CloseIsland(title = "Insel von ${friend?.name ?: "…"}", subtitle = "Du bist zu Besuch") {
-                    HubIsland(decor = visited?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), labels = false)
+                    HubIsland(decor = visited?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), labels = false, seed = visitId)
                 }
             }
             else -> IslandMap(
                 ownName = ownName, pals = pals, infoById = infoById, letters = letters, homeDecor = home?.decor.orEmpty(),
-                onHome = { view = "home" }, onFriend = { selectedFriend = it },
+                onHome = { view = "home" }, onFriend = { selectedFriend = it }, ownSeed = ownId ?: 1L,
             )
         }
         // Calm HUD: who I am, my quest points, letters waiting, nothing else.
@@ -367,6 +363,7 @@ private fun IslandMap(
     homeDecor: Map<Int, String>,
     onHome: () -> Unit,
     onFriend: (Long) -> Unit,
+    ownSeed: Long = 1L,
 ) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
@@ -416,7 +413,7 @@ private fun IslandMap(
             val level = info?.level ?: 1
             val (x, y) = spots[i]
             IslandSprite(
-                Isle.islandRes(level), Isle.islandWidth(level), w * x, h * y,
+                level, friend.id, Isle.islandWidth(level), w * x, h * y,
                 friend.name, Isle.levelName(level), profileColor(friend.displayColor),
             ) { onFriend(friend.id) }
         }
@@ -449,7 +446,7 @@ private fun IslandMap(
                 .clickable(onClickLabel = "Meine Insel öffnen", onClick = onHome),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false)
+            HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false, seed = ownSeed)
             Row(
                 Modifier.offset(y = (-6).dp).shadow(3.dp, RoundedCornerShape(50)).background(Isle.Teal, RoundedCornerShape(50))
                     .padding(horizontal = 10.dp, vertical = 3.dp),
@@ -474,13 +471,13 @@ private fun CloseIsland(title: String, subtitle: String, content: @Composable ()
 }
 
 @Composable
-private fun IslandSprite(res: Int, width: Dp, cx: Dp, cy: Dp, name: String, sub: String, color: Color, onClick: () -> Unit) {
+private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name: String, sub: String, color: Color, onClick: () -> Unit) {
     Column(
-        Modifier.offset(x = cx - width / 2, y = cy - width * .42f).width(width)
+        Modifier.offset(x = cx - width / 2, y = cy - width * .5f).width(width)
             .clickable(onClickLabel = "$name öffnen", onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Image(painterResource(res), null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+        DynamicIsland(remember(level, seed) { IslandPlans.friend(level, seed) }, Modifier.fillMaxWidth())
         Row(
             Modifier.offset(y = (-6).dp).shadow(3.dp, RoundedCornerShape(50)).background(Isle.Card, RoundedCornerShape(50))
                 .padding(horizontal = 8.dp, vertical = 2.dp),
@@ -525,7 +522,7 @@ private fun FriendSheet(
                     Text(friend.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Isle.Ink)
                     Text("${Isle.levelName(level)} · Stufe $level", color = Isle.Muted, fontSize = 13.sp)
                 }
-                Image(painterResource(Isle.islandRes(level)), null, Modifier.width(78.dp))
+                DynamicIsland(remember(level, friend.id) { IslandPlans.friend(level, friend.id) }, Modifier.width(84.dp), animate = false)
             }
             Spacer(Modifier.height(10.dp))
             LinearProgressIndicator(
@@ -608,7 +605,7 @@ private fun HarbourSheet(
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.isle_home), null, Modifier.width(64.dp))
+            Image(painterResource(R.drawable.b_board), null, Modifier.width(52.dp))
             Spacer(Modifier.width(10.dp))
             Column {
                 Text("Hafen", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Isle.Ink)

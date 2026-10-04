@@ -105,7 +105,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
             error?.let { item { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) } }
             if (!sharedAvailable) item {
                 Text(
-                    "Dieser Server kennt das gemeinsame Wörterbuch noch nicht – du siehst die eingebauten Begriffe.",
+                    "Nur lesen: Dein aktueller Server (Original) kennt das gemeinsame Wörterbuch noch nicht. Bearbeiten geht auf dem Testserver (Mehr → Server).",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -132,6 +132,8 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
                         row.builtIn?.let { entry ->
                             Text(entry.meaning)
                             if (open) Text(entry.action, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                            // Built-in words are editable too: the first own explanation turns them into a shared entry.
+                            if (open && sharedAvailable) OutlinedButton(onClick = { newTerm = entry.term; newText = ""; adding = true }) { Text("＋ Eigene Erklärung") }
                         }
                         row.shared?.let { term ->
                             val shown = if (open) term.explanations else term.explanations.take(1)

@@ -44,8 +44,8 @@ class VillageVisualReview {
     }
 
     private val friends = listOf(
-        ApiClient.UserSummary(2, "Gerfried", "friend", "🦊", "#2E7D32"),
-        ApiClient.UserSummary(3, "Anna", "friend", "🐻", "#1565C0"),
+        ApiClient.UserSummary(2, "Gerfried", "friends", "🦊", "#2E7D32"),
+        ApiClient.UserSummary(3, "Anna", "friends", "🐻", "#1565C0"),
     )
 
     @Composable
@@ -257,11 +257,11 @@ class VillageVisualReview {
     @Composable
     private fun Isles(withFriends: Boolean = true, start: String = "map") {
         val pals = if (!withFriends) emptyList() else listOf(
-            ApiClient.UserSummary(2, "Gerfried", "friend", "🦊", "#2E7D32"),
-            ApiClient.UserSummary(3, "Anna", "friend", "🐻", "#1565C0"),
-            ApiClient.UserSummary(4, "Lena", "friend", "🦉", "#EF6C00"),
-            ApiClient.UserSummary(5, "Max", "friend", "🐺", "#6A1B9A"),
-            ApiClient.UserSummary(6, "Mara", "friend", "🐰", "#C2185B"),
+            ApiClient.UserSummary(2, "Gerfried", "friends", "🦊", "#2E7D32"),
+            ApiClient.UserSummary(3, "Anna", "friends", "🐻", "#1565C0"),
+            ApiClient.UserSummary(4, "Lena", "friends", "🦉", "#EF6C00"),
+            ApiClient.UserSummary(5, "Max", "friends", "🐺", "#6A1B9A"),
+            ApiClient.UserSummary(6, "Mara", "friends", "🐰", "#C2185B"),
         )
         IslandWorld(
             ownName = "Gregor", ownEmoji = "🦉", friends = pals, groups = emptyList(),
