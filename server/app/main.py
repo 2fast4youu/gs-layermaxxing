@@ -209,6 +209,26 @@ def initialize_database() -> None:
             FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
             FOREIGN KEY(completed_by_id) REFERENCES users(id) ON DELETE SET NULL
         );
+        CREATE TABLE IF NOT EXISTS quests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            creator_id INTEGER NOT NULL,
+            peer_user_id INTEGER,
+            group_id INTEGER,
+            title TEXT NOT NULL,
+            details TEXT NOT NULL DEFAULT '',
+            icon TEXT NOT NULL DEFAULT 'star',
+            points INTEGER NOT NULL CHECK(points BETWEEN 5 AND 100),
+            created_at INTEGER NOT NULL,
+            completed_at INTEGER,
+            completed_by_id INTEGER,
+            CHECK((peer_user_id IS NULL) <> (group_id IS NULL)),
+            FOREIGN KEY(creator_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(peer_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
+            FOREIGN KEY(completed_by_id) REFERENCES users(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_quests_peer ON quests(peer_user_id,completed_at);
+        CREATE INDEX IF NOT EXISTS idx_quests_group ON quests(group_id,completed_at);
         CREATE TABLE IF NOT EXISTS glossary_terms (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             term TEXT NOT NULL,
@@ -533,6 +553,22 @@ class TopicCreate(BaseModel):
 
 
 class TopicUpdate(BaseModel):
+    completed: bool
+
+
+QUEST_ICONS = {"star", "hike", "grill", "bike", "food", "game", "travel", "sport", "music", "help"}
+
+
+class QuestCreate(BaseModel):
+    peer_user_id: int | None = None
+    group_id: int | None = None
+    title: str = Field(min_length=1, max_length=80)
+    details: str = Field(default="", max_length=500)
+    icon: str = "star"
+    points: int = Field(default=20, ge=5, le=100)
+
+
+class QuestUpdate(BaseModel):
     completed: bool
 
 
@@ -1332,6 +1368,149 @@ def delete_topic(topic_id: int, user: sqlite3.Row = Depends(current_user)) -> di
             raise HTTPException(403, "Nur der Ersteller kann das Thema löschen")
         conn.execute("DELETE FROM topics WHERE id=?", (topic_id,))
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Real-life quests: anyone creates one for a friend or a group they belong to.
+# Any participant may mark it done; its quest points (QP) then grow the island
+# of that friendship (or of every pair inside the group). EP count stronger
+# because they are rare. Islands are purely visual: no rights, no features.
+
+ISLAND_THRESHOLDS = (0, 40, 120, 300)  # level 1..4
+EP_WEIGHT = 3
+
+
+def island_level(score: int) -> int:
+    return max(i + 1 for i, t in enumerate(ISLAND_THRESHOLDS) if score >= t)
+
+
+def quest_rows(conn: sqlite3.Connection, user_id: int, quest_id: int | None = None) -> list[sqlite3.Row]:
+    extra = "AND q.id=?" if quest_id is not None else ""
+    params: tuple[int, ...] = (user_id, user_id, user_id) + ((quest_id,) if quest_id is not None else ())
+    return conn.execute(f"""SELECT q.*,creator.name creator_name,peer.name peer_name,g.name group_name,
+                         done.name completed_by_name
+                         FROM quests q
+                         JOIN users creator ON creator.id=q.creator_id
+                         LEFT JOIN users peer ON peer.id=q.peer_user_id
+                         LEFT JOIN groups g ON g.id=q.group_id
+                         LEFT JOIN users done ON done.id=q.completed_by_id
+                         WHERE ((q.peer_user_id IS NOT NULL AND (q.creator_id=? OR q.peer_user_id=?)) OR EXISTS(
+                             SELECT 1 FROM group_members gm WHERE gm.group_id=q.group_id AND gm.user_id=?
+                         )) {extra}
+                         ORDER BY (q.completed_at IS NOT NULL),q.created_at DESC,q.id DESC""", params).fetchall()
+
+
+def quest_view(row: sqlite3.Row, user_id: int) -> dict:
+    if row["group_id"] is not None:
+        target_type, target_name, target_id = "group", row["group_name"], row["group_id"]
+    else:
+        mine = row["creator_id"] == user_id
+        target_type = "friend"
+        target_name = row["peer_name"] if mine else row["creator_name"]
+        target_id = row["peer_user_id"] if mine else row["creator_id"]
+    return {
+        "id": row["id"], "title": row["title"], "details": row["details"], "icon": row["icon"],
+        "points": row["points"], "creator_id": row["creator_id"], "creator_name": row["creator_name"],
+        "target_type": target_type, "target_name": target_name, "target_id": target_id,
+        "created_at": row["created_at"], "completed_at": row["completed_at"],
+        "completed_by_name": row["completed_by_name"], "can_delete": row["creator_id"] == user_id,
+    }
+
+
+@app.get("/api/quests")
+def list_quests(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
+    with db() as conn:
+        return [quest_view(r, user["id"]) for r in quest_rows(conn, user["id"])]
+
+
+@app.post("/api/quests", status_code=201)
+def create_quest(payload: QuestCreate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    if (payload.peer_user_id is None) == (payload.group_id is None):
+        raise HTTPException(422, "Wähle einen Freund oder eine Gruppe")
+    if payload.icon not in QUEST_ICONS:
+        raise HTTPException(422, "Unbekanntes Symbol")
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(422, "Titel fehlt")
+    with db() as conn:
+        if payload.peer_user_id is not None:
+            if payload.peer_user_id == user["id"] or blocked(conn, user["id"], payload.peer_user_id) \
+                    or not are_friends(conn, user["id"], payload.peer_user_id):
+                raise HTTPException(403, "Quests gibt es nur unter Freunden")
+        elif not conn.execute("SELECT 1 FROM group_members WHERE group_id=? AND user_id=?",
+                              (payload.group_id, user["id"])).fetchone():
+            raise HTTPException(403, "Du bist nicht Mitglied dieser Gruppe")
+        cur = conn.execute("""INSERT INTO quests(creator_id,peer_user_id,group_id,title,details,icon,points,created_at)
+                           VALUES (?,?,?,?,?,?,?,?)""", (user["id"], payload.peer_user_id, payload.group_id, title,
+                                                         payload.details.strip(), payload.icon, payload.points, now_ts()))
+    return {"id": int(cur.lastrowid)}
+
+
+@app.patch("/api/quests/{quest_id}")
+def update_quest(quest_id: int, payload: QuestUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        if not quest_rows(conn, user["id"], quest_id):
+            raise HTTPException(404, "Quest nicht gefunden")
+        if payload.completed:
+            conn.execute("UPDATE quests SET completed_at=?,completed_by_id=? WHERE id=? AND completed_at IS NULL",
+                         (now_ts(), user["id"], quest_id))
+        else:
+            conn.execute("UPDATE quests SET completed_at=NULL,completed_by_id=NULL WHERE id=?", (quest_id,))
+    return {"ok": True}
+
+
+@app.delete("/api/quests/{quest_id}")
+def delete_quest(quest_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        rows = quest_rows(conn, user["id"], quest_id)
+        if not rows:
+            raise HTTPException(404, "Quest nicht gefunden")
+        if rows[0]["creator_id"] != user["id"]:
+            raise HTTPException(403, "Nur wer die Quest erstellt hat, kann sie löschen")
+        conn.execute("DELETE FROM quests WHERE id=?", (quest_id,))
+    return {"ok": True}
+
+
+def pair_qp(conn: sqlite3.Connection, a: int, b: int) -> int:
+    direct = conn.execute("""SELECT COALESCE(SUM(points),0) FROM quests WHERE completed_at IS NOT NULL AND
+                          ((creator_id=? AND peer_user_id=?) OR (creator_id=? AND peer_user_id=?))""",
+                          (a, b, b, a)).fetchone()[0]
+    group = conn.execute("""SELECT COALESCE(SUM(q.points),0) FROM quests q WHERE q.completed_at IS NOT NULL
+                         AND q.group_id IS NOT NULL
+                         AND EXISTS(SELECT 1 FROM group_members WHERE group_id=q.group_id AND user_id=?)
+                         AND EXISTS(SELECT 1 FROM group_members WHERE group_id=q.group_id AND user_id=?)""",
+                         (a, b)).fetchone()[0]
+    return int(direct) + int(group)
+
+
+def pair_ep(conn: sqlite3.Connection, a: int, b: int) -> int:
+    return int(conn.execute("""SELECT COALESCE(SUM(points),0) FROM ep_proposals WHERE status='accepted' AND
+                            ((proposer_id=? AND beneficiary_id=?) OR (proposer_id=? AND beneficiary_id=?))""",
+                            (a, b, b, a)).fetchone()[0])
+
+
+@app.get("/api/islands")
+def islands(user: sqlite3.Row = Depends(current_user)) -> dict:
+    me = user["id"]
+    with db() as conn:
+        friends = conn.execute("""SELECT u.id,u.name FROM friend_requests f
+                               JOIN users u ON u.id = CASE WHEN f.sender_id=? THEN f.recipient_id ELSE f.sender_id END
+                               WHERE f.status='accepted' AND (f.sender_id=? OR f.recipient_id=?)
+                               ORDER BY u.name""", (me, me, me)).fetchall()
+        result = []
+        for f in friends:
+            if blocked(conn, me, f["id"]):
+                continue
+            qp, ep = pair_qp(conn, me, f["id"]), pair_ep(conn, me, f["id"])
+            score = qp + EP_WEIGHT * ep
+            level = island_level(score)
+            nxt = ISLAND_THRESHOLDS[level] if level < len(ISLAND_THRESHOLDS) else None
+            result.append({"friend_id": f["id"], "qp": qp, "ep": ep, "score": score, "level": level, "next_at": nxt})
+        own_qp = int(conn.execute("""SELECT COALESCE(SUM(q.points),0) FROM quests q WHERE q.completed_at IS NOT NULL AND
+                                  ((q.peer_user_id IS NOT NULL AND (q.creator_id=? OR q.peer_user_id=?)) OR EXISTS(
+                                  SELECT 1 FROM group_members gm WHERE gm.group_id=q.group_id AND gm.user_id=?))""",
+                                  (me, me, me)).fetchone()[0])
+    return {"qp": own_qp, "thresholds": list(ISLAND_THRESHOLDS), "ep_weight": EP_WEIGHT, "friends": result}
 
 
 # ---------------------------------------------------------------------------

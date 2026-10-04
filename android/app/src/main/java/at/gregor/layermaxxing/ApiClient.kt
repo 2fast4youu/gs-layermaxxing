@@ -106,6 +106,13 @@ class ApiClient(
         val id: Long, val term: String, val creatorName: String, val explanations: List<GlossaryExplanation>, val canDelete: Boolean,
     )
 
+    data class Quest(
+        val id: Long, val title: String, val details: String, val icon: String, val points: Int,
+        val creatorId: Long, val creatorName: String, val targetType: String, val targetName: String, val targetId: Long?,
+        val createdAt: Long, val completedAt: Long?, val completedByName: String?, val canDelete: Boolean,
+    )
+    data class IslandInfo(val friendId: Long, val qp: Int, val ep: Int, val score: Int, val level: Int, val nextAt: Int?)
+    data class Islands(val qp: Int, val friends: List<IslandInfo>)
     data class Topic(
         val id: Long, val title: String, val details: String, val creatorName: String,
         val targetType: String, val targetName: String, val targetId: Long?, val createdAt: Long, val completedAt: Long?,
@@ -368,6 +375,34 @@ class ApiClient(
             .post(JSONObject().put("phase", "release").body()).build()).getBoolean("advanced")
     }
 
+    suspend fun quests(token: String): List<Quest> = array(token, "api/quests") { j ->
+        Quest(
+            id = j.getLong("id"), title = j.getString("title"), details = j.optString("details"), icon = j.optString("icon", "star"),
+            points = j.getInt("points"), creatorId = j.getLong("creator_id"), creatorName = j.getString("creator_name"),
+            targetType = j.getString("target_type"), targetName = j.optString("target_name"), targetId = j.nullableLong("target_id"),
+            createdAt = j.getLong("created_at"), completedAt = j.nullableLong("completed_at"),
+            completedByName = j.nullableString("completed_by_name"), canDelete = j.getBoolean("can_delete"),
+        )
+    }
+    suspend fun createQuest(token: String, title: String, details: String, icon: String, points: Int, peerId: Long?, groupId: Long?) = io {
+        val body = JSONObject().put("title", title.trim()).put("details", details.trim()).put("icon", icon).put("points", points)
+        peerId?.let { body.put("peer_user_id", it) }
+        groupId?.let { body.put("group_id", it) }
+        execute(authorized(token, "api/quests").post(body.body()).build()).getLong("id")
+    }
+    suspend fun setQuestCompleted(token: String, id: Long, completed: Boolean) = unitCall(
+        authorized(token, "api/quests/$id").patch(JSONObject().put("completed", completed).body()).build()
+    )
+    suspend fun deleteQuest(token: String, id: Long) = unitCall(authorized(token, "api/quests/$id").delete().build())
+    suspend fun islands(token: String): Islands = io {
+        val j = execute(authorized(token, "api/islands").get().build())
+        val arr = j.getJSONArray("friends")
+        Islands(j.optInt("qp"), (0 until arr.length()).map { i ->
+            val f = arr.getJSONObject(i)
+            IslandInfo(f.getLong("friend_id"), f.getInt("qp"), f.getInt("ep"), f.getInt("score"), f.getInt("level"),
+                if (f.isNull("next_at")) null else f.getInt("next_at"))
+        })
+    }
     suspend fun topics(token: String): List<Topic> = array(token, "api/topics", ::parseTopic)
     suspend fun createTopic(token: String, title: String, details: String, peerId: Long?, groupId: Long?) = io {
         val encrypted = CryptoBox.encrypt(JSONObject().put("title", title.trim()).put("details", details.trim()).toString())

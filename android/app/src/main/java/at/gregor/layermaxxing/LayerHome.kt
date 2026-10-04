@@ -172,6 +172,8 @@ fun LayerHome(
     var outgoing by remember { mutableStateOf<List<ApiClient.OutgoingRequest>>(emptyList()) }
     var groups by remember { mutableStateOf<List<ApiClient.Group>>(emptyList()) }
     var topics by remember { mutableStateOf<List<ApiClient.Topic>>(emptyList()) }
+    var quests by remember { mutableStateOf<List<ApiClient.Quest>>(emptyList()) }
+    var islands by remember { mutableStateOf<ApiClient.Islands?>(null) }
     var messages by remember { mutableStateOf<List<ApiClient.Message>>(emptyList()) }
     var outbox by remember { mutableStateOf<List<ApiClient.Message>>(emptyList()) }
     var sessions by remember { mutableStateOf<List<ApiClient.Session>>(emptyList()) }
@@ -231,6 +233,9 @@ fun LayerHome(
                     async { friendshipSettings = api.friendshipSettings(token) },
                     async { ep = api.ep(token) }, async { chatThreads = api.chatThreads(token) },
                     async { sparkInbox = api.sparks(token) }, async { sparkSent = api.sparkOutbox(token) },
+                    // Older servers lack the island endpoints: the sea then simply starts calm.
+                    async { quests = runCatching { api.quests(token) }.getOrDefault(quests) },
+                    async { islands = runCatching { api.islands(token) }.getOrDefault(islands) },
                 )
                 jobs.awaitAll()
             }
@@ -386,57 +391,26 @@ fun LayerHome(
             if (edgeToEdgePlace) Modifier.fillMaxSize()
             else Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
         ) {
-            if (tab == MainTab.CASTLES) { villageStateHolder.SaveableStateProvider("village_${store.serverProfile.key}_${store.name}") { CastlesScreen(
-                    ownUserId = status?.userId, friends = friends, settings = friendshipSettings,
-                    ep = ep, letters = messages + outbox, builds = castleBuilds,
-                    creativeActive = creativeActive,
-                    onBuild = { friendId, step, earnedEp ->
-                        if (store.buildFiefStep(friendId, step, earnedEp, creativeActive)) {
-                            castleBuilds = store.fiefBuilds(creativeActive)
-                        }
-                    },
+            if (tab == MainTab.CASTLES) { villageStateHolder.SaveableStateProvider("isles_${store.serverProfile.key}_${store.name}") {
+                IslandWorld(
+                    ownName = status?.name ?: store.name, ownEmoji = status?.avatarEmoji ?: "🙂",
+                    friends = friends, groups = groups, islands = islands, quests = quests,
+                    letters = messages + outbox, topics = topics, opened = opened,
                     onBack = { tab = MainTab.CHATS },
-                    onPeople = { tab = MainTab.CASTLES; peopleOpen = true },
+                    onChat = { id -> openThreadFriend = id },
                     onComposeLetter = { composeLetterFriend = it },
-                    letterAccess = { friendId ->
-                        LetterAccess.forSettings(friendshipSettings.firstOrNull { it.friendId == friendId })
-                    },
-                    opened = opened, act = ::act, token = token, api = api,
                     onOpenLetter = ::openLetter, onLockedTap = ::lockedLetterTap,
-                    onProof = { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } },
-                    epLinkedLetterIds = EpOpportunities.linkedLetterIds(ep),
-                    dismissedEpLetters = dismissedEpLetters,
-                    onProposeEp = { epProposal = it },
-                    seenEarned = { friendId -> store.fiefSeenEarned(friendId) },
-                    onSeenEarned = { friendId, earned -> store.setFiefSeenEarned(friendId, earned) },
-                    topics = topics, onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
-                    onChat = { id -> tab = MainTab.CASTLES; openThreadFriend = id },
-                    onGroups = { hub = "groups" }, onGlossary = { hub = "glossary" },
-                    activities = villageActivities,
-                    hud = VillageHudInfo(
-                        name = status?.name ?: store.name, emoji = status?.avatarEmoji ?: "🙂",
-                        level = ep?.levelName ?: "Ebenen-Neuling", ep = ep?.received ?: 0,
-                        letters = (messages + outbox).size,
-                        exitLabel = "Messenger",
-                        unlocked = villageUnlocked, fresh = villageFresh,
-                        onFreshSeen = { villageFresh = villageFresh.drop(1).toSet(); store.setVillageFresh(villageFresh) },
-                        friendColors = friends.filter { it.relationship == "friend" }.take(4).map { profileColor(it.displayColor) },
-                    ),
-                    onDestination = { destination ->
-                        when (destination) {
-                            ValleyDestination.CONVERSATIONS -> hub = "conversations"
-                            ValleyDestination.TOPICS -> hub = "topics"
-                            ValleyDestination.GROUPS -> hub = "groups"
-                            ValleyDestination.PEOPLE -> peopleOpen = true
-                            ValleyDestination.GLOSSARY -> hub = "glossary"
-                            ValleyDestination.SPARKS -> sparksOpen = true
-                            ValleyDestination.ARCHIVE -> hub = "archive"
-                            ValleyDestination.EP -> hub = "ep"
-                            ValleyDestination.SETTINGS -> hub = "settings"
-                        }
+                    onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
+                    onAllTopics = { hub = "topics" },
+                    onGlossary = { hub = "glossary" },
+                    onPeople = { peopleOpen = true },
+                    onCreateQuest = { title, details, icon, points, peer, group ->
+                        act { api.createQuest(token, title, details, icon, points, peer, group) }
                     },
-                ) }
-            }
+                    onQuestDone = { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } },
+                    onQuestDelete = { quest -> act { api.deleteQuest(token, quest.id) } },
+                )
+            } }
             val roomPlace = when {
                 hub == "conversations" || openThreadFriend != null -> ValleyDestination.CONVERSATIONS
                 hub == "archive" -> ValleyDestination.ARCHIVE
@@ -460,7 +434,7 @@ fun LayerHome(
             val threadFriend = openThreadFriend?.let { id -> friends.firstOrNull { it.id == id } }
             when {
                 // The meeting point IS the messenger: same list, same search, same chips.
-                hub == "conversations" -> SubScreen("Treffpunkt", onBack = { hub = null }, backLabel = "Dorf") {
+                hub == "conversations" -> SubScreen("Treffpunkt", onBack = { hub = null }, backLabel = "Inseln") {
                     ChatsScreen(
                         conversations = conversations, requests = requestInbox,
                         sparkInbox = sparkInbox, sparkSent = sparkSent,
@@ -475,10 +449,10 @@ fun LayerHome(
                     refreshing = refreshing, onRefresh = { scope.launch { refreshing = true; refresh(); refreshing = false } },
                     )
                 }
-                hub == "archive" -> SubScreen("Briefe", onBack = { hub = null }, backLabel = "Dorf") {
+                hub == "archive" -> SubScreen("Briefe", onBack = { hub = null }, backLabel = "Inseln") {
                     InboxScreen(messages, outbox, opened, token, api, ::act, ::openLetter, ::lockedLetterTap, { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } })
                 }
-                hub == "ep" -> SubScreen("Punkte", onBack = { hub = null }, backLabel = "Dorf") {
+                hub == "ep" -> SubScreen("Punkte", onBack = { hub = null }, backLabel = "Inseln") {
                     EpScreen(token, api, friendshipSettings, ep, draft = null, onDraftConsumed = {}, act = ::act)
                 }
                 hub == "accounts" -> SubScreen("Konten", onBack = { hub = "settings" }, backLabel = "Gemeindehaus") {
@@ -1430,7 +1404,7 @@ internal fun SubScreen(
         if (LocalInVillageRoom.current) {
             // Inside a building the room header already names the place; only a
             // wooden step back remains, and none at all when it would just leave.
-            if (backLabel != "Dorf") Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 8.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (backLabel != "Inseln") Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 8.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 NamePlank("‹ $backLabel", Modifier.heightIn(min = 32.dp).clickable(onClick = onBack), size = 13.sp)
                 Spacer(Modifier.width(10.dp))
                 Text(title, Modifier.weight(1f), fontWeight = FontWeight.Black, color = Kit.Ink, maxLines = 1)

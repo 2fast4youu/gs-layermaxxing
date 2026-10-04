@@ -165,7 +165,7 @@ internal fun MoreScreen(
         }
     } else Column(Modifier.fillMaxSize()) {
         if (onExit != null) Row(Modifier.fillMaxWidth()) {
-            TextButton(onClick = onExit) { Text("← Dorf") }
+            TextButton(onClick = onExit) { Text("← Inseln") }
             if (onAccounts != null) TextButton(onClick = onAccounts) { Text("Konten wechseln") }
         }
         Box(Modifier.weight(1f)) { MoreHub(status, ep, onLogout, onDest = { dest = it }) }
@@ -337,7 +337,7 @@ private fun AppearancePage(store: SessionStore, onTheme: (String) -> Unit, onCas
                 }
             }
         } } }
-        item { Text("Nachrichten und Dorf-Fortschritt bleiben beim Wechseln erhalten.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Text("Nachrichten und Insel-Fortschritt bleiben beim Wechseln erhalten.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { SectionTitle("Design") }
         item { Card { Column(Modifier.padding(vertical = 6.dp)) {
             listOf("system" to "Wie das Handy", "light" to "Hell", "dark" to "Dunkel", "antique" to "Altertümlich").forEach { (key, label) ->

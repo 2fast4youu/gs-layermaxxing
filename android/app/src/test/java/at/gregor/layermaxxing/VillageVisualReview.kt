@@ -244,4 +244,39 @@ class VillageVisualReview {
     @Test fun busyVillage() = shot("02-busy") {
         Village(friends, VillageActivityModel.collect(3, 2, 1, 1, 1, 1, 1, 0))
     }
+
+    private fun quest(id: Long, title: String, icon: String, pts: Int, target: String, tid: Long, type: String = "friend", done: Boolean = false) =
+        ApiClient.Quest(id, title, "", icon, pts, 1, "Gregor", type, target, tid, 0, if (done) 1 else null, if (done) "Anna" else null, true)
+
+    private fun letter(id: Long, peer: Long, name: String, mode: String, incoming: Boolean) = ApiClient.Message(
+        id, peer, name, incoming, "Brief $id", "", "none", 0, mode, null, null, null, false, false, null, false, false,
+        null, null, null, emptyList(), null, null, null,
+    )
+
+    @Composable
+    private fun Isles(withFriends: Boolean = true) {
+        val pals = if (!withFriends) emptyList() else listOf(
+            ApiClient.UserSummary(2, "Gerfried", "friend", "🦊", "#2E7D32"),
+            ApiClient.UserSummary(3, "Anna", "friend", "🐻", "#1565C0"),
+            ApiClient.UserSummary(4, "Lena", "friend", "🦉", "#EF6C00"),
+            ApiClient.UserSummary(5, "Max", "friend", "🐺", "#6A1B9A"),
+            ApiClient.UserSummary(6, "Mara", "friend", "🐰", "#C2185B"),
+        )
+        IslandWorld(
+            ownName = "Gregor", ownEmoji = "🦉", friends = pals, groups = emptyList(),
+            islands = ApiClient.Islands(140, listOf(
+                ApiClient.IslandInfo(2, 320, 2, 326, 4, null), ApiClient.IslandInfo(3, 130, 0, 130, 3, 300),
+                ApiClient.IslandInfo(4, 50, 0, 50, 2, 120), ApiClient.IslandInfo(5, 0, 0, 0, 1, 40),
+                ApiClient.IslandInfo(6, 10, 0, 10, 1, 40),
+            )),
+            quests = listOf(quest(1, "Gemeinsam auf den Gipfel", "hike", 30, "Anna", 3), quest(2, "Radtour am See", "bike", 20, "Lena", 4, done = true)),
+            letters = if (withFriends) listOf(letter(1, 3, "Anna", "timed", false), letter(2, 2, "Gerfried", "mutual", true), letter(3, 4, "Lena", "random", false)) else emptyList(),
+            topics = emptyList(), opened = emptyMap(), onBack = {}, onChat = {}, onComposeLetter = {}, onOpenLetter = {},
+            onLockedTap = {}, onTopics = {}, onAllTopics = {}, onGlossary = {}, onPeople = {},
+            onCreateQuest = { _, _, _, _, _, _ -> }, onQuestDone = { _, _ -> }, onQuestDelete = {},
+        )
+    }
+
+    @Test fun islandsMap() = shot("20-inseln") { Isles() }
+    @Test fun islandsEmpty() = shot("21-inseln-leer") { Isles(false) }
 }
