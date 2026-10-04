@@ -120,7 +120,7 @@ fun TopicsScreen(
                 )
                 if (current.details.isNotBlank()) Text(current.details)
                 else Text(
-                    "Keine Notiz. Notizen entstehen beim Anlegen des Stichworts; nachträgliches Bearbeiten kann der Server noch nicht.",
+                    "Keine Notiz. Eine Notiz kann man nur beim Anlegen des Themas mitgeben.",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Button(
@@ -193,7 +193,7 @@ fun TopicsScreen(
                     value = title,
                     onValueChange = { title = it.take(120) },
                     modifier = Modifier.weight(1f).focusRequester(keywordFocus),
-                    placeholder = { Text("Stichwort notieren …") },
+                    placeholder = { Text("Thema notieren …") },
                     singleLine = true,
                     shape = RoundedCornerShape(22.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -236,7 +236,7 @@ private fun TopicRow(topic: ApiClient.Topic, completed: Boolean, onToggle: () ->
 private fun TopicEmptyCard() = Card(Modifier.fillMaxWidth()) {
     Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("✓", fontSize = 28.sp, color = MaterialTheme.colorScheme.primary)
-        Text("Keine offenen Stichworte", fontWeight = FontWeight.Bold)
+        Text("Keine offenen Themen", fontWeight = FontWeight.Bold)
     }
 }
 

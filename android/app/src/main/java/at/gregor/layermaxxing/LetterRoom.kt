@@ -114,7 +114,7 @@ internal fun LetterRoom(
                 contentAlignment = Alignment.Center,
             ) { Text("←", fontSize = 22.sp, color = ROOM_PAPER) }
             Column(Modifier.weight(1f).padding(start = 6.dp)) {
-                Text("Briefraum", fontWeight = FontWeight.Bold, fontSize = 19.sp, color = ROOM_PAPER)
+                Text("Briefe", fontWeight = FontWeight.Bold, fontSize = 19.sp, color = ROOM_PAPER)
                 Text(
                     if (letters.isEmpty()) friendName else "$friendName · ${letters.size} Briefe",
                     fontSize = 12.sp, color = ROOM_INK_SOFT,
@@ -301,7 +301,7 @@ internal fun LetterActivityRow(
             .background(accent.copy(alpha = if (pulsing) .30f else .12f))
             .clickable(onClick = onOpenRoom)
             .semantics {
-                contentDescription = "$title, ${stateWord(state)}. Im Briefraum öffnen"
+                contentDescription = "$title, ${stateWord(state)}. Im Briefe öffnen"
                 role = Role.Button
             }
             .padding(horizontal = 12.dp, vertical = 10.dp),

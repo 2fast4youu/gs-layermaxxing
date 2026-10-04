@@ -245,19 +245,19 @@ internal fun AuthScreen(
         Column(
             Modifier.fillMaxWidth().widthIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(vertical = 24.dp)
                 .shadow(16.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp))
-                .background(MaterialTheme.colorScheme.surface).padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp),
+                .background(MaterialTheme.colorScheme.surface).padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Image(
                 painter = painterResource(R.drawable.brand_mark),
                 contentDescription = "GS Layermaxxing Logo",
-                modifier = Modifier.size(92.dp).clip(RoundedCornerShape(24.dp)).align(Alignment.CenterHorizontally),
+                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)).align(Alignment.CenterHorizontally),
             )
             Text("GS Layermaxxing", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.align(Alignment.CenterHorizontally))
             Text(
                 "Geheime Nachrichten – sichtbar, wenn die Zeit reif ist.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 4.dp),
             )
             if (!profile.isConfigured()) Text(
                 "${profile.label} ist in diesem Build nicht konfiguriert.",
@@ -341,16 +341,17 @@ fun ServerProfileSelector(selected: ServerProfile, onSelected: (ServerProfile) -
     // logs into the wrong server by accident.
     var open by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).then(
+            if (open) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)) else Modifier,
+        ),
     ) {
         Row(
-            Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 14.dp, vertical = 11.dp),
+            Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 6.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
         ) {
-            Text("Server", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-            Spacer(Modifier.width(10.dp))
-            Text(selected.label, Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(if (open) "▴" else "▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Server: ${selected.label}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (open) "  ▴" else "  ▾", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (open) ServerProfile.entries.forEach { profile ->
             Row(

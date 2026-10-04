@@ -53,17 +53,17 @@ fun EpScreen(
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        item { SocialTitle("EP") }
-        item { Text("Ebenen-Punkte (wie Experience Points, nur auf mehreren Ebenen)") }
+        item { SocialTitle("Punkte") }
+        item { Text("Punkte sind ein Dankeschön – sie zählen erst, wenn die andere Person annimmt.") }
         item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Column(Modifier.padding(16.dp)) {
                 Text(overview?.levelName ?: "Ebenen-Neuling", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text("Gegeben: ${overview?.given ?: 0} EP · Erhalten: ${overview?.received ?: 0} EP")
+                Text("Gegeben: ${overview?.given ?: 0} Punkte · Erhalten: ${overview?.received ?: 0} Punkte")
             }
         } }
-        if (enabled.isEmpty()) item { SocialInfo("EP wird erst verfügbar, nachdem beide einer Freundschaftseinstellung mit aktivierten EP zugestimmt haben.") }
+        if (enabled.isEmpty()) item { SocialInfo("Punkte wird erst verfügbar, nachdem beide einer Freundschaftseinstellung mit aktivierten Punkte zugestimmt haben.") }
         else item { Card { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text("EP vorschlagen", fontWeight = FontWeight.Bold)
+            Text("Punkte vorschlagen", fontWeight = FontWeight.Bold)
             Text("Empfänger (nicht du selbst)")
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 enabled.forEach { value ->
@@ -78,22 +78,22 @@ fun EpScreen(
             Button(onClick = { act {
                 api.proposeEp(token, beneficiary!!, EP_PROPOSAL_POINTS, title.trim(), description.trim().ifBlank { null }, linkedLetter)
                 title = ""; description = ""; onDraftConsumed()
-            } }, enabled = beneficiary != null && title.isNotBlank()) { Text("EP-Vorschlag senden") }
+            } }, enabled = beneficiary != null && title.isNotBlank()) { Text("Vorschlagen") }
         } } }
         overview?.incoming?.takeIf { it.isNotEmpty() }?.let { incoming ->
-            item { SocialTitle("Eingehende EP") }
+            item { SocialTitle("Eingehende Punkte") }
             items(incoming, key = { "ep-in-${it.id}" }) { proposal -> EpCard(proposal) {
                 Button(onClick = { act { api.respondEp(token, proposal.id, true) } }) { Text("Annehmen") }
                 TextButton(onClick = { act { api.respondEp(token, proposal.id, false) } }) { Text("Ablehnen") }
             } }
         }
         overview?.outgoing?.takeIf { it.isNotEmpty() }?.let { outgoing ->
-            item { SocialTitle("Ausgehende EP") }
+            item { SocialTitle("Ausgehende Punkte") }
             items(outgoing, key = { "ep-out-${it.id}" }) { proposal -> EpCard(proposal) { Text("wartet") } }
         }
-        item { SocialTitle("Angenommene EP-Geschichte") }
+        item { SocialTitle("Verlauf") }
         overview?.history?.let { history ->
-            if (history.isEmpty()) item { SocialInfo("Noch keine angenommenen EP.") }
+            if (history.isEmpty()) item { SocialInfo("Noch keine angenommenen Punkte.") }
             else items(history, key = { "ep-history-${it.id}" }) { proposal -> EpCard(proposal) {
                 proposal.letterId?.let { Text("Brief #$it", fontSize = 12.sp) }
             } }

@@ -719,7 +719,7 @@ internal fun GuidePlank(step: GrowthStep, level: Int, maxLevel: Int, onGo: () ->
             GameText("$level", size = 16.sp)
         }
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-            Text("Dorfstufe $level von $maxLevel", style = TextStyle(color = Kit.InkSoft, fontSize = 11.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold))
+            Text("Nächster Schritt", style = TextStyle(color = Kit.InkSoft, fontSize = 11.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold))
             Text(step.task, style = TextStyle(color = Kit.Ink, fontSize = 16.sp, fontFamily = Kit.Display), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         GameButton("Los", onGo)

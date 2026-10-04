@@ -220,7 +220,7 @@ internal fun openTopics(n: Int): String = when (n) { 0 -> "Keine offenen Themen"
 @Composable
 fun TopicsHub(topics: List<ApiClient.Topic>, friends: List<ApiClient.UserSummary>, groups: List<ApiClient.Group>, onOpen: (TopicScope, String) -> Unit) {
     LazyColumn(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item { Text("Stichworte fürs nächste Gespräch – abhaken, wenn erledigt.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
+        item { Text("Themen fürs nächste Gespräch – abhaken, wenn erledigt.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
         item { val scope = TopicScope.personal(); ExtensionEntry("🔒 Nur für mich", openTopics(scope.filter(topics).count { it.completedAt == null })) { onOpen(scope, "Meine Themen") } }
         items(friends, key = { "friend-${it.id}" }) { friend ->
             val scope = TopicScope.friend(friend.id)
@@ -302,18 +302,18 @@ fun GroupsHub(groups: List<ApiClient.Group>, friends: List<ApiClient.UserSummary
 @Composable
 fun ValleyActionGuide(friendName: String, openTopics: Int, onChat: () -> Unit, onTopics: () -> Unit, onGroups: () -> Unit, onGlossary: () -> Unit, onCourt: () -> Unit, onFriend: () -> Unit, onFriends: () -> Unit, modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
-    FilledTonalButton(onClick = { open = true }, modifier = modifier) { Text("☰ Tal-Aktionen · $openTopics Themen") }
+    FilledTonalButton(onClick = { open = true }, modifier = modifier) { Text("☰ Dorf-Aktionen · $openTopics Themen") }
     if (open) ModalBottomSheet(onDismissRequest = { open = false }) {
         LazyColumn(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
-            item { Text("Dein Tal mit $friendName", style = MaterialTheme.typography.titleLarge) }
+            item { Text("Dein Dorf mit $friendName", style = MaterialTheme.typography.titleLarge) }
             item { Text("Tippe Orte an, verschiebe die Karte oder zoome mit zwei Fingern. Hier findest du die direkten Wege.") }
             item { ExtensionEntry("💬 Gespräch öffnen", "Chat und Briefe mit $friendName") { open = false; onChat() } }
             item { ExtensionEntry("📝 Themen am Schwarzen Brett", "$openTopics offen · sammeln und abhaken") { open = false; onTopics() } }
             item { ExtensionEntry("🏠 Eigener Hof", "Poststelle, Schatzkammer und Ausbau") { open = false; onCourt() } }
             item { ExtensionEntry("🏡 Freund besuchen", "Abgeleitete Ansicht, kein Fernzugriff auf dessen Gerät") { open = false; onFriend() } }
-            item { ExtensionEntry("🧭 Tal wechseln", "Eine andere Freundschaft auswählen") { open = false; onFriends() } }
+            item { ExtensionEntry("🧭 Dorf wechseln", "Eine andere Freundschaft auswählen") { open = false; onFriends() } }
             item { ExtensionEntry("👥 Gruppen", "Gemeinsame Themen und Gruppenbriefe") { open = false; onGroups() } }
-            item { ExtensionEntry("📖 Begriffe erklärt", "EP, Funke, Tal und Freigaberegeln verstehen") { open = false; onGlossary() } }
+            item { ExtensionEntry("📖 Begriffe erklärt", "Punkte, Funke, Dorf und Freigaberegeln verstehen") { open = false; onGlossary() } }
         }
     }
 }

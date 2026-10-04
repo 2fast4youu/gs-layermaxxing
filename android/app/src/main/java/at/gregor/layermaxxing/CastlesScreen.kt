@@ -297,7 +297,7 @@ private fun CastlesScreenContent(
                 Text(vale.friendName, fontWeight = FontWeight.Bold, fontSize = 20.sp)
             }
             Text(
-                "Abgeleitet aus den Ebenen-Punkten, die ${vale.friendName} von dir angenommen hat.",
+                "Abgeleitet aus den Punkten, die ${vale.friendName} von dir angenommen hat.",
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -315,10 +315,10 @@ private fun CastlesScreenContent(
                 }
             }
             TextButton(onClick = { sheet = null; onPeople() }) { Text("Freunde finden und verwalten") }
-            TextButton(onClick = { sheet = FiefSheet.About }) { Text("Über dieses Tal") }
+            TextButton(onClick = { sheet = FiefSheet.About }) { Text("Über dieses Dorf") }
         }
         FiefSheet.About -> FiefSheet(onDismiss = { sheet = null }) {
-            Text("Über dieses Tal", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Text("Über dieses Dorf", fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Text(FIEF_ABOUT, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         null -> Unit
@@ -329,8 +329,8 @@ private enum class FiefSheet { Plaque, Signpost, About }
 
 internal const val FIEF_ABOUT =
     "Der Ausbau ist kosmetisch, entsteht nur auf diesem Gerät und wird nie an den Server gesendet. " +
-        "Der Hof der Gegenseite ist aus den Ebenen-Punkten abgeleitet, die sie von dir angenommen hat; " +
-        "was dort lokal gebaut wurde, weiß nur ihr Gerät. Ebenen-Punkte und Freundschaftsregeln gelten " +
+        "Der Hof der Gegenseite ist aus den Punkten abgeleitet, die sie von dir angenommen hat; " +
+        "was dort lokal gebaut wurde, weiß nur ihr Gerät. Punkte und Freundschaftsregeln gelten " +
         "beidseitig: nur angenommene Vorschläge zählen, Abgelehntes und Offenes nie."
 
 // ---------------------------------------------------------------------------
@@ -730,12 +730,14 @@ private fun VillageWorld(
             Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PlayerPlate(hud.emoji, hud.name, hud.level)
+            // Who I am and how far my village is – nothing a newcomer can't read.
+            PlayerPlate(hud.emoji, hud.name, "Dorfstufe ${VillageGrowth.level(hud.unlocked)} von ${VillageGrowth.MAX_LEVEL}")
             if (creative) { Spacer(Modifier.width(4.dp)); CreativeTag() }
             Spacer(Modifier.weight(1f))
-            ResourcePill(R.drawable.ic_letter, "${hud.letters}", "Briefe") { onDestination(ValleyDestination.ARCHIVE) }
-            Spacer(Modifier.width(2.dp))
-            ResourcePill(R.drawable.ic_ep, "${hud.ep}", "Ebenen-Punkte") { onDestination(ValleyDestination.EP) }
+            // Counters appear once they mean something.
+            if (hud.letters > 0) ResourcePill(R.drawable.ic_letter, "${hud.letters}", "Briefe") { onDestination(ValleyDestination.ARCHIVE) }
+            if (hud.letters > 0 && hud.ep > 0) Spacer(Modifier.width(2.dp))
+            if (hud.ep > 0) ResourcePill(R.drawable.ic_ep, "${hud.ep}", "Punkte") { onDestination(ValleyDestination.EP) }
         }
 
         hud.fresh.firstOrNull { it in hud.unlocked }?.let { fresh ->
@@ -762,7 +764,7 @@ private fun VillageWorld(
                 modifier = Modifier.padding(bottom = 8.dp),
             )
             if (friendName != null) NamePlank(
-                if (onSwitchFriend != null) "Tal mit $friendName  ▾" else "Tal mit $friendName",
+                if (onSwitchFriend != null) "Dorf mit $friendName  ▾" else "Dorf mit $friendName",
                 Modifier.padding(bottom = 6.dp)
                     .then(if (onSwitchFriend != null) Modifier.clickable(onClick = onSwitchFriend) else Modifier)
                     .semantics { contentDescription = "Freundschaft wechseln"; role = Role.Button },
@@ -861,12 +863,12 @@ private fun FriendCourtScreen(
                 WoodSign(
                     "Nur Geteiltes",
                     "Was ${vale.friendName} hier selbst gebaut hat, weiß nur ihr Gerät. " +
-                        "Die Dorfansicht ist eine feste Illustration. Bestätigte EP und freigegebene Briefe bleiben die tatsächlichen Daten; fremde lokale Bauten werden nicht übertragen.",
+                        "Die Dorfansicht ist eine feste Illustration. Bestätigte Punkte und freigegebene Briefe bleiben die tatsächlichen Daten; fremde lokale Bauten werden nicht übertragen.",
                     MapPoint(.50f, .845f), this,
                 )
             },
         )
-        FiefPlaceBar("Zurück ins Tal", onBack, "Besuch bei ${vale.friendName}", vale.creative)
+        FiefPlaceBar("Zurück ins Dorf", onBack, "Besuch bei ${vale.friendName}", vale.creative)
         WoodToken("ⓘ", "Woraus dieser Hof abgeleitet ist", Modifier.align(Alignment.BottomEnd), onClick = onPlaque)
     }
 }
@@ -908,7 +910,7 @@ private fun CourtyardScreen(
                 revealAnchor?.let { DustReveal(it, onRevealed) }
             },
         )
-        FiefPlaceBar("Zurück ins Tal", onBack, "Mein Hof", vale.creative)
+        FiefPlaceBar("Zurück ins Dorf", onBack, "Mein Hof", vale.creative)
     }
 }
 
@@ -1322,14 +1324,14 @@ private fun TreasuryScreen(
         }
         if (!vale.epEnabled) Image(
             painter = painterResource(drawableFor(FiefAssets.CHAIN_LOCK)),
-            contentDescription = "Ebenen-Punkte sind in dieser Freundschaft aus",
+            contentDescription = "Punkte sind in dieser Freundschaft aus",
             modifier = with(this) {
                 Modifier.at(MapPoint(.57f, .57f), width * .60f, width * .60f, pivotY = .5f).size(width * .60f)
             },
         )
         PlateSprite(
             asset = null, point = MapPoint(.225f, .745f), widthFraction = .30f, scope = this,
-            description = "Kontobuch: Chronik der angenommenen Ebenen-Punkte",
+            description = "Kontobuch: Chronik der angenommenen Punkte",
             onClick = { chronicleOpen = true },
         )
         Surface(
@@ -1352,7 +1354,7 @@ private fun TreasuryScreen(
             .sortedByDescending { it.createdAt }
         FiefSheet(onDismiss = { chronicleOpen = false }) {
             if (chronicle.isEmpty()) Text(
-                "Noch keine angenommenen Ebenen-Punkte.",
+                "Noch keine angenommenen Punkte.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             ) else LazyColumn(
                 Modifier.fillMaxWidth().height(380.dp),
@@ -1493,7 +1495,7 @@ private fun Plan(plan: PlanSlot, scope: PlateScope, onClick: () -> Unit) {
             }
             if (plan.locked) Image(
                 painter = painterResource(drawableFor(FiefAssets.CHAIN_LOCK)),
-                contentDescription = "Ebenen-Punkte sind in dieser Freundschaft aus",
+                contentDescription = "Punkte sind in dieser Freundschaft aus",
                 modifier = Modifier.size(width * .18f),
             )
         }

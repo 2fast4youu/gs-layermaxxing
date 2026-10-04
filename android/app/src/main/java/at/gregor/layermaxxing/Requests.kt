@@ -15,7 +15,7 @@ enum class RequestKind { SETTINGS, EP, FRIEND }
 internal const val EP_PROPOSAL_POINTS = 1
 
 internal fun formatEpPoints(points: Int): String =
-    if (points == 1) "1 Ebenen-Punkt" else "$points Ebenen-Punkte"
+    if (points == 1) "1 Punkt" else "$points Punkte"
 
 data class PendingRequest(
     val kind: RequestKind,
@@ -41,14 +41,14 @@ data class EpOpportunity(
 ) {
     val question: String
         get() = when (role) {
-            EpRole.I_OPENED_THEIR_LETTER -> "Du hast diesen Brief geöffnet. Hat er zu Ebenen-Punkten geführt?"
-            EpRole.THEY_READ_MY_LETTER -> "$friendName hat diesen Brief gelesen. Hat er zu Ebenen-Punkten geführt?"
+            EpRole.I_OPENED_THEIR_LETTER -> "Du hast diesen Brief geöffnet. Hat er zu Punkten geführt?"
+            EpRole.THEY_READ_MY_LETTER -> "$friendName hat diesen Brief gelesen. Hat er zu Punkten geführt?"
         }
 }
 
 fun settingsSummary(letters: Boolean, chats: Boolean, ep: Boolean, delaySeconds: Long): String =
     "Briefe ${if (letters) "an" else "aus"} · Chats ${if (chats) "an" else "aus"} · " +
-        "EP ${if (ep) "an" else "aus"} · Mindestdauer ${formatRemaining(delaySeconds)}"
+        "Punkte ${if (ep) "an" else "aus"} · Mindestdauer ${formatRemaining(delaySeconds)}"
 
 object RequestInbox {
     /**
@@ -92,7 +92,7 @@ object RequestInbox {
                 kind = RequestKind.FRIEND, id = request.id, friendId = request.senderId,
                 friendName = request.senderName,
                 headline = "${request.senderName} möchte mit dir befreundet sein",
-                detail = "Danach gelten die Standardregeln: Briefe an, Chats an, EP aus.",
+                detail = "Danach gelten die Standardregeln: Briefe an, Chats an, Punkte aus.",
             )
         }
         return result

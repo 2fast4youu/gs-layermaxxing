@@ -277,7 +277,7 @@ object FiefScenes {
             z = 20,
             interactive = true,
             motion = Motion(MotionKind.GLINT, 3f, 7f, 0f),
-            label = "Dein Hof im Tal mit ${vale.friendName}",
+            label = "Dein Hof im Dorf mit ${vale.friendName}",
             hitPoint = MapPoint(OWN_CLEARING.x, OWN_CLEARING.y - .035f),
             hitRadius = .105f,
         )
@@ -301,7 +301,7 @@ object FiefScenes {
             z = 22,
             interactive = true,
             motion = Motion(MotionKind.SWAY, 2f, 6f, .6f),
-            label = "Wegweiser: andere Täler und Auskunft über dieses Tal",
+            label = "Wegweiser: andere Täler und Auskunft über dieses Dorf",
             hitPoint = MapPoint(SIGNPOST_POINT.x, SIGNPOST_POINT.y - .03f),
             hitRadius = .06f,
         )
@@ -394,8 +394,8 @@ object FiefScenes {
                 z = 30,
                 interactive = true,
                 motion = Motion(MotionKind.GLINT, 2f, 8f, .3f),
-                label = if (epEnabled) "Truhe, ${vale.balance} Ebenen-Punkte ausgebbar"
-                else "Truhe, Ebenen-Punkte sind in dieser Freundschaft aus",
+                label = if (epEnabled) "Truhe, ${vale.balance} Punkte ausgebbar"
+                else "Truhe, Punkte sind in dieser Freundschaft aus",
                 hitPoint = MapPoint(.755f, .565f),
                 hitRadius = .11f,
             )

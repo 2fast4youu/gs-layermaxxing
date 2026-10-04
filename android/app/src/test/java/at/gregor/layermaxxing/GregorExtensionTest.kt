@@ -11,7 +11,8 @@ class GregorExtensionTest {
         assertEquals(listOf(3L), TopicScope.personal().filter(all).map { it.id })
     }
     @Test fun glossarySearchFindsMeaningAndIsCaseInsensitive() {
-        assertTrue(AppGlossary.search("EP").any { it.term == "Ebenen-Punkte (EP)" })
+        assertTrue(AppGlossary.search("EP").any { it.term == "Punkte" })
+        assertTrue(AppGlossary.search("Briefraum").any { it.term == "Briefe" })
         assertTrue(AppGlossary.search("server").isNotEmpty())
         assertTrue(AppGlossary.search("xyz-no-match").isEmpty())
         assertEquals(AppGlossary.entries.size, AppGlossary.search(" ").size)

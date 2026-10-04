@@ -9,14 +9,17 @@ class AppModeTest {
         assertFalse(AppMode.MESSENGER.showsValley)
         assertEquals(listOf(MainTab.CHATS, MainTab.MORE), AppMode.MESSENGER.tabs())
     }
-    @Test fun gameStartsAndStaysInGameNavigation() {
-        assertEquals(MainTab.CASTLES, AppMode.GAME.startTab)
-        assertTrue(AppMode.GAME.showsValley)
-        assertEquals(listOf(MainTab.CASTLES, MainTab.MORE), AppMode.GAME.tabs())
+    @Test fun onlyTwoModesRemain() {
+        assertEquals(listOf(AppMode.MESSENGER, AppMode.BOTH), AppMode.entries.toList())
     }
     @Test fun combinedKeepsAllDestinations() {
         assertEquals(MainTab.CHATS, AppMode.BOTH.startTab)
+        assertTrue(AppMode.BOTH.showsValley)
         assertEquals(listOf(MainTab.CHATS, MainTab.CASTLES, MainTab.MORE), AppMode.BOTH.tabs())
+    }
+    @Test fun formerGameOnlyUsersKeepTheVillage() {
+        assertEquals(AppMode.BOTH, AppMode.fromKey("game", false))
+        assertTrue(AppMode.fromKey("game", false).showsValley)
     }
     @Test fun storedKeysRoundTripAndOverrideLegacyFlag() {
         AppMode.entries.forEach { assertEquals(it, AppMode.fromKey(it.key, !it.showsValley)) }

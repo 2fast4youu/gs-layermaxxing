@@ -86,6 +86,17 @@ class VillageVisualReview {
         }
     }
 
+    @Test fun moreMenu() = shot("14-more") {
+        LayermaxxingTheme("light") {
+            androidx.compose.material3.Surface {
+                MoreHubPreview(
+                    ApiClient.Status(1, "Gregor", false, "🦉", "#315B8A", true),
+                    ApiClient.EpOverview(emptyList(), emptyList(), emptyList(), 3, 5, "x"),
+                )
+            }
+        }
+    }
+
     @Test fun login() = shot("13-login") {
         LayermaxxingTheme("light") {
             AuthScreen(api = ApiClient(), profile = ServerProfile.GREGOR_TEST, onProfile = {}, onAuthenticated = {})

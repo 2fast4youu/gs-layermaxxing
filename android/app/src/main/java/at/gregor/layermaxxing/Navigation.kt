@@ -12,7 +12,7 @@ package at.gregor.layermaxxing
 enum class MainTab(val icon: String, val label: String) {
     CHATS("💬", "Chats"),
     MORE("⚙", "Mehr"),
-    CASTLES("🏔", "Tal"),
+    CASTLES("🏘", "Dorf"),
 }
 
 object Navigation {

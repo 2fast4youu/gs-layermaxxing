@@ -61,6 +61,10 @@ class SessionStore(context: Context) {
     val castleExperiment: Boolean get() = castleFlagStore.enabled(serverProfile.key)
     fun setCastleExperiment(value: Boolean) = castleFlagStore.setEnabled(serverProfile.key, value)
 
+    /** Former "Nur Spiel" users keep landing in the village after the merge. */
+    val startsInVillage: Boolean
+        get() = prefs.getString("app_mode_${serverProfile.key}_$name", null) == AppMode.LEGACY_GAME_KEY
+
     var appMode: AppMode
         get() = AppMode.fromKey(prefs.getString("app_mode_${serverProfile.key}_$name", null), castleExperiment)
         set(value) {

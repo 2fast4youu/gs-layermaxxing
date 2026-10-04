@@ -29,10 +29,10 @@ object VillageGrowth {
     val PATH: List<GrowthStep> = listOf(
         GrowthStep(ValleyDestination.TOPICS, "Finde deinen ersten Freund", "Am Wegweiser jemanden suchen und anfragen."),
         GrowthStep(ValleyDestination.SPARKS, "Schreib deine erste Nachricht", "Im Treffpunkt einen Chat öffnen und etwas schreiben."),
-        GrowthStep(ValleyDestination.GLOSSARY, "Notiere ein erstes Thema", "Am Schwarzen Brett ein Stichwort für euer nächstes Gespräch anlegen."),
+        GrowthStep(ValleyDestination.GLOSSARY, "Notiere ein erstes Thema", "Am Schwarzen Brett ein Thema für euer nächstes Gespräch anlegen."),
         GrowthStep(ValleyDestination.ARCHIVE, "Schick oder bekomm einen Brief", "Im Chat auf ✦ tippen und einen versiegelten Brief schreiben."),
         GrowthStep(ValleyDestination.GROUPS, "Hab zwei Freunde", "Mit zwei Freunden entsteht der Gruppenplatz."),
-        GrowthStep(ValleyDestination.EP, "Schalte EP in einer Freundschaft ein", "In den Freundschaftsregeln gemeinsam Ebenen-Punkte aktivieren."),
+        GrowthStep(ValleyDestination.EP, "Schalte Punkte in einer Freundschaft ein", "In den Freundschaftsregeln gemeinsam Punkte aktivieren."),
     )
 
     fun earned(d: ValleyDestination, f: GrowthFacts): Boolean = when (d) {

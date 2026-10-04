@@ -108,7 +108,7 @@ object VillageActivityModel {
         VillageActivity(ValleyDestination.GROUPS, groups, "Gruppen"),
         VillageActivity(ValleyDestination.SPARKS, sparks, "Ungeöffnete Funken"),
         VillageActivity(ValleyDestination.ARCHIVE, letters, "Briefe: bereit oder Zustimmung nötig"),
-        VillageActivity(ValleyDestination.EP, requests, "Offene EP-Vorschläge"),
+        VillageActivity(ValleyDestination.EP, requests, "Offene Punkte-Vorschläge"),
         VillageActivity(ValleyDestination.PEOPLE, friendRequests, "Freundschaftsanfragen"),
         VillageActivity(ValleyDestination.CONVERSATIONS, rules, "Regelvorschläge"),
     ).filter { it.count > 0 }.groupBy { it.destination }.map { (destination, items) ->

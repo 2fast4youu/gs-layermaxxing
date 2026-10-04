@@ -301,7 +301,7 @@ internal const val SPARK_PROMISE =
     "Anonym: der Empfänger sieht nur den Satz. Du siehst nur, ob er geöffnet wurde."
 
 internal const val SPARK_INFO =
-    "Ein Funke ist einseitig: keine Antwort, keine Reaktion, keine Ebenen-Punkte. " +
+    "Ein Funke ist einseitig: keine Antwort, keine Reaktion, keine Punkte. " +
         "Du siehst nie, von wem einer kommt."
 
 internal const val SPARK_ABUSE_INFO =

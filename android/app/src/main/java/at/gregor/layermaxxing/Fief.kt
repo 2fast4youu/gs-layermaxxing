@@ -30,16 +30,16 @@ enum class BuildStep(
     val effect: String,
 ) {
     WELL(Track.HOF, 1, "Brunnen", FiefAssets.WELL, "Ein Brunnen erscheint in deinem Hof."),
-    PATH(Track.LAND, 1, "Weg", FiefAssets.PATH_OVERLAY, "Der Weg durchs Tal wird befestigt."),
+    PATH(Track.LAND, 1, "Weg", FiefAssets.PATH_OVERLAY, "Der Weg durchs Dorf wird befestigt."),
     ROOF(Track.HOF, 1, "Schindeldach", FiefAssets.HUT_STAGE1, "Deine Hütte bekommt ein Schindeldach."),
     JETTY(Track.LAND, 1, "Steg", FiefAssets.JETTY, "Ein Steg führt unten an den Fluss."),
     FENCE(Track.HOF, 1, "Zaun", FiefAssets.YARD_RING, "Ein Zaun fasst deinen Hof ein."),
     FIELD(Track.LAND, 1, "Feld", FiefAssets.FIELD, "Ein Feld wird unterhalb des Hofs angelegt."),
     BARN(Track.HOF, 2, "Stall", FiefAssets.BARN, "Ein Stall entsteht neben der Hütte."),
-    ORCHARD(Track.LAND, 1, "Obstbäume", FiefAssets.ORCHARD, "Obstbäume wachsen am Weg ins Tal."),
+    ORCHARD(Track.LAND, 1, "Obstbäume", FiefAssets.ORCHARD, "Obstbäume wachsen am Weg ins Dorf."),
     STONEWORK(Track.HOF, 2, "Steinsockel", FiefAssets.HUT_STAGE2, "Deine Hütte bekommt einen Steinsockel."),
     TOWER(Track.HOF, 2, "Türmchen", FiefAssets.TOWER, "Ein Türmchen bewacht fortan deinen Hof."),
-    BRIDGE(Track.LAND, 2, "Brücke", FiefAssets.BRIDGE, "Eine Brücke quert den Fluss im Tal."),
+    BRIDGE(Track.LAND, 2, "Brücke", FiefAssets.BRIDGE, "Eine Brücke quert den Fluss im Dorf."),
     KEEP(Track.HOF, 3, "Kleine Feste", FiefAssets.HUT_STAGE3, "Deine Hütte wird zur kleinen Feste."),
 }
 

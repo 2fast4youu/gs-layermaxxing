@@ -211,9 +211,9 @@ class ConversationsTest {
 class RequestsTest {
     @Test
     fun epPointLabelsUseSingularAndKeepHistoricalPlural() {
-        assertEquals("1 Ebenen-Punkt", formatEpPoints(1))
-        assertEquals("2 Ebenen-Punkte", formatEpPoints(2))
-        assertEquals("25 Ebenen-Punkte", formatEpPoints(25))
+        assertEquals("1 Punkt", formatEpPoints(1))
+        assertEquals("2 Punkte", formatEpPoints(2))
+        assertEquals("25 Punkte", formatEpPoints(25))
     }
 
     @Test
@@ -228,7 +228,7 @@ class RequestsTest {
         val friendRequests = listOf(ApiClient.IncomingRequest(3, 4, "Cal", 1000))
         val inbox = RequestInbox.collect(friendRequests, rules, overview)
         assertEquals(listOf(RequestKind.SETTINGS, RequestKind.EP, RequestKind.FRIEND), inbox.map { it.kind })
-        assertEquals("P2 schlägt dir 1 Ebenen-Punkt vor", inbox[1].headline)
+        assertEquals("P2 schlägt dir 1 Punkt vor", inbox[1].headline)
     }
 
     @Test
