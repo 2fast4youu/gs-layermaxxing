@@ -15,6 +15,14 @@ class IsleMotionTest {
         val lanes = IsleMotion.laneOffsets(4)
         assertEquals("all lanes distinct", lanes.size, lanes.toSet().size)
         assertEquals(listOf(1f, 2f, 3f), IsleMotion.laneOffsets(3, oneSided = true))
+        // Dodging never crosses to the other side of the route.
+        assertTrue(IsleMotion.laneCandidates(-.5f).all { it <= -.5f })
+        assertTrue(IsleMotion.laneCandidates(.5f).all { it >= .5f })
+        assertEquals(0f, IsleMotion.laneCandidates(0f).first())
+        // Close neighbours carry fewer lanes, long routes up to the maximum.
+        assertEquals(2, IsleMotion.lanesThatFit(100f, 78f))
+        assertEquals(IsleMotion.MAX_LANES, IsleMotion.lanesThatFit(800f, 78f))
+        assertEquals(1, IsleMotion.lanesThatFit(0f, 200f))
     }
 
     @Test fun seaTimeSpeaksSailor() {

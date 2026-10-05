@@ -495,32 +495,57 @@ private fun IslandMap(
         val sea = rememberSeaBrush()
         // One lane per boat on a route: boats sail side by side instead of stacking.
         // One lane per boat: each lane is a gentle arc that bows out to its own side, so boats sail
-        // side by side instead of stacking. Short routes (islands close together) bow out further so
-        // boats and their time tags float on open water, not on a shore.
-        val laneGap = with(density) { 70.dp.toPx() }
-        val minOpen = with(density) { 120.dp.toPx() }
+        // side by side instead of stacking; the boat rides the arc's open-water middle.
+        val laneGap = with(density) { 78.dp.toPx() }
+        // Obstacles a boat (with its time tag) must not sit on: every island incl. its name plaque, the screen edge and other boats.
+        val boatR = with(density) { 30.dp.toPx() }
+        val islands = ordered.mapIndexed { i, f ->
+            val wPx = with(density) { Isle.islandWidth(infoById[f.id]?.level ?: 1).toPx() }
+            Offset(points[i].x, points[i].y + wPx * .1f) to wPx * .45f
+        } + (Offset(center.x, center.y + hubShorePx * .2f) to hubShorePx * .9f)
+        val edge = with(density) { 40.dp.toPx() }
+        val mapW = with(density) { w.toPx() }; val mapH = with(density) { h.toPx() }
+        val placed = mutableListOf<Offset>()
+        fun clashes(p: Offset): Float {
+            var c = 0f
+            islands.forEach { (o, r) -> val d = (p - o).getDistance(); if (d < r + boatR) c += r + boatR - d }
+            placed.forEach { o -> if (kotlin.math.abs(p.x - o.x) < boatR * 3f && kotlin.math.abs(p.y - o.y) < boatR * 2.8f) c += boatR * 20 }
+            if (p.x < edge * 1.2f || p.x > mapW - edge * 1.2f) c += boatR * 4
+            if (p.y < edge * 3 || p.y > mapH - edge * 3) c += boatR * 4
+            return c
+        }
         val voyages = ordered.flatMapIndexed { i, friend ->
-            val mine = transit.filter { it.peerId == friend.id }.sortedBy { it.createdAt }.take(IsleMotion.MAX_LANES)
+            val all = transit.filter { it.peerId == friend.id }.sortedBy { it.createdAt }
             val dx = points[i].x - center.x; val dy = points[i].y - center.y
             val len = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
             val ux = dx / len; val uy = dy / len
             // Sail on open water only: from my island's shore to the friend's shore.
             val startD = hubShorePx.coerceAtMost(len * .45f)
             val endD = (len - with(density) { (Isle.islandWidth(infoById[friend.id]?.level ?: 1) * .42f).toPx() }).coerceAtLeast(startD + 1f)
-            val short = endD - startD < minOpen
-            val lanes = IsleMotion.laneOffsets(mine.size, oneSided = short)
+            // Close neighbours have little open water: fewer lanes there; the rest wait in the outermost lane as "+N".
+            val mine = all.take(IsleMotion.lanesThatFit(endD - startD, laneGap))
+            val extra = all.size - mine.size
+            val lanes = IsleMotion.laneOffsets(mine.size)
             mine.mapIndexed { k, letter ->
-                val bow = lanes[k] * laneGap * (if (short) 1.25f else 1f)
                 fun at(d: Float, side: Float) = Offset(center.x + ux * d - uy * side, center.y + uy * d + ux * side)
-                val a = at(startD, bow * .2f); val b = at(endD, bow * .2f)
-                val (from, to) = if (letter.incoming) b to a else a to b
-                val mid = at((startD + endD) / 2f, bow)
-                // Quadratic arc through `mid`: control point = 2·mid − (from+to)/2.
-                val ctrl = Offset(2 * mid.x - (from.x + to.x) / 2f, 2 * mid.y - (from.y + to.y) / 2f)
                 val share = IsleMotion.tripShare(letter, nowSec)
                 // Keep the hull off the shores: the trip maps onto the arc's open-water middle.
                 val t = .14f + (share ?: .5f) * .72f
-                Voyage(friend, letter, from, ctrl, to, t, share)
+                fun voyage(bow: Float): Voyage {
+                    val a = at(startD, bow * .2f); val b = at(endD, bow * .2f)
+                    val (from, to) = if (letter.incoming) b to a else a to b
+                    val mid = at((startD + endD) / 2f, bow)
+                    // Quadratic arc through `mid`: control point = 2·mid − (from+to)/2.
+                    val ctrl = Offset(2 * mid.x - (from.x + to.x) / 2f, 2 * mid.y - (from.y + to.y) / 2f)
+                    return Voyage(friend, letter, from, ctrl, to, t, share, if (k == mine.lastIndex) extra else 0)
+                }
+                // Own lane first; if that water is taken (island, plaque, other boat), bow the lane further out.
+                // Never bow further out than the route is long, so a lane always visibly links its two islands.
+                val candidates = IsleMotion.laneCandidates(lanes[k]).map { it * laneGap }.filter { kotlin.math.abs(it) <= laneGap * 1.6f }.ifEmpty { listOf(lanes[k] * laneGap) }
+                fun cost(v: Voyage) = clashes(v.boat)
+                val best = candidates.map { voyage(it) }.let { all -> all.firstOrNull { cost(it) == 0f } ?: all.minBy { cost(it) } }
+                placed += best.boat
+                best
             }
         }
         val busy = voyages.map { it.friend.id }.toSet()
@@ -581,6 +606,10 @@ private fun IslandMap(
                         boat.badge, fontSize = 10.sp,
                         modifier = Modifier.align(Alignment.TopEnd).background(Color(0x8816424F), CircleShape).padding(horizontal = 3.dp),
                     )
+                    if (v.more > 0) Text(
+                        "+${v.more}", fontSize = 10.sp, color = Color(0xFF123E4A), fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.BottomStart).background(Color(0xFFFFE08A), CircleShape).padding(horizontal = 4.dp),
+                    )
                 }
             }
             val tapped = Modifier
@@ -601,6 +630,8 @@ private fun IslandMap(
 private class Voyage(
     val friend: ApiClient.UserSummary, val letter: ApiClient.Message,
     val from: Offset, val ctrl: Offset, val to: Offset, val t: Float, val share: Float?,
+    /** Further boats on this route that did not get a lane of their own. */
+    val more: Int = 0,
 ) {
     fun point(t: Float): Offset {
         val u = 1f - t

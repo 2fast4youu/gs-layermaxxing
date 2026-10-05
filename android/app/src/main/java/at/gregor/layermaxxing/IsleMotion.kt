@@ -55,6 +55,21 @@ internal object IsleMotion {
         return if (oneSided) List(n) { it + 1f } else List(n) { it - (n - 1) / 2f }
     }
 
+    /** How many side-by-side lanes a route of [open] px of open water can carry (1..MAX_LANES). */
+    fun lanesThatFit(open: Float, laneGap: Float): Int =
+        (((open + laneGap * 2f) / (laneGap * 1.4f)).toInt()).coerceIn(1, MAX_LANES)
+
+    /**
+     * Lanes to try for one boat, in lane units: its own lane first, then bowing further out on
+     * the same side (both sides for the centre lane), so a boat dodges shores and other boats
+     * without ever swapping sides with its neighbours.
+     */
+    fun laneCandidates(own: Float): List<Float> {
+        val steps = listOf(0f, .5f, 1f, 1.5f, 2f)
+        return if (own == 0f) steps.flatMap { if (it == 0f) listOf(0f) else listOf(it, -it) }
+        else { val dir = if (own < 0f) -1f else 1f; steps.map { own + dir * it } }
+    }
+
     /**
      * Remaining time in sailor speak, for the label on a route.
      * null arrival = waits at anchor (approval / presence).
