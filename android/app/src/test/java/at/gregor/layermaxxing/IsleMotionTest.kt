@@ -6,6 +6,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IsleMotionTest {
+    @Test fun boatsGetSeparateLanesSideBySide() {
+        assertEquals(listOf(0f), IsleMotion.laneOffsets(1))
+        assertEquals(listOf(-.5f, .5f), IsleMotion.laneOffsets(2))
+        assertEquals(listOf(-1f, 0f, 1f), IsleMotion.laneOffsets(3))
+        assertEquals(IsleMotion.MAX_LANES, IsleMotion.laneOffsets(9).size)
+        assertTrue(IsleMotion.laneOffsets(0).isEmpty())
+        val lanes = IsleMotion.laneOffsets(4)
+        assertEquals("all lanes distinct", lanes.size, lanes.toSet().size)
+        assertEquals(listOf(1f, 2f, 3f), IsleMotion.laneOffsets(3, oneSided = true))
+    }
+
+    @Test fun seaTimeSpeaksSailor() {
+        assertEquals("⚓ vor Anker · wartet auf Wind", IsleMotion.seaTime(null, 0L))
+        assertEquals("⚓ Anker", IsleMotion.seaTimeShort(null, 0L))
+        assertEquals("🌊 2 Tage", IsleMotion.seaTimeShort(2 * 86_400L + 5, 0L))
+        assertEquals("🔔 Land in Sicht!", IsleMotion.seaTime(100L, 100L))
+        assertTrue(IsleMotion.seaTime(1_800L, 0L).contains("30 Min"))
+        assertTrue(IsleMotion.seaTime(5 * 3600L, 0L).contains("5 Stunden"))
+        assertTrue(IsleMotion.seaTime(3 * 86_400L, 0L).contains("3 Tage"))
+        assertTrue(IsleMotion.seaTime(15 * 86_400L, 0L).contains("2 Wochen"))
+    }
+
     @Test fun timedBoatMovesForwardAndNeverWraps() {
         val created = 1_000L; val release = 2_000L
         val samples = (0..12).map { IsleMotion.boatProgress(created, release, created + it * 100L) }

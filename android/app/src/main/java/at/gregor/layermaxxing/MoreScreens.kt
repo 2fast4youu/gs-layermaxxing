@@ -326,6 +326,7 @@ private fun AppearancePage(store: SessionStore, onTheme: (String) -> Unit, onCas
         context, Manifest.permission.POST_NOTIFICATIONS,
     ) == PackageManager.PERMISSION_GRANTED
     var biometric by remember { mutableStateOf(store.biometricEnabled) }
+    var debugHitboxes by remember { mutableStateOf(store.debugHitboxes) }
     var theme by remember { mutableStateOf(store.theme) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { SectionTitle("Modus") }
@@ -362,6 +363,14 @@ private fun AppearancePage(store: SessionStore, onTheme: (String) -> Unit, onCas
                     }
                 }) { Text("Benachrichtigungen erlauben") }
             } else Text("✓ Benachrichtigungen erlaubt", fontSize = 12.sp, color = Color(0xFF19703B))
+        } } }
+        item { SectionTitle("Entwickler") }
+        item { Card { Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Debug-Modus", fontWeight = FontWeight.SemiBold)
+                Text("Zeigt die Tippflächen (Hitboxen) in der Inselwelt rot umrandet.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(debugHitboxes, { debugHitboxes = it; store.debugHitboxes = it; DebugMode.hitboxes.value = it })
         } } }
     }
 }

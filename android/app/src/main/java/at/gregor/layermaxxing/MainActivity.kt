@@ -94,7 +94,8 @@ class MainActivity : FragmentActivity() {
         setContent {
             val store = remember { SessionStore(this) }
             var theme by remember { mutableStateOf(store.theme) }
-            LayermaxxingTheme(theme) {
+            remember { DebugMode.hitboxes.value = store.debugHitboxes; true }
+            LayermaxxingTheme(theme) { androidx.compose.runtime.CompositionLocalProvider(LocalHitboxDebug provides DebugMode.hitboxes.value) {
                 var profile by remember { mutableStateOf(store.serverProfile) }
                 val api = remember(profile) { ApiClient(profile.baseUrl) }
                 var token by remember { mutableStateOf(store.token) }
@@ -207,7 +208,7 @@ class MainActivity : FragmentActivity() {
                     } }
                     }
                 }
-            }
+            } }
         }
     }
 }

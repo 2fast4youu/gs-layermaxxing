@@ -142,11 +142,11 @@ internal fun HubIsland(
             // The whole building is the touch target; the pill sits at its foot.
             if (onBuilding != null) Box(
                 Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box)
-                    .clickable(onClickLabel = "${b.label} öffnen") { onBuilding(b) },
+                    .worldTap("${b.label} öffnen") { onBuilding(b) },
             )
             Row(
                 Modifier.offset(x = w * piece.x - 50.dp, y = h * piece.y + 1.dp).width(100.dp)
-                    .then(if (onBuilding != null) Modifier.clickable(onClickLabel = "${b.label} öffnen") { onBuilding(b) } else Modifier)
+                    .then(if (onBuilding != null) Modifier.worldTap("${b.label} öffnen") { onBuilding(b) } else Modifier)
                     .semantics { contentDescription = b.label; if (onBuilding != null) role = Role.Button },
                 horizontalArrangement = Arrangement.Center,
             ) {

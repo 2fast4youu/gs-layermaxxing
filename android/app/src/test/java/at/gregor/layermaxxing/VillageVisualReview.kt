@@ -278,7 +278,7 @@ class VillageVisualReview {
                 ApiClient.IslandInfo(6, 10, 0, 10, 1, 40),
             )),
             quests = listOf(quest(1, "Gemeinsam auf den Gipfel", "hike", 30, "Anna", 3), quest(2, "Radtour am See", "bike", 20, "Lena", 4, done = true)),
-            letters = if (withFriends) listOf(letter(1, 3, "Anna", "timed", false), letter(2, 2, "Gerfried", "mutual", true), letter(3, 4, "Lena", "random", false)) else emptyList(),
+            letters = if (withFriends) listOf(letter(1, 3, "Anna", "timed", false), letter(4, 3, "Anna", "random", true), letter(5, 3, "Anna", "mutual", false), letter(2, 2, "Gerfried", "mutual", true), letter(6, 2, "Gerfried", "timed", false), letter(3, 4, "Lena", "random", false)) else emptyList(),
             topics = emptyList(), opened = emptyMap(), onBack = {}, onChat = {}, onComposeLetter = {}, onOpenLetter = {},
             onLockedTap = {}, onTopics = {}, onAllTopics = {}, onGlossary = {}, onPeople = {},
             onCreateQuest = { _, _, _, _, _, _ -> }, onQuestDone = { _, _ -> }, onQuestDelete = {},
@@ -318,5 +318,8 @@ class VillageVisualReview {
     @Test fun islandPlaceLibrary() = shot("33-bibliothek") { Isles(start = "home", placeKey = "LIBRARY") }
     @Test fun islandPlaceHall() = shot("34-gemeindehaus") { Isles(start = "home", placeKey = "CAMPFIRE") }
     @Test fun islandPlaceHouse() = shot("35-haus") { Isles(start = "home", placeKey = "HOUSE") }
+    @Test fun islandsMapDebug() = shot("26-inseln-debug") {
+        androidx.compose.runtime.CompositionLocalProvider(LocalHitboxDebug provides true) { Isles() }
+    }
     @Test fun islandsEmpty() = shot("21-inseln-leer") { Isles(false) }
 }

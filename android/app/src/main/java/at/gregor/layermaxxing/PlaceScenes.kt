@@ -377,7 +377,7 @@ internal fun HarbourBoard(
         // Topics: a yellow sticky note slapped on the post below the board.
         val open = topics.count { it.completedAt == null }
         Box(
-            map.region(.58f, .655f, .86f, .775f).clickable(onClickLabel = "Themen öffnen", onClick = onAllTopics),
+            map.region(.58f, .655f, .86f, .775f).worldTap("Themen öffnen", onAllTopics),
             Alignment.Center,
         ) {
             Sprite(R.drawable.p_sticky, Modifier.fillMaxSize().rotate(4f))

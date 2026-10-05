@@ -42,6 +42,9 @@ class SessionStore(context: Context) {
     var theme: String
         get() = prefs.getString("theme", "system") ?: "system"
         set(value) { prefs.edit().putString("theme", value).apply() }
+    var debugHitboxes: Boolean
+        get() = prefs.getBoolean(DebugMode.PREF_KEY, false)
+        set(value) { prefs.edit().putBoolean(DebugMode.PREF_KEY, value).apply() }
     var biometricEnabled: Boolean
         get() = prefs.getBoolean("biometric", false)
         set(value) { prefs.edit().putBoolean("biometric", value).apply() }

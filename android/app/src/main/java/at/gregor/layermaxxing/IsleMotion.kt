@@ -42,6 +42,52 @@ internal object IsleMotion {
         return ((nowSec - m.createdAt).toFloat() / span).coerceIn(0f, 1f)
     }
 
+    /** At most this many parallel lanes per route; more boats share the outer lanes. */
+    const val MAX_LANES = 4
+
+    /**
+     * Sideways offset of each boat's own lane, in lane units, centred on the route:
+     * 1 boat → [0], 2 → [-.5, .5], 3 → [-1, 0, 1] … so boats sail side by side, never stacked.
+     */
+    fun laneOffsets(count: Int, oneSided: Boolean = false): List<Float> {
+        val n = count.coerceIn(0, MAX_LANES)
+        // One-sided (short routes): every lane bows out to the same side, first lane already clear of the straight line.
+        return if (oneSided) List(n) { it + 1f } else List(n) { it - (n - 1) / 2f }
+    }
+
+    /**
+     * Remaining time in sailor speak, for the label on a route.
+     * null arrival = waits at anchor (approval / presence).
+     */
+    fun seaTime(arrivalSec: Long?, nowSec: Long): String {
+        if (arrivalSec == null) return "⚓ vor Anker · wartet auf Wind"
+        val left = arrivalSec - nowSec
+        if (left <= 0) return "🔔 Land in Sicht!"
+        val min = left / 60
+        val h = left / 3600
+        val d = left / 86_400
+        return when {
+            min < 60 -> "⏳ noch ${min.coerceAtLeast(1)} Min · gleich im Hafen"
+            h < 24 -> "🧭 noch $h ${if (h == 1L) "Stunde" else "Stunden"} auf See"
+            d < 7 -> "🌊 noch $d ${if (d == 1L) "Tag" else "Tage"} auf See"
+            else -> "🗺 noch ${d / 7} ${if (d / 7 == 1L) "Woche" else "Wochen"} auf hoher See"
+        }
+    }
+
+    /** Short form for the label right under a boat on the map. */
+    fun seaTimeShort(arrivalSec: Long?, nowSec: Long): String {
+        if (arrivalSec == null) return "⚓ Anker"
+        val left = arrivalSec - nowSec
+        if (left <= 0) return "🔔 Land in Sicht"
+        val min = left / 60; val h = left / 3600; val d = left / 86_400
+        return when {
+            min < 60 -> "⏳ ${min.coerceAtLeast(1)} Min"
+            h < 24 -> "🧭 $h Std"
+            d < 7 -> "🌊 $d ${if (d == 1L) "Tag" else "Tage"}"
+            else -> "🗺 ${d / 7} Wo"
+        }
+    }
+
     /** Gentle anchor sway (±1 %) so a waiting boat looks afloat, not frozen. */
     fun sway(seconds: Float, seed: Int): Float = kotlin.math.sin(seconds / 4f + seed) * .01f
 

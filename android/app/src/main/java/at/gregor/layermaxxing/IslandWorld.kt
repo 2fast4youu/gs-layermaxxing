@@ -70,6 +70,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -488,17 +489,59 @@ private fun IslandMap(
         val w = maxWidth; val h = maxHeight
         val density = LocalDensity.current
         val center = Offset(with(density) { (w * .5f).toPx() }, with(density) { (h * .5f).toPx() })
-        val sidePx = with(density) { 16.dp.toPx() }
+        val hubShorePx = with(density) { 92.dp.toPx() }
         val points = spots.map { (x, y) -> Offset(with(density) { (w * x).toPx() }, with(density) { (h * y).toPx() }) }
         // Painted sea (moves with the map), sparkles and dotted routes.
         val sea = rememberSeaBrush()
+        // One lane per boat on a route: boats sail side by side instead of stacking.
+        // One lane per boat: each lane is a gentle arc that bows out to its own side, so boats sail
+        // side by side instead of stacking. Short routes (islands close together) bow out further so
+        // boats and their time tags float on open water, not on a shore.
+        val laneGap = with(density) { 70.dp.toPx() }
+        val minOpen = with(density) { 120.dp.toPx() }
+        val voyages = ordered.flatMapIndexed { i, friend ->
+            val mine = transit.filter { it.peerId == friend.id }.sortedBy { it.createdAt }.take(IsleMotion.MAX_LANES)
+            val dx = points[i].x - center.x; val dy = points[i].y - center.y
+            val len = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
+            val ux = dx / len; val uy = dy / len
+            // Sail on open water only: from my island's shore to the friend's shore.
+            val startD = hubShorePx.coerceAtMost(len * .45f)
+            val endD = (len - with(density) { (Isle.islandWidth(infoById[friend.id]?.level ?: 1) * .42f).toPx() }).coerceAtLeast(startD + 1f)
+            val short = endD - startD < minOpen
+            val lanes = IsleMotion.laneOffsets(mine.size, oneSided = short)
+            mine.mapIndexed { k, letter ->
+                val bow = lanes[k] * laneGap * (if (short) 1.25f else 1f)
+                fun at(d: Float, side: Float) = Offset(center.x + ux * d - uy * side, center.y + uy * d + ux * side)
+                val a = at(startD, bow * .2f); val b = at(endD, bow * .2f)
+                val (from, to) = if (letter.incoming) b to a else a to b
+                val mid = at((startD + endD) / 2f, bow)
+                // Quadratic arc through `mid`: control point = 2·mid − (from+to)/2.
+                val ctrl = Offset(2 * mid.x - (from.x + to.x) / 2f, 2 * mid.y - (from.y + to.y) / 2f)
+                val share = IsleMotion.tripShare(letter, nowSec)
+                // Keep the hull off the shores: the trip maps onto the arc's open-water middle.
+                val t = .14f + (share ?: .5f) * .72f
+                Voyage(friend, letter, from, ctrl, to, t, share)
+            }
+        }
+        val busy = voyages.map { it.friend.id }.toSet()
         Canvas(Modifier.fillMaxSize()) {
             drawRect(sea, topLeft = Offset(-size.width * 2, -size.height * 2), size = androidx.compose.ui.geometry.Size(size.width * 5, size.height * 5))
-            points.forEach { p ->
+            points.forEachIndexed { i, p ->
+                if (ordered[i].id in busy) return@forEachIndexed
                 drawLine(
                     Color.White.copy(alpha = .75f), center, p, 4f, StrokeCap.Round,
                     PathEffect.dashPathEffect(floatArrayOf(4f, 16f), 0f),
                 )
+            }
+            // Each lane is a progress bar: sailed water bright and solid, the rest of the way faint and dotted.
+            voyages.forEach { v ->
+                val dots = PathEffect.dashPathEffect(floatArrayOf(4f, 14f), 0f)
+                drawPath(v.path(v.t, 1f), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
+                if (v.share != null) {
+                    drawPath(v.path(0f, v.t), Color(0x66123E4A), style = Stroke(11f, cap = StrokeCap.Round))
+                    drawPath(v.path(0f, v.t), Color(0xFFFFE08A), style = Stroke(6f, cap = StrokeCap.Round))
+                } else drawPath(v.path(0f, v.t), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
+                drawCircle(Color(0xFFFFE08A), 6f, v.to)
             }
         }
         // Home island.
@@ -511,36 +554,10 @@ private fun IslandMap(
                 friend.name, FriendLabels.display(labels[friend.id], level), profileColor(friend.displayColor),
             ) { onFriend(friend.id) }
         }
-        // Boats in transit: one per locked letter (max 2 per route keeps the sea calm).
-        ordered.forEachIndexed { i, friend ->
-            transit.filter { it.peerId == friend.id }.take(2).forEachIndexed { k, letter ->
-                val boat = LetterBoat.forMode(letter.mode)
-                val share = IsleMotion.tripShare(letter, nowSec)
-                val progress = .18f + (share ?: .5f) * .64f
-                val f = if (letter.incoming) 1f - progress else progress
-                val dx = points[i].x - center.x; val dy = points[i].y - center.y
-                val len = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
-                val side = (if (k == 0) 1f else -1f) * sidePx
-                val p = Offset(center.x + dx * f - dy / len * side, center.y + dy * f + dx / len * side)
-                Box(
-                    Modifier.offset { IntOffset((p.x - 26.dp.toPx()).roundToInt(), (p.y - 26.dp.toPx()).roundToInt()) }
-                        .size(52.dp).clip(CircleShape)
-                        .clickable(onClickLabel = "Schiff ansehen") { boatSheet = letter }
-                        .semantics { contentDescription = "${boat.label} – Brief ${if (letter.incoming) "von" else "an"} ${friend.name}" },
-                    Alignment.Center,
-                ) {
-                    Image(painterResource(boat.res), null, Modifier.size(44.dp))
-                    Text(
-                        boat.badge, fontSize = 10.sp,
-                        modifier = Modifier.align(Alignment.TopEnd).background(Color(0x8816424F), CircleShape).padding(horizontal = 3.dp),
-                    )
-                }
-            }
-        }
         val hubW = 200.dp
         Column(
             Modifier.offset(x = w * .5f - hubW / 2, y = h * .5f - hubW * .42f).width(hubW)
-                .clickable(onClickLabel = "Meine Insel öffnen", onClick = onHome),
+                .worldTap("Meine Insel öffnen", onHome),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false, seed = ownSeed)
@@ -551,10 +568,49 @@ private fun IslandMap(
                 WorldText(ownName, 14.sp, plaque = false)
                 WorldText("  Meine Insel", 10.sp, fill = Color(0xFFFFE08A), display = false, plaque = false)
             }
+        }
+        // Boats in transit, drawn above the islands so none hides under a shore; each in its own lane with its sea time.
+        voyages.forEach { v ->
+            val boat = LetterBoat.forMode(v.letter.mode)
+            val p = v.boat
+            val tag = IsleMotion.seaTimeShort(IsleMotion.arrivalSec(v.letter), nowSec)
+            val hull: @Composable () -> Unit = {
+                Box(Modifier.size(42.dp), Alignment.Center) {
+                    Image(painterResource(boat.res), null, Modifier.size(38.dp))
+                    Text(
+                        boat.badge, fontSize = 10.sp,
+                        modifier = Modifier.align(Alignment.TopEnd).background(Color(0x8816424F), CircleShape).padding(horizontal = 3.dp),
+                    )
+                }
+            }
+            val tapped = Modifier
+                .worldTap("Schiff ansehen") { boatSheet = v.letter }
+                .semantics { contentDescription = "${boat.label} – Brief ${if (v.letter.incoming) "von" else "an"} ${v.friend.name}, ${IsleMotion.seaTime(IsleMotion.arrivalSec(v.letter), nowSec)}" }
+            Column(
+                Modifier.offset { IntOffset((p.x - 42.dp.toPx()).roundToInt(), (p.y - 21.dp.toPx()).roundToInt()) }.width(84.dp).then(tapped),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) { hull(); WorldText(tag, 9.sp, display = false) }
+        }
         boatSheet?.let { letter ->
             BoatSheet(letter, ordered.firstOrNull { it.id == letter.peerId }?.name ?: "…", nowSec) { boatSheet = null }
         }
-        }
+    }
+}
+
+/** One boat on its own lane: from/to are the shores, [boat] where it is now, [share] null = at anchor. */
+private class Voyage(
+    val friend: ApiClient.UserSummary, val letter: ApiClient.Message,
+    val from: Offset, val ctrl: Offset, val to: Offset, val t: Float, val share: Float?,
+) {
+    fun point(t: Float): Offset {
+        val u = 1f - t
+        return Offset(u * u * from.x + 2 * u * t * ctrl.x + t * t * to.x, u * u * from.y + 2 * u * t * ctrl.y + t * t * to.y)
+    }
+    val boat: Offset get() = point(t)
+    /** The arc between t0 and t1 as a polyline (smooth enough at 24 steps). */
+    fun path(t0: Float, t1: Float) = androidx.compose.ui.graphics.Path().apply {
+        val p0 = point(t0); moveTo(p0.x, p0.y)
+        for (k in 1..24) { val p = point(t0 + (t1 - t0) * k / 24f); lineTo(p.x, p.y) }
     }
 }
 
@@ -570,7 +626,43 @@ private fun CloseIsland(title: String, subtitle: String, content: @Composable ()
         Spacer(Modifier.height(3.dp))
         WorldText(subtitle, 11.sp, fill = Color(0xFFFFE08A), display = false)
         Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { content() }
+        // Pinch to look closer at the island (1×–2.6×), double-tap to zoom in/out; taps on buildings still work.
+        var z by remember { mutableFloatStateOf(1f) }
+        var off by remember { mutableStateOf(Offset.Zero) }
+        var box by remember { mutableStateOf(androidx.compose.ui.geometry.Size(1f, 1f)) }
+        val scope = rememberCoroutineScope()
+        fun clamp(o: Offset, zz: Float): Offset {
+            val mx = box.width * (zz - 1f) / 2f; val my = box.height * (zz - 1f) / 2f
+            return Offset(o.x.coerceIn(-mx, mx), o.y.coerceIn(-my, my))
+        }
+        Box(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                .onSizeChanged { box = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
+                .pointerInput(Unit) {
+                    detectTransformGestures { centroid, pan, zoomBy, _ ->
+                        val nz = (z * zoomBy).coerceIn(1f, 2.6f)
+                        val c = Offset(box.width / 2f, box.height / 2f)
+                        val r = nz / z
+                        val o = Offset(off.x + (centroid.x - c.x - off.x) * (1f - r), off.y + (centroid.y - c.y - off.y) * (1f - r)) + pan
+                        z = nz; off = clamp(o, nz)
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = { at ->
+                        val sz = z; val so = off
+                        val tz = if (z > 1.3f) 1f else 2f
+                        val c = Offset(box.width / 2f, box.height / 2f)
+                        val to = if (tz == 1f) Offset.Zero else clamp(Offset((c.x - at.x) * (tz - 1f), (c.y - at.y) * (tz - 1f)), tz)
+                        scope.launch {
+                            androidx.compose.animation.core.animate(0f, 1f, animationSpec = tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { f, _ ->
+                                z = sz + (tz - sz) * f
+                                off = Offset(so.x + (to.x - so.x) * f, so.y + (to.y - so.y) * f)
+                            }
+                        }
+                    })
+                }
+                .graphicsLayer { scaleX = z; scaleY = z; translationX = off.x; translationY = off.y },
+        ) { content() }
     }
 }
 
@@ -578,7 +670,7 @@ private fun CloseIsland(title: String, subtitle: String, content: @Composable ()
 private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name: String, sub: String, color: Color, onClick: () -> Unit) {
     Column(
         Modifier.offset(x = cx - width / 2, y = cy - width * .5f).width(width)
-            .clickable(onClickLabel = "$name öffnen", onClick = onClick),
+            .worldTap("$name öffnen", onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         DynamicIsland(remember(level, seed) { IslandPlans.friend(level, seed) }, Modifier.fillMaxWidth())
@@ -954,7 +1046,9 @@ internal fun BoatSheetContent(letter: ApiClient.Message, friendName: String, now
                 Spacer(Modifier.weight(1f))
                 Text(if (letter.incoming) "Meine Insel" else friendName, color = Color(0xB3FFF8E6), fontSize = 12.sp)
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
+            WorldText(IsleMotion.seaTime(arrival, nowSec), 15.sp, display = false)
+            Spacer(Modifier.height(12.dp))
             InfoLine("Abgelegt", date(letter.createdAt))
             when {
                 letter.mode == "random" && letter.randomFrom != null && letter.randomTo != null ->
