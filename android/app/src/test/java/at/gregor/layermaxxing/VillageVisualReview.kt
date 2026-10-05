@@ -249,8 +249,12 @@ class VillageVisualReview {
     private fun quest(id: Long, title: String, icon: String, pts: Int, target: String, tid: Long, type: String = "friend", done: Boolean = false) =
         ApiClient.Quest(id, title, "", icon, pts, 1, "Gregor", type, target, tid, 0, if (done) 1 else null, if (done) "Anna" else null, true)
 
+    private val nowSec = System.currentTimeMillis() / 1000
     private fun letter(id: Long, peer: Long, name: String, mode: String, incoming: Boolean) = ApiClient.Message(
-        id, peer, name, incoming, "Brief $id", "", "none", 0, mode, null, null, null, false, false, null, false, false,
+        id, peer, name, incoming, "Brief $id", "", "none", nowSec - 3 * 86_400, mode,
+        if (mode == "timed") nowSec + 2 * 86_400 else null,
+        if (mode == "random") nowSec - 86_400 else null, if (mode == "random") nowSec + 5 * 86_400 else null,
+        false, false, null, false, false,
         null, null, null, emptyList(), null, null, null,
     )
 
@@ -289,6 +293,15 @@ class VillageVisualReview {
                 else ApiClient.HomeIsland(id, mapOf(0 to "windmill", 2 to "fountain", 4 to "maibaum", 1 to "hammock", 5 to "campfire"), 400, items)
             },
         )
+    }
+    @Test fun boatSheet() = shot("25-schiff") {
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF4FC3C7))) {
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
+                    .background(androidx.compose.ui.graphics.Color(0xFF123E4A), androidx.compose.foundation.shape.RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                    .padding(top = 24.dp),
+            ) { IsleTypography { BoatSheetContent(letter(1, 3, "Anna", "timed", false), "Anna", nowSec) } }
+        }
     }
     @Test fun islandHome() = shot("22-meine-insel") { Isles(start = "home") }
     @Test fun islandVisit() = shot("23-besuch") { Isles(start = "visit:2") }

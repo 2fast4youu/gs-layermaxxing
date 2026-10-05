@@ -150,14 +150,14 @@ internal fun DynamicIsland(
     val t = rememberInfiniteTransition(label = "isle")
     val time by if (animate) t.animateFloat(0f, 1f, infiniteRepeatable(tween(6000, easing = LinearEasing), RepeatMode.Restart), label = "time")
     else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    val sway by if (animate) t.animateFloat(-1f, 1f, infiniteRepeatable(tween(2600), RepeatMode.Reverse), label = "sway")
+    val sway by if (animate) t.animateFloat(-1f, 1f, infiniteRepeatable(tween(5200), RepeatMode.Reverse), label = "sway")
     else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     BoxWithConstraints(modifier.aspectRatio(IslandPlans.ASPECT)) {
         val w = maxWidth; val h = maxHeight
         // Gently breathing light on the shallow water, under the painted island.
         Canvas(Modifier.fillMaxSize()) {
             drawOval(
-                Color.White.copy(alpha = .10f + .08f * sin(time * 2f * PI.toFloat())),
+                Color.White.copy(alpha = .10f),
                 topLeft = Offset(size.width * .03f, size.height * .06f),
                 size = androidx.compose.ui.geometry.Size(size.width * .94f, size.height * .92f),
             )

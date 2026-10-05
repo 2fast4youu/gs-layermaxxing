@@ -35,4 +35,23 @@ class IsleMotionTest {
         val (p, _) = IsleMotion.zoomAround(Offset.Zero, 1f, 1.5f, Offset(500f, 1000f), 1000f, 2000f)
         assertEquals(0f, p.x, 1e-3f); assertEquals(0f, p.y, 1e-3f)
     }
+
+    private fun msg(mode: String, created: Long, release: Long?, rFrom: Long? = null, rTo: Long? = null) = ApiClient.Message(
+        1, 2, "A", false, "t", "", "none", created, mode, release, rFrom, rTo, false, false, null, false, false,
+        null, null, null, emptyList(), null, null, null,
+    )
+
+    @Test fun boatArrivesExactlyOnTheRealDay() {
+        val m = msg("timed", 0L, 4 * 86_400L)
+        assertEquals(0f, IsleMotion.tripShare(m, 0L)!!, 1e-4f)
+        assertEquals(.5f, IsleMotion.tripShare(m, 2 * 86_400L)!!, 1e-4f)
+        assertEquals(1f, IsleMotion.tripShare(m, 4 * 86_400L)!!, 1e-4f)
+        // One minute moves the boat by a tiny fraction only – it creeps, it does not race.
+        assertTrue(IsleMotion.tripShare(m, 60L)!! < .001f)
+    }
+
+    @Test fun approvalBoatsWaitAtAnchorAndRandomUsesWindowEnd() {
+        assertEquals(null, IsleMotion.tripShare(msg("mutual", 0L, null), 999L))
+        assertEquals(500L, IsleMotion.arrivalSec(msg("random", 0L, null, 100L, 500L)))
+    }
 }

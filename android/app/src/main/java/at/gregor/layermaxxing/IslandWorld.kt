@@ -410,12 +410,11 @@ private fun IslandMap(
     var pan by remember { mutableStateOf(Offset.Zero) }
     var viewport by remember { mutableStateOf(androidx.compose.ui.geometry.Size(1f, 1f)) }
     val reduced = rememberIsleReducedMotion()
-    val waves = rememberInfiniteTransition(label = "sea")
-    // One slow 60 s cycle drives everything; nothing restarts visibly.
-    val t by waves.animateFloat(0f, 1f, infiniteRepeatable(tween(60_000, easing = LinearEasing), RepeatMode.Restart), label = "t")
-    val time = if (reduced) .3f else t
-    val seconds = time * 60f
-    val nowSec = remember(letters) { System.currentTimeMillis() / 1000 }
+    // The sea map is still: no per-frame loops. Boats only move when the real clock moves.
+    // Real clock, refreshed once a minute: boats creep forward like an hour hand, never loop.
+    var nowSec by remember { mutableStateOf(System.currentTimeMillis() / 1000) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); nowSec = System.currentTimeMillis() / 1000 } }
+    var boatSheet by remember { mutableStateOf<ApiClient.Message?>(null) }
     // Friends with the strongest friendship sit first on the inner ring.
     val ordered = remember(pals, infoById) { pals.sortedWith(compareByDescending<ApiClient.UserSummary> { infoById[it.id]?.score ?: 0 }.thenBy { it.name }) }
     val spots = remember(ordered.size) { IsleLayout.positions(ordered.size) }
@@ -495,16 +494,10 @@ private fun IslandMap(
         val sea = rememberSeaBrush()
         Canvas(Modifier.fillMaxSize()) {
             drawRect(sea, topLeft = Offset(-size.width * 2, -size.height * 2), size = androidx.compose.ui.geometry.Size(size.width * 5, size.height * 5))
-            for (i in 0 until 26) {
-                val sx = ((i * 0.381f) % 1f) * size.width + sin(seconds / 9f + i) * 10f
-                val sy = ((i * 0.617f) % 1f) * size.height
-                val a = (sin(seconds / 3f + i * 1.7f) * .5f + .5f) * .28f
-                drawLine(Color.White.copy(alpha = a), Offset(sx, sy), Offset(sx + 14f, sy), 3f, StrokeCap.Round)
-            }
             points.forEach { p ->
                 drawLine(
                     Color.White.copy(alpha = .75f), center, p, 4f, StrokeCap.Round,
-                    PathEffect.dashPathEffect(floatArrayOf(4f, 16f), -seconds * 6f),
+                    PathEffect.dashPathEffect(floatArrayOf(4f, 16f), 0f),
                 )
             }
         }
@@ -522,16 +515,19 @@ private fun IslandMap(
         ordered.forEachIndexed { i, friend ->
             transit.filter { it.peerId == friend.id }.take(2).forEachIndexed { k, letter ->
                 val boat = LetterBoat.forMode(letter.mode)
-                val progress = IsleMotion.boatProgress(letter.createdAt, letter.releaseAt, nowSec) + IsleMotion.sway(seconds, i * 3 + k)
+                val share = IsleMotion.tripShare(letter, nowSec)
+                val progress = .18f + (share ?: .5f) * .64f
                 val f = if (letter.incoming) 1f - progress else progress
                 val dx = points[i].x - center.x; val dy = points[i].y - center.y
                 val len = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
                 val side = (if (k == 0) 1f else -1f) * sidePx
                 val p = Offset(center.x + dx * f - dy / len * side, center.y + dy * f + dx / len * side)
-                val bob = sin(seconds * 1.2f + i) * 1.5f
                 Box(
-                    Modifier.offset { IntOffset((p.x - 22.dp.toPx()).roundToInt(), (p.y - 22.dp.toPx() + bob).roundToInt()) }
+                    Modifier.offset { IntOffset((p.x - 26.dp.toPx()).roundToInt(), (p.y - 26.dp.toPx()).roundToInt()) }
+                        .size(52.dp).clip(CircleShape)
+                        .clickable(onClickLabel = "Schiff ansehen") { boatSheet = letter }
                         .semantics { contentDescription = "${boat.label} – Brief ${if (letter.incoming) "von" else "an"} ${friend.name}" },
+                    Alignment.Center,
                 ) {
                     Image(painterResource(boat.res), null, Modifier.size(44.dp))
                     Text(
@@ -555,6 +551,9 @@ private fun IslandMap(
                 WorldText(ownName, 14.sp, plaque = false)
                 WorldText("  Meine Insel", 10.sp, fill = Color(0xFFFFE08A), display = false, plaque = false)
             }
+        boatSheet?.let { letter ->
+            BoatSheet(letter, ordered.firstOrNull { it.id == letter.peerId }?.name ?: "…", nowSec) { boatSheet = null }
+        }
         }
     }
 }
@@ -912,4 +911,66 @@ private fun LabelDialog(name: String, current: String?, onDismiss: () -> Unit, o
             }
         },
     )
+}
+
+
+/** Tap on a boat: what it carries, where it goes and on which real day it docks. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun BoatSheet(letter: ApiClient.Message, friendName: String, nowSec: Long, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF123E4A), sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        BoatSheetContent(letter, friendName, nowSec)
+    }
+}
+
+@Composable
+internal fun BoatSheetContent(letter: ApiClient.Message, friendName: String, nowSec: Long) {
+    val boat = LetterBoat.forMode(letter.mode)
+    val fmt = remember { java.text.SimpleDateFormat("EEEE, d. MMMM 'um' HH:mm", java.util.Locale.GERMAN) }
+    fun date(sec: Long) = fmt.format(java.util.Date(sec * 1000))
+    val share = IsleMotion.tripShare(letter, nowSec)
+    val arrival = IsleMotion.arrivalSec(letter)
+    run {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 28.dp).navigationBarsPadding()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(painterResource(boat.res), null, Modifier.size(72.dp))
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    WorldText(boat.label.substringBefore(" ·"), 22.sp, plaque = false)
+                    WorldText(if (letter.incoming) "Brief von $friendName" else "Brief an $friendName", 13.sp, fill = Color(0xFFFFE08A), display = false, plaque = false)
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            // Route: home harbour → friend, with the boat where it really is.
+            Box(Modifier.fillMaxWidth().height(28.dp)) {
+                Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(4.dp).background(Color(0x33FFFFFF), RoundedCornerShape(50)))
+                Box(Modifier.align(Alignment.CenterStart).fillMaxWidth(share ?: .5f).height(4.dp).background(Color(0xFFFFE08A), RoundedCornerShape(50)))
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    Text("⛵", fontSize = 18.sp, modifier = Modifier.offset(x = maxWidth * (share ?: .5f) - 10.dp))
+                }
+            }
+            Row(Modifier.fillMaxWidth()) {
+                Text(if (letter.incoming) friendName else "Meine Insel", color = Color(0xB3FFF8E6), fontSize = 12.sp)
+                Spacer(Modifier.weight(1f))
+                Text(if (letter.incoming) "Meine Insel" else friendName, color = Color(0xB3FFF8E6), fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(16.dp))
+            InfoLine("Abgelegt", date(letter.createdAt))
+            when {
+                letter.mode == "random" && letter.randomFrom != null && letter.randomTo != null ->
+                    InfoLine("Legt an", "irgendwann zwischen ${date(letter.randomFrom)} und ${date(letter.randomTo)}")
+                arrival == null -> InfoLine("Legt an", if (letter.incoming) "sobald du zustimmst" else "sobald $friendName zustimmt – liegt bis dahin vor Anker")
+                else -> InfoLine("Legt an", date(arrival))
+            }
+            if (share != null) InfoLine("Strecke", "${(share * 100).roundToInt()} % geschafft")
+        }
+    }
+}
+
+@Composable
+private fun InfoLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(label, color = Color(0xB3FFF8E6), fontSize = 14.sp, modifier = Modifier.width(84.dp))
+        Text(value, color = Color(0xFFFFF8E6), fontSize = 14.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold)
+    }
 }

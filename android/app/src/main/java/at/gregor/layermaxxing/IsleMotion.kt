@@ -27,6 +27,21 @@ internal object IsleMotion {
         return .18f + raw * .64f
     }
 
+    /** When a letter's boat docks: fixed time, the latest moment of a random window, or unknown (waits for approval). */
+    fun arrivalSec(m: ApiClient.Message): Long? = when (m.mode) {
+        "random" -> m.randomTo ?: m.releaseAt
+        "manual", "mutual", "presence" -> null
+        else -> m.releaseAt
+    }
+
+    /** Share of the trip already done, 0..1 (null = waiting at anchor). */
+    fun tripShare(m: ApiClient.Message, nowSec: Long): Float? {
+        val end = arrivalSec(m) ?: return null
+        val span = end - m.createdAt
+        if (span <= 0) return 1f
+        return ((nowSec - m.createdAt).toFloat() / span).coerceIn(0f, 1f)
+    }
+
     /** Gentle anchor sway (±1 %) so a waiting boat looks afloat, not frozen. */
     fun sway(seconds: Float, seed: Int): Float = kotlin.math.sin(seconds / 4f + seed) * .01f
 
