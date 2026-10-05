@@ -12,6 +12,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -69,6 +72,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -226,6 +230,7 @@ internal fun IslandWorld(
         IsleBuilding.POST to letters.count { it.incoming && it.unlocked && it.readAt == null && opened[it.id] == null },
     )
 
+    IsleTypography {
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Isle.SeaTop, Isle.SeaBottom)))) {
         when {
             view == "home" -> CloseIsland(
@@ -385,6 +390,7 @@ internal fun IslandWorld(
             onCreate = { t, d, icon, pts, p, g -> newQuestFor = null; onCreateQuest(t, d, icon, pts, p, g) },
         )
     }
+    }
 }
 
 @Composable
@@ -401,23 +407,81 @@ private fun IslandMap(
 ) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
+    var viewport by remember { mutableStateOf(androidx.compose.ui.geometry.Size(1f, 1f)) }
     val reduced = rememberIsleReducedMotion()
     val waves = rememberInfiniteTransition(label = "sea")
-    val t by waves.animateFloat(0f, 1f, infiniteRepeatable(tween(14_000, easing = LinearEasing), RepeatMode.Restart), label = "t")
+    // One slow 60 s cycle drives everything; nothing restarts visibly.
+    val t by waves.animateFloat(0f, 1f, infiniteRepeatable(tween(60_000, easing = LinearEasing), RepeatMode.Restart), label = "t")
     val time = if (reduced) .3f else t
+    val seconds = time * 60f
+    val nowSec = remember(letters) { System.currentTimeMillis() / 1000 }
     // Friends with the strongest friendship sit first on the inner ring.
     val ordered = remember(pals, infoById) { pals.sortedWith(compareByDescending<ApiClient.UserSummary> { infoById[it.id]?.score ?: 0 }.thenBy { it.name }) }
     val spots = remember(ordered.size) { IsleLayout.positions(ordered.size) }
     val transit = remember(letters) { letters.filter { !it.unlocked && it.groupId == null } }
+    val scope = rememberCoroutineScope()
+    var glide by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun animateTo(targetPan: Offset, targetZoom: Float) {
+        glide?.cancel()
+        glide = scope.launch {
+            val sp = pan; val sz = zoom
+            androidx.compose.animation.core.animate(0f, 1f, animationSpec = tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { f, _ ->
+                zoom = sz + (targetZoom - sz) * f
+                pan = IsleMotion.clampPan(Offset(sp.x + (targetPan.x - sp.x) * f, sp.y + (targetPan.y - sp.y) * f), zoom, viewport.width, viewport.height)
+            }
+        }
+    }
 
     BoxWithConstraints(
         Modifier.fillMaxSize()
+            .onSizeChanged { viewport = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
+            // Momentum: after a swipe the sea keeps gliding and eases out.
             .pointerInput(Unit) {
-                detectTransformGestures { _, p, z, _ ->
-                    zoom = (zoom * z).coerceIn(.8f, 2.2f)
-                    val limit = size.width * .45f * zoom
-                    pan = Offset((pan.x + p.x).coerceIn(-limit, limit), (pan.y + p.y).coerceIn(-limit, limit))
+                val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    glide?.cancel()
+                    tracker.resetTracking()
+                    tracker.addPosition(down.uptimeMillis, down.position)
+                    var multi = false
+                    do {
+                        val ev = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        if (ev.changes.count { it.pressed } > 1) multi = true
+                        ev.changes.firstOrNull { it.id == down.id }?.let { tracker.addPosition(it.uptimeMillis, it.position) }
+                    } while (ev.changes.any { it.pressed })
+                    if (multi || reduced) return@awaitEachGesture
+                    val v = tracker.calculateVelocity()
+                    if (kotlin.math.hypot(v.x, v.y) < 300f) return@awaitEachGesture
+                    glide = scope.launch {
+                        var vx = v.x; var vy = v.y
+                        var last = androidx.compose.runtime.withFrameMillis { it }
+                        while (kotlin.math.hypot(vx, vy) > 25f) {
+                            androidx.compose.runtime.withFrameMillis { now ->
+                                val dt = ((now - last).coerceIn(1L, 32L)) / 1000f
+                                last = now
+                                pan = IsleMotion.clampPan(Offset(pan.x + vx * dt, pan.y + vy * dt), zoom, viewport.width, viewport.height)
+                                val k = kotlin.math.exp(-3.4f * dt)
+                                vx *= k; vy *= k
+                            }
+                        }
+                    }
                 }
+            }
+            .pointerInput(Unit) {
+                detectTransformGestures { centroid, p, z, _ ->
+                    val (zp, nz) = IsleMotion.zoomAround(pan, zoom, z, centroid, viewport.width, viewport.height)
+                    zoom = nz
+                    pan = IsleMotion.clampPan(zp + p, nz, viewport.width, viewport.height)
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(onDoubleTap = { at ->
+                    if (zoom > 1.3f) animateTo(Offset.Zero, 1f)
+                    else {
+                        val (zp, nz) = IsleMotion.zoomAround(pan, zoom, 1.8f / zoom, at, viewport.width, viewport.height)
+                        animateTo(zp, nz)
+                    }
+                })
             }
             .graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y },
     ) {
@@ -429,15 +493,15 @@ private fun IslandMap(
         // Sea sparkles and dotted routes.
         Canvas(Modifier.fillMaxSize()) {
             for (i in 0 until 26) {
-                val sx = ((i * 0.381f + time * (0.02f + (i % 3) * .01f)) % 1f) * size.width
+                val sx = ((i * 0.381f) % 1f) * size.width + sin(seconds / 9f + i) * 10f
                 val sy = ((i * 0.617f) % 1f) * size.height
-                val a = (sin((time * 2 * PI + i).toFloat()) * .5f + .5f) * .35f
+                val a = (sin(seconds / 3f + i * 1.7f) * .5f + .5f) * .28f
                 drawLine(Color.White.copy(alpha = a), Offset(sx, sy), Offset(sx + 14f, sy), 3f, StrokeCap.Round)
             }
             points.forEach { p ->
                 drawLine(
                     Color.White.copy(alpha = .75f), center, p, 4f, StrokeCap.Round,
-                    PathEffect.dashPathEffect(floatArrayOf(4f, 16f), -time * 200f),
+                    PathEffect.dashPathEffect(floatArrayOf(4f, 16f), -seconds * 6f),
                 )
             }
         }
@@ -455,13 +519,13 @@ private fun IslandMap(
         ordered.forEachIndexed { i, friend ->
             transit.filter { it.peerId == friend.id }.take(2).forEachIndexed { k, letter ->
                 val boat = LetterBoat.forMode(letter.mode)
-                val phase = ((time + k * .37f + i * .13f) % 1f).let { if (letter.incoming) 1f - it else it }
-                val f = .36f + phase * .28f
+                val progress = IsleMotion.boatProgress(letter.createdAt, letter.releaseAt, nowSec) + IsleMotion.sway(seconds, i * 3 + k)
+                val f = if (letter.incoming) 1f - progress else progress
                 val dx = points[i].x - center.x; val dy = points[i].y - center.y
                 val len = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
                 val side = (if (k == 0) 1f else -1f) * sidePx
                 val p = Offset(center.x + dx * f - dy / len * side, center.y + dy * f + dx / len * side)
-                val bob = sin((time * 2 * PI * 6 + i).toFloat()) * 2f
+                val bob = sin(seconds * 1.2f + i) * 1.5f
                 Box(
                     Modifier.offset { IntOffset((p.x - 22.dp.toPx()).roundToInt(), (p.y - 22.dp.toPx() + bob).roundToInt()) }
                         .semantics { contentDescription = "${boat.label} – Brief ${if (letter.incoming) "von" else "an"} ${friend.name}" },
@@ -484,7 +548,7 @@ private fun IslandMap(
             Row(
                 Modifier.offset(y = (-6).dp).shadow(3.dp, RoundedCornerShape(50)).background(Isle.Teal, RoundedCornerShape(50))
                     .padding(horizontal = 10.dp, vertical = 3.dp),
-            ) { Text("$ownName · Meine Insel", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1) }
+            ) { Text("$ownName · Meine Insel", fontSize = 13.sp, fontFamily = Kit.Display, color = Color.White, maxLines = 1) }
         }
     }
 }
@@ -497,8 +561,8 @@ private fun CloseIsland(title: String, subtitle: String, content: @Composable ()
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Isle.Ink)
-        Text(subtitle, fontSize = 13.sp, color = Isle.Ink.copy(alpha = .7f))
+        Text(title, fontSize = 24.sp, fontFamily = Kit.Display, color = Isle.Ink)
+        Text(subtitle, fontSize = 14.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, color = Isle.Ink.copy(alpha = .75f))
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { content() }
     }
@@ -520,8 +584,8 @@ private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name
             Box(Modifier.size(8.dp).background(color, CircleShape))
             Spacer(Modifier.width(4.dp))
             Column {
-                Text(name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Isle.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(sub, fontSize = 9.sp, color = Isle.Muted, maxLines = 1)
+                Text(name, fontSize = 13.sp, fontFamily = Kit.Display, color = Isle.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(sub, fontSize = 10.sp, fontFamily = Kit.Display, color = Isle.TealDark, maxLines = 1)
             }
         }
     }
@@ -780,7 +844,7 @@ private fun BarItem(icon: String, label: String, badge: Int = 0, onClick: () -> 
                 modifier = Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-2).dp).background(Isle.Teal, CircleShape).padding(horizontal = 4.dp),
             )
         }
-        Text(label, fontSize = 11.sp, color = Isle.Ink)
+        Text(label, fontSize = 12.sp, fontFamily = Kit.Display, color = Isle.Ink)
     }
 }
 
