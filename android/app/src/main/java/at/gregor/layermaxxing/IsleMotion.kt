@@ -5,6 +5,10 @@ import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.res.imageResource
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 
 /** Calm, deterministic motion for the archipelago (no loops that jump back to the start). */
 internal object IsleMotion {
@@ -71,29 +75,40 @@ internal fun IsleTypography(content: @Composable () -> Unit) {
 
 
 /**
- * Text painted straight into the world: chunky game font with a dark outline and a soft
- * drop shadow – no white card on top of the landscape.
+ * Clean world label: flat text on a small dark-teal plaque. No outline, no shadow,
+ * no white card – reads like a painted harbour sign and stays crisp at any zoom.
  */
 @Composable
 internal fun WorldText(
     text: String,
     size: androidx.compose.ui.unit.TextUnit,
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
-    fill: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFFFFFBF0),
-    outline: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFF16424F),
+    fill: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFFFFF8E6),
     display: Boolean = true,
+    plaque: Boolean = true,
 ) {
     val family = if (display) Kit.Display else Kit.Body
     val weight = if (display) null else androidx.compose.ui.text.font.FontWeight.ExtraBold
-    val stroke = with(androidx.compose.ui.platform.LocalDensity.current) { (size.toPx() * .13f).coerceAtLeast(2.5f) }
-    androidx.compose.foundation.layout.Box(modifier) {
-        androidx.compose.material3.Text(
-            text, fontSize = size, fontFamily = family, fontWeight = weight, color = outline, maxLines = 1,
-            style = TextStyle(
-                drawStyle = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke, join = androidx.compose.ui.graphics.StrokeJoin.Round),
-                shadow = androidx.compose.ui.graphics.Shadow(androidx.compose.ui.graphics.Color(0x55000000), androidx.compose.ui.geometry.Offset.Zero, stroke * 1.6f),
-            ),
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(50)
+    androidx.compose.material3.Text(
+        text, fontSize = size, fontFamily = family, fontWeight = weight, color = fill, maxLines = 1,
+        style = TextStyle(shadow = null),
+        modifier = modifier.then(
+            if (plaque) androidx.compose.ui.Modifier
+                .background(androidx.compose.ui.graphics.Color(0xD9123E4A), shape)
+                .padding(horizontal = 8.dp, vertical = 1.dp)
+            else androidx.compose.ui.Modifier,
+        ),
+    )
+}
+
+/** Hand-painted sea, tiled so it continues endlessly and moves with the map. */
+@Composable
+internal fun rememberSeaBrush(): androidx.compose.ui.graphics.ShaderBrush {
+    val img = androidx.compose.ui.graphics.ImageBitmap.imageResource(R.drawable.sea_tile)
+    return androidx.compose.runtime.remember(img) {
+        androidx.compose.ui.graphics.ShaderBrush(
+            androidx.compose.ui.graphics.ImageShader(img, androidx.compose.ui.graphics.TileMode.Repeated, androidx.compose.ui.graphics.TileMode.Repeated),
         )
-        androidx.compose.material3.Text(text, fontSize = size, fontFamily = family, fontWeight = weight, color = fill, maxLines = 1)
     }
 }

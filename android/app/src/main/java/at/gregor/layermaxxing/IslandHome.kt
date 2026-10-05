@@ -151,7 +151,7 @@ internal fun HubIsland(
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Box {
-                    WorldText(b.label, 12.sp)
+                    WorldText(b.label, 11.sp)
                     if (count > 0) Text(
                         "$count", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold,
                         modifier = Modifier.align(Alignment.TopEnd).offset(x = 12.dp, y = (-6).dp)

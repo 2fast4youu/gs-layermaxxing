@@ -231,7 +231,8 @@ internal fun IslandWorld(
     )
 
     IsleTypography {
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Isle.SeaTop, Isle.SeaBottom)))) {
+    val sea = rememberSeaBrush()
+    Box(Modifier.fillMaxSize().background(sea)) {
         when {
             view == "home" -> CloseIsland(
                 title = if (editing) "Insel bearbeiten" else "Meine Insel",
@@ -260,16 +261,16 @@ internal fun IslandWorld(
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Pill(Modifier.clickable { if (editing) editing = false else if (view != "map") view = "map" else onBack() }) { Text("‹", fontSize = 20.sp, color = Isle.Ink, fontWeight = FontWeight.Bold) }
+            Pill(Modifier.clickable { if (editing) editing = false else if (view != "map") view = "map" else onBack() }) { Text("‹", fontSize = 20.sp, color = Color(0xFFFFF8E6)) }
             Spacer(Modifier.width(8.dp))
-            Pill { Text("$ownEmoji  $ownName", color = Isle.Ink, fontWeight = FontWeight.Bold, maxLines = 1) }
+            Pill { Text("$ownEmoji  $ownName", color = Color(0xFFFFF8E6), maxLines = 1) }
             Spacer(Modifier.weight(1f))
             Pill(Modifier.semantics { contentDescription = "Quest-Punkte" }) {
-                Text("⭐ ${islands?.qp ?: 0}", color = Isle.Ink, fontWeight = FontWeight.Bold)
+                Text("⭐ ${islands?.qp ?: 0}", color = Color(0xFFFFF8E6))
             }
             Spacer(Modifier.width(6.dp))
             val ready = letters.count { it.incoming && it.unlocked && it.readAt == null && opened[it.id] == null }
-            Pill { Text("✉ $ready", color = Isle.Ink, fontWeight = FontWeight.Bold) }
+            Pill { Text("✉ $ready", color = Color(0xFFFFF8E6)) }
         }
         if (pals.isEmpty() && view == "map") {
             Column(
@@ -286,8 +287,7 @@ internal fun IslandWorld(
         // Floating bar: harbour (quests + topics), glossary, people.
         Row(
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp)
-                .background(Color(0x6616424F), RoundedCornerShape(30.dp))
-                .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(30.dp))
+                .background(Color(0xD9123E4A), RoundedCornerShape(30.dp))
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -491,8 +491,10 @@ private fun IslandMap(
         val center = Offset(with(density) { (w * .5f).toPx() }, with(density) { (h * .5f).toPx() })
         val sidePx = with(density) { 16.dp.toPx() }
         val points = spots.map { (x, y) -> Offset(with(density) { (w * x).toPx() }, with(density) { (h * y).toPx() }) }
-        // Sea sparkles and dotted routes.
+        // Painted sea (moves with the map), sparkles and dotted routes.
+        val sea = rememberSeaBrush()
         Canvas(Modifier.fillMaxSize()) {
+            drawRect(sea, topLeft = Offset(-size.width * 2, -size.height * 2), size = androidx.compose.ui.geometry.Size(size.width * 5, size.height * 5))
             for (i in 0 until 26) {
                 val sx = ((i * 0.381f) % 1f) * size.width + sin(seconds / 9f + i) * 10f
                 val sy = ((i * 0.617f) % 1f) * size.height
@@ -546,9 +548,12 @@ private fun IslandMap(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false, seed = ownSeed)
-            Column(Modifier.offset(y = (-10).dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                WorldText(ownName, 17.sp)
-                WorldText("Meine Insel", 10.sp, fill = Color(0xFFFFE9A8), display = false)
+            Row(
+                Modifier.offset(y = (-8).dp).background(Color(0xD9123E4A), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                WorldText(ownName, 14.sp, plaque = false)
+                WorldText("  Meine Insel", 10.sp, fill = Color(0xFFFFE08A), display = false, plaque = false)
             }
         }
     }
@@ -562,8 +567,9 @@ private fun CloseIsland(title: String, subtitle: String, content: @Composable ()
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        WorldText(title, 26.sp)
-        WorldText(subtitle, 13.sp, fill = Color(0xFFFFE9A8), display = false)
+        WorldText(title, 20.sp, modifier = Modifier.padding(top = 2.dp))
+        Spacer(Modifier.height(3.dp))
+        WorldText(subtitle, 11.sp, fill = Color(0xFFFFE08A), display = false)
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { content() }
     }
@@ -578,9 +584,14 @@ private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name
     ) {
         DynamicIsland(remember(level, seed) { IslandPlans.friend(level, seed) }, Modifier.fillMaxWidth())
         // Name painted on the sea right under the island, nickname as a small line beneath.
-        Column(Modifier.offset(y = (-10).dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            WorldText(name, 15.sp)
-            WorldText(sub, 10.sp, fill = Color(0xFFFFE9A8), display = false)
+        Row(
+            Modifier.offset(y = (-8).dp).background(Color(0xD9123E4A), RoundedCornerShape(50)).padding(horizontal = 9.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(7.dp).background(color, CircleShape))
+            Spacer(Modifier.width(5.dp))
+            WorldText(name, 13.sp, plaque = false)
+            if (sub.isNotBlank()) WorldText("  $sub", 10.sp, fill = Color(0xFFFFE08A), display = false, plaque = false)
         }
     }
 }
@@ -819,15 +830,13 @@ private fun IsleButton(text: String, onClick: () -> Unit, modifier: Modifier = M
 @Composable
 private fun Pill(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(
-        modifier.heightIn(min = 40.dp).background(Color(0x5916424F), RoundedCornerShape(50))
-            .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(50))
+        modifier.heightIn(min = 40.dp).background(Color(0xD9123E4A), RoundedCornerShape(50))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         Alignment.Center,
     ) {
         androidx.compose.runtime.CompositionLocalProvider(
             androidx.compose.material3.LocalTextStyle provides androidx.compose.material3.LocalTextStyle.current.copy(
-                fontFamily = Kit.Display, color = Color(0xFFFFFBF0),
-                shadow = androidx.compose.ui.graphics.Shadow(Color(0x88000000), Offset(0f, 2f), 4f),
+                fontFamily = Kit.Display, color = Color(0xFFFFF8E6),
             ),
         ) { content() }
     }
@@ -847,7 +856,7 @@ private fun BarItem(icon: String, label: String, badge: Int = 0, onClick: () -> 
                 modifier = Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-2).dp).background(Isle.Teal, CircleShape).padding(horizontal = 4.dp),
             )
         }
-        WorldText(label, 12.sp)
+        WorldText(label, 12.sp, plaque = false)
     }
 }
 
