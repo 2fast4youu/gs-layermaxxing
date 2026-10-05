@@ -76,6 +76,7 @@ jobs:
         working-directory: android
         run: |
           unset LAYERMAXXING_GREGOR_URL LAYERMAXXING_GERFRIED_URL
+          export LAYERMAXXING_GREGOR_TEST_URL="https://gs-layermaxxing.duckdns.org/test-gerfried/"
           KS="$HOME/.android/debug.keystore"
           SIGN=""
           if [ -f "$KS" ]; then

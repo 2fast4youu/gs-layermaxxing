@@ -4,8 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if [[ "$(git branch --show-current)" != "gerfried" ]]; then
-  echo "Refusing Claude run outside branch gerfried" >&2
+branch="$(git branch --show-current)"
+if [[ "$branch" != "gerfried-erweiterung" && "$branch" != "gerfried" ]]; then
+  echo "Refusing Claude run outside branch gerfried-erweiterung" >&2
   exit 2
 fi
 

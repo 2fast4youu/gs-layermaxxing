@@ -10,7 +10,7 @@ Dieses Repository wird von Hermes koordiniert. Claude Code implementiert; DeepSe
 - Modellrouting wird pro Auftrag gesetzt: `claude-fable-5`/`max` nur für offene Ideen- und Architekturfindung, sofern Usage Credits aktiv sind; `opus`/`high` für risikoreiche Gesamtentscheidungen; `sonnet`/`high` für komplexe Umsetzung; `sonnet`/`medium` für mechanische Änderungen und Tests. Der Launcher akzeptiert dafür `CLAUDE_MODEL`, `CLAUDE_EFFORT` und `CLAUDE_MAX_TURNS`.
 - Lädt automatisch `CLAUDE.md`.
 - Darf nach konkretem Auftrag lesen, ändern und Tests ausführen.
-- Arbeitet nur auf Branch `gerfried`.
+- Arbeitet nur auf Branch `gerfried-erweiterung` (Worktree `/home/veit/projects/gs-layermaxxing-gregor`).
 - Commit/Push nur, wenn der konkrete Auftrag das ausdrücklich verlangt.
 
 Für einen begrenzten Auftrag:
