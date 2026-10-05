@@ -286,7 +286,8 @@ internal fun IslandWorld(
         // Floating bar: harbour (quests + topics), glossary, people.
         Row(
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp)
-                .shadow(8.dp, RoundedCornerShape(28.dp)).background(Isle.Card, RoundedCornerShape(28.dp))
+                .background(Color(0x6616424F), RoundedCornerShape(30.dp))
+                .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(30.dp))
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -533,7 +534,7 @@ private fun IslandMap(
                     Image(painterResource(boat.res), null, Modifier.size(44.dp))
                     Text(
                         boat.badge, fontSize = 10.sp,
-                        modifier = Modifier.align(Alignment.TopEnd).background(Isle.Card, CircleShape).padding(horizontal = 3.dp),
+                        modifier = Modifier.align(Alignment.TopEnd).background(Color(0x8816424F), CircleShape).padding(horizontal = 3.dp),
                     )
                 }
             }
@@ -545,10 +546,10 @@ private fun IslandMap(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false, seed = ownSeed)
-            Row(
-                Modifier.offset(y = (-6).dp).shadow(3.dp, RoundedCornerShape(50)).background(Isle.Teal, RoundedCornerShape(50))
-                    .padding(horizontal = 10.dp, vertical = 3.dp),
-            ) { Text("$ownName · Meine Insel", fontSize = 13.sp, fontFamily = Kit.Display, color = Color.White, maxLines = 1) }
+            Column(Modifier.offset(y = (-10).dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                WorldText(ownName, 17.sp)
+                WorldText("Meine Insel", 10.sp, fill = Color(0xFFFFE9A8), display = false)
+            }
         }
     }
 }
@@ -561,8 +562,8 @@ private fun CloseIsland(title: String, subtitle: String, content: @Composable ()
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(title, fontSize = 24.sp, fontFamily = Kit.Display, color = Isle.Ink)
-        Text(subtitle, fontSize = 14.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, color = Isle.Ink.copy(alpha = .75f))
+        WorldText(title, 26.sp)
+        WorldText(subtitle, 13.sp, fill = Color(0xFFFFE9A8), display = false)
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { content() }
     }
@@ -576,17 +577,10 @@ private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         DynamicIsland(remember(level, seed) { IslandPlans.friend(level, seed) }, Modifier.fillMaxWidth())
-        Row(
-            Modifier.offset(y = (-6).dp).shadow(3.dp, RoundedCornerShape(50)).background(Isle.Card, RoundedCornerShape(50))
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(8.dp).background(color, CircleShape))
-            Spacer(Modifier.width(4.dp))
-            Column {
-                Text(name, fontSize = 13.sp, fontFamily = Kit.Display, color = Isle.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(sub, fontSize = 10.sp, fontFamily = Kit.Display, color = Isle.TealDark, maxLines = 1)
-            }
+        // Name painted on the sea right under the island, nickname as a small line beneath.
+        Column(Modifier.offset(y = (-10).dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            WorldText(name, 15.sp)
+            WorldText(sub, 10.sp, fill = Color(0xFFFFE9A8), display = false)
         }
     }
 }
@@ -825,10 +819,18 @@ private fun IsleButton(text: String, onClick: () -> Unit, modifier: Modifier = M
 @Composable
 private fun Pill(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(
-        modifier.heightIn(min = 40.dp).shadow(4.dp, RoundedCornerShape(50)).background(Isle.Card, RoundedCornerShape(50))
+        modifier.heightIn(min = 40.dp).background(Color(0x5916424F), RoundedCornerShape(50))
+            .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(50))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         Alignment.Center,
-    ) { content() }
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalTextStyle provides androidx.compose.material3.LocalTextStyle.current.copy(
+                fontFamily = Kit.Display, color = Color(0xFFFFFBF0),
+                shadow = androidx.compose.ui.graphics.Shadow(Color(0x88000000), Offset(0f, 2f), 4f),
+            ),
+        ) { content() }
+    }
 }
 
 @Composable
@@ -838,14 +840,25 @@ private fun BarItem(icon: String, label: String, badge: Int = 0, onClick: () -> 
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box {
-            Text(icon, fontSize = 22.sp)
+            val sprite = barSprite(icon)
+            if (sprite != null) Image(painterResource(sprite), null, Modifier.size(34.dp)) else Text(icon, fontSize = 24.sp, color = Color.White)
             if (badge > 0) Text(
                 "$badge", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-2).dp).background(Isle.Teal, CircleShape).padding(horizontal = 4.dp),
             )
         }
-        Text(label, fontSize = 12.sp, fontFamily = Kit.Display, color = Isle.Ink)
+        WorldText(label, 12.sp)
     }
+}
+
+/** Painted sprites for the bar so it matches the island art instead of emoji. */
+private fun barSprite(icon: String): Int? = when (icon) {
+    "🏝" -> R.drawable.b_house
+    "⚓" -> R.drawable.b_board
+    "🗼" -> R.drawable.b_lighthouse
+    "✉" -> R.drawable.b_post
+    "🗺" -> R.drawable.p_porthole
+    else -> null
 }
 
 @Composable

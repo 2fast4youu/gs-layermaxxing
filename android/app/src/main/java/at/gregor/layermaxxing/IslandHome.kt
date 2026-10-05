@@ -150,17 +150,12 @@ internal fun HubIsland(
                     .semantics { contentDescription = b.label; if (onBuilding != null) role = Role.Button },
                 horizontalArrangement = Arrangement.Center,
             ) {
-                Row(
-                    Modifier.shadow(3.dp, RoundedCornerShape(50)).background(Isle.Card, RoundedCornerShape(50))
-                        .heightIn(min = 22.dp).padding(horizontal = 7.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(b.emoji, fontSize = 11.sp)
-                    Spacer(Modifier.width(3.dp))
-                    Text(b.label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Isle.Ink, maxLines = 1)
+                Box {
+                    WorldText(b.label, 12.sp)
                     if (count > 0) Text(
-                        " $count", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 3.dp).background(Isle.Teal, CircleShape).padding(horizontal = 4.dp),
+                        "$count", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.TopEnd).offset(x = 12.dp, y = (-6).dp)
+                            .background(Color(0xFFD32F2F), CircleShape).border(1.5.dp, Color.White, CircleShape).padding(horizontal = 5.dp),
                     )
                 }
             }

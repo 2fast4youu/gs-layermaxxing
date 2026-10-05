@@ -68,3 +68,32 @@ internal fun IsleTypography(content: @Composable () -> Unit) {
         )
     }
 }
+
+
+/**
+ * Text painted straight into the world: chunky game font with a dark outline and a soft
+ * drop shadow – no white card on top of the landscape.
+ */
+@Composable
+internal fun WorldText(
+    text: String,
+    size: androidx.compose.ui.unit.TextUnit,
+    modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
+    fill: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFFFFFBF0),
+    outline: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFF16424F),
+    display: Boolean = true,
+) {
+    val family = if (display) Kit.Display else Kit.Body
+    val weight = if (display) null else androidx.compose.ui.text.font.FontWeight.ExtraBold
+    val stroke = with(androidx.compose.ui.platform.LocalDensity.current) { (size.toPx() * .13f).coerceAtLeast(2.5f) }
+    androidx.compose.foundation.layout.Box(modifier) {
+        androidx.compose.material3.Text(
+            text, fontSize = size, fontFamily = family, fontWeight = weight, color = outline, maxLines = 1,
+            style = TextStyle(
+                drawStyle = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke, join = androidx.compose.ui.graphics.StrokeJoin.Round),
+                shadow = androidx.compose.ui.graphics.Shadow(androidx.compose.ui.graphics.Color(0x55000000), androidx.compose.ui.geometry.Offset.Zero, stroke * 1.6f),
+            ),
+        )
+        androidx.compose.material3.Text(text, fontSize = size, fontFamily = family, fontWeight = weight, color = fill, maxLines = 1)
+    }
+}
