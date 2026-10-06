@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -151,8 +152,8 @@ internal object IsleLayout {
             val n = if (ring == 0) inner else count - inner
             val k = if (ring == 0) i else i - inner
             val angle = -PI / 2 + 2 * PI * k / n + if (ring == 1) PI / n else 0.0
-            val rx = if (ring == 0) .36 else .45
-            val ry = if (ring == 0) .31 else .40
+            val rx = if (ring == 0) .30 else .43
+            val ry = if (ring == 0) .36 else .41
             (.5 + rx * cos(angle)).toFloat() to (.5 + ry * sin(angle)).toFloat()
         }
     }
@@ -489,8 +490,13 @@ private fun IslandMap(
         val w = maxWidth; val h = maxHeight
         val density = LocalDensity.current
         val center = Offset(with(density) { (w * .5f).toPx() }, with(density) { (h * .5f).toPx() })
-        val hubShorePx = with(density) { 92.dp.toPx() }
+        val hubShorePx = with(density) { 83.dp.toPx() }
         val points = spots.map { (x, y) -> Offset(with(density) { (w * x).toPx() }, with(density) { (h * y).toPx() }) }
+        val docks = ordered.mapIndexed { i, f ->
+            val fw = with(density) { Isle.islandWidth(infoById[f.id]?.level ?: 1).toPx() }
+            val fc = points[i] - Offset(0f, fw * .09f)
+            IslandHarbours.shore(center, fc, with(density) { 180.dp.toPx() }) to IslandHarbours.shore(fc, center, fw)
+        }
         // Painted sea (moves with the map), sparkles and dotted routes.
         val sea = rememberSeaBrush()
         // One lane per boat on a route: boats sail side by side instead of stacking.
@@ -527,12 +533,16 @@ private fun IslandMap(
             val extra = all.size - mine.size
             val lanes = IsleMotion.laneOffsets(mine.size)
             mine.mapIndexed { k, letter ->
-                fun at(d: Float, side: Float) = Offset(center.x + ux * d - uy * side, center.y + uy * d + ux * side)
+                val (homeDock, friendDock) = docks[i]
+                fun at(d: Float, side: Float): Offset {
+                    val u = ((d - startD) / (endD - startD)).coerceIn(0f, 1f)
+                    return homeDock + (friendDock - homeDock) * u + Offset(-uy * side, ux * side)
+                }
                 val share = IsleMotion.tripShare(letter, nowSec)
                 // Keep the hull off the shores: the trip maps onto the arc's open-water middle.
                 val t = .14f + (share ?: .5f) * .72f
                 fun voyage(bow: Float): Voyage {
-                    val a = at(startD, bow * .2f); val b = at(endD, bow * .2f)
+                    val a = at(startD, 0f); val b = at(endD, 0f)
                     val (from, to) = if (letter.incoming) b to a else a to b
                     val mid = at((startD + endD) / 2f, bow)
                     // Quadratic arc through `mid`: control point = 2·mid − (from+to)/2.
@@ -554,7 +564,7 @@ private fun IslandMap(
             points.forEachIndexed { i, p ->
                 if (ordered[i].id in busy) return@forEachIndexed
                 drawLine(
-                    Color.White.copy(alpha = .75f), center, p, 4f, StrokeCap.Round,
+                    Color.White.copy(alpha = .45f), docks[i].first, docks[i].second, 3f, StrokeCap.Round,
                     PathEffect.dashPathEffect(floatArrayOf(4f, 16f), 0f),
                 )
             }
@@ -579,7 +589,7 @@ private fun IslandMap(
                 friend.name, FriendLabels.display(labels[friend.id], level), profileColor(friend.displayColor),
             ) { onFriend(friend.id) }
         }
-        val hubW = 200.dp
+        val hubW = 180.dp
         Column(
             Modifier.offset(x = w * .5f - hubW / 2, y = h * .5f - hubW * .42f).width(hubW)
                 .worldTap("Meine Insel öffnen", onHome),
@@ -594,7 +604,13 @@ private fun IslandMap(
                 WorldText("  Meine Insel", 10.sp, fill = Color(0xFFFFE08A), display = false, plaque = false)
             }
         }
-        // Boats in transit, drawn above the islands so none hides under a shore; each in its own lane with its sea time.
+        Canvas(Modifier.fillMaxSize()) {
+            docks.forEachIndexed { i, (homeDock, friendDock) ->
+                drawIslandJetty(homeDock, center, 8.dp.toPx())
+                drawIslandJetty(friendDock, points[i], 7.dp.toPx())
+            }
+        }
+        // Boats in transit, still and individually tappable.
         voyages.forEach { v ->
             val boat = LetterBoat.forMode(v.letter.mode)
             val p = v.boat
@@ -618,7 +634,7 @@ private fun IslandMap(
             Column(
                 Modifier.offset { IntOffset((p.x - 42.dp.toPx()).roundToInt(), (p.y - 21.dp.toPx()).roundToInt()) }.width(84.dp).then(tapped),
                 horizontalAlignment = Alignment.CenterHorizontally,
-            ) { hull(); WorldText(tag, 9.sp, display = false) }
+            ) { hull() }
         }
         boatSheet?.let { letter ->
             BoatSheet(letter, ordered.firstOrNull { it.id == letter.peerId }?.name ?: "…", nowSec) { boatSheet = null }
@@ -706,14 +722,18 @@ private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name
     ) {
         DynamicIsland(remember(level, seed) { IslandPlans.friend(level, seed) }, Modifier.fillMaxWidth())
         // Name painted on the sea right under the island, nickname as a small line beneath.
-        Row(
-            Modifier.offset(y = (-8).dp).background(Color(0xD9123E4A), RoundedCornerShape(50)).padding(horizontal = 9.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            Modifier.offset(y = 2.dp).widthIn(max = 152.dp)
+                .background(Color(0xD9123E4A), RoundedCornerShape(9.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(Modifier.size(7.dp).background(color, CircleShape))
-            Spacer(Modifier.width(5.dp))
-            WorldText(name, 13.sp, plaque = false)
-            if (sub.isNotBlank()) WorldText("  $sub", 10.sp, fill = Color(0xFFFFE08A), display = false, plaque = false)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).background(color, CircleShape))
+                Spacer(Modifier.width(5.dp))
+                WorldText(name, 12.sp, plaque = false)
+            }
+            if (sub.isNotBlank()) Text(sub, fontFamily = Kit.Body, fontSize = 10.sp, color = Color(0xFFFFE08A),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
         }
     }
 }

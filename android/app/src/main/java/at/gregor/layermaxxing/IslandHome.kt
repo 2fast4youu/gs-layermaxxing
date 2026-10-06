@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -125,6 +126,11 @@ internal fun HubIsland(
     }
     DynamicIsland(plan, modifier, animate = animate) {
         val w = maxWidth; val h = maxHeight
+        if (labels) androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val inland = androidx.compose.ui.geometry.Offset(size.width * .51f, size.height * .77f)
+            val tip = androidx.compose.ui.geometry.Offset(size.width * .51f, size.height * .93f)
+            drawIslandJetty(tip, inland, size.width * .035f)
+        }
         if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (x, y) ->
             val item = decor[i]
             val s = 34.dp
@@ -151,7 +157,7 @@ internal fun HubIsland(
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Box {
-                    WorldText(b.label, 11.sp)
+                    IslandSign(b.label)
                     if (count > 0) Text(
                         "$count", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold,
                         modifier = Modifier.align(Alignment.TopEnd).offset(x = 12.dp, y = (-6).dp)
