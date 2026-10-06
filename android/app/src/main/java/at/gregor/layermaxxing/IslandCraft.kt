@@ -18,7 +18,7 @@ import kotlin.math.sqrt
 /** Small roadside signs, native text on wood, no drop shadow or floating card. */
 @Composable
 internal fun IslandSign(label: String) {
-    Box(Modifier.padding(horizontal = 3.dp).height(27.dp), contentAlignment = Alignment.TopCenter) {
+    Box(Modifier.padding(horizontal = 3.dp).height(29.dp), contentAlignment = Alignment.TopCenter) {
         Canvas(Modifier.matchParentSize()) {
             val wood = Color(0xFF795637)
             val pale = Color(0xFFD8BC86)
@@ -30,7 +30,7 @@ internal fun IslandSign(label: String) {
             drawRoundRect(pale, Offset(1.dp.toPx(), 1.dp.toPx()), Size(size.width - 2.dp.toPx(), plankH - 2.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
             drawLine(Color(0x33795637), Offset(5.dp.toPx(), plankH - 3.dp.toPx()), Offset(size.width - 5.dp.toPx(), plankH - 3.dp.toPx()), 1f)
         }
-        Text(label, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, color = Color(0xFF3C2C20), maxLines = 1, modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp))
+        Text(label, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, lineHeight = 13.sp, letterSpacing = .2.sp, color = Color(0xFF3C2C20), maxLines = 1, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
     }
 }
 

@@ -1,5 +1,16 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.ui.test.performClick
+
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.filter
+
+import androidx.compose.ui.test.doubleClick
+
+import androidx.compose.ui.test.pinch
+
+import androidx.compose.ui.test.performTouchInput
+
 import androidx.compose.foundation.layout.height
 
 import android.graphics.Bitmap
@@ -32,11 +43,12 @@ class VillageVisualReview {
     @get:Rule val rule = androidx.compose.ui.test.junit4.createAndroidComposeRule<androidx.activity.ComponentActivity>()
     private val out = System.getenv("VILLAGE_SHOTS")?.let(::File)
 
-    private fun shot(name: String, content: @Composable () -> Unit) {
+    private fun shot(name: String, gesture: (() -> Unit)? = null, content: @Composable () -> Unit) {
         assumeTrue(out != null)
         rule.setContent(content)
         rule.mainClock.autoAdvance = false
         repeat(30) { rule.mainClock.advanceTimeByFrame() }
+        if (gesture != null) { gesture(); repeat(40) { rule.mainClock.advanceTimeByFrame() } }
         org.robolectric.shadows.ShadowLooper.idleMainLooper()
         val view = rule.activity.window.decorView
         val bmp = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
@@ -298,6 +310,21 @@ class VillageVisualReview {
         }
     }
     @Test fun islandHome() = shot("22-meine-insel") { Isles(start = "home") }
+    /** Pinch-zoom into the own island: island stays below the title, signs keep their size. */
+    @Test fun islandHomeZoomed() = shot("27-insel-zoom", gesture = {
+        rule.onRoot().performTouchInput {
+            val c = center
+            pinch(c - androidx.compose.ui.geometry.Offset(40f, 0f), c - androidx.compose.ui.geometry.Offset(260f, -60f),
+                c + androidx.compose.ui.geometry.Offset(40f, 0f), c + androidx.compose.ui.geometry.Offset(260f, -60f))
+        }
+    }) { Isles(start = "home") }
+    @Test fun islandHomeDoubleTap() = shot("28-insel-doppeltipp", gesture = {
+        rule.onRoot().performTouchInput { doubleClick(androidx.compose.ui.geometry.Offset(width * .3f, height * .62f)) }
+    }) { Isles(start = "home") }
+    @Test fun islandHomeSingleTap() = shot("29-insel-einzeltipp", gesture = {
+        rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick()
+        repeat(30) { rule.mainClock.advanceTimeByFrame() }
+    }) { Isles(start = "home") }
     @Test fun islandVisit() = shot("23-besuch") { Isles(start = "visit:2") }
     @Test fun decorPicker() = shot("24-deko-wahl") {
         androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().padding(top = 300.dp).then(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color.White))) {

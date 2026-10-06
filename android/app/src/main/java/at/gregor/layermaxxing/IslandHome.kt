@@ -1,5 +1,7 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.ui.graphics.graphicsLayer
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -142,27 +144,31 @@ internal fun HubIsland(
                 Alignment.Center,
             ) { Text(if (item == null) "+" else "✎", color = Isle.TealDark, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
         }
+        val gate = LocalIslandTapGate.current
         if (labels && onSlot == null) IslandPlans.homeBuildings.forEach { (b, piece) ->
             val count = badges[b] ?: 0
             val box = w * piece.size
             // The whole building is the touch target; the pill sits at its foot.
             if (onBuilding != null) Box(
                 Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box)
-                    .worldTap("${b.label} öffnen") { onBuilding(b) },
+                    .worldTap("${b.label} öffnen") { gate { onBuilding(b) } },
             )
+            val zoom = LocalIslandZoom.current
             Row(
                 Modifier.offset(x = w * piece.x - 50.dp, y = h * piece.y + 1.dp).width(100.dp)
-                    .then(if (onBuilding != null) Modifier.worldTap("${b.label} öffnen") { onBuilding(b) } else Modifier)
+                    // Counter-scale: when the island is zoomed, the sign keeps its on-screen size.
+                    .graphicsLayer { val k = 1f / zoom().coerceAtLeast(1f); scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f) }
+                    .then(if (onBuilding != null) Modifier.worldTap("${b.label} öffnen") { gate { onBuilding(b) } } else Modifier)
                     .semantics { contentDescription = b.label; if (onBuilding != null) role = Role.Button },
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Box {
                     IslandSign(b.label)
-                    if (count > 0) Text(
-                        "$count", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.TopEnd).offset(x = 12.dp, y = (-6).dp)
-                            .background(Color(0xFFD32F2F), CircleShape).border(1.5.dp, Color.White, CircleShape).padding(horizontal = 5.dp),
-                    )
+                    if (count > 0) Box(
+                        Modifier.align(Alignment.TopEnd).offset(x = 7.dp, y = (-7).dp).size(16.dp)
+                            .background(Color(0xFFC8442F), CircleShape).border(1.dp, Color(0xFFFFF3DC), CircleShape),
+                        Alignment.Center,
+                    ) { Text(if (count > 9) "9+" else "$count", fontSize = 9.sp, lineHeight = 9.sp, color = Color.White, fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -223,3 +229,10 @@ internal fun DecorPickerContent(
         }
     }
 }
+
+
+/** Current zoom of a close-up island, read lazily (inside layers) so zooming never recomposes. */
+/** Holds a building tap back for a moment so a double-tap can zoom instead (default: immediate). */
+internal val LocalIslandTapGate = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit) -> Unit> { { it() } }
+
+internal val LocalIslandZoom = androidx.compose.runtime.staticCompositionLocalOf<() -> Float> { { 1f } }

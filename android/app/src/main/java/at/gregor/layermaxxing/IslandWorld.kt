@@ -65,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -681,52 +682,99 @@ private class Voyage(
 /** Close-up of one island: calm sea, title card, the island filling the width. */
 @Composable
 private fun CloseIsland(title: String, subtitle: String, content: @Composable () -> Unit) {
+    // Pinch (1×–2.6×), drag and double-tap zoom happen in a clipped viewport below the title,
+    // so the zoomed island never slides over the title or out of reach of the fingers.
+    var z by remember { mutableFloatStateOf(1f) }
+    var off by remember { mutableStateOf(Offset.Zero) }
+    var view by remember { mutableStateOf(androidx.compose.ui.geometry.Size(1f, 1f)) }
+    var isle by remember { mutableStateOf(androidx.compose.ui.geometry.Size(1f, 1f)) }
+    val scope = rememberCoroutineScope()
+    var pendingTap by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val tapGate: (() -> Unit) -> Unit = remember {
+        { action ->
+            pendingTap?.cancel()
+            pendingTap = scope.launch { kotlinx.coroutines.delay(260); pendingTap = null; action() }
+        }
+    }
+    fun clamp(o: Offset, zz: Float): Offset {
+        val mx = ((isle.width * zz - view.width) / 2f).coerceAtLeast(0f)
+        val my = ((isle.height * zz - view.height) / 2f).coerceAtLeast(0f)
+        return Offset(o.x.coerceIn(-mx, mx), o.y.coerceIn(-my, my))
+    }
+    fun animateTo(tz: Float, to: Offset) {
+        val sz = z; val so = off
+        scope.launch {
+            androidx.compose.animation.core.animate(0f, 1f, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { f, _ ->
+                z = sz + (tz - sz) * f
+                off = Offset(so.x + (to.x - so.x) * f, so.y + (to.y - so.y) * f)
+            }
+        }
+    }
+    BackHandler(enabled = z > 1.05f) { animateTo(1f, Offset.Zero) }
     Column(
         Modifier.fillMaxSize().statusBarsPadding().padding(top = 64.dp, bottom = 96.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
         WorldText(title, 20.sp, modifier = Modifier.padding(top = 2.dp))
         Spacer(Modifier.height(3.dp))
         WorldText(subtitle, 11.sp, fill = Color(0xFFFFE08A), display = false)
-        Spacer(Modifier.height(12.dp))
-        // Pinch to look closer at the island (1×–2.6×), double-tap to zoom in/out; taps on buildings still work.
-        var z by remember { mutableFloatStateOf(1f) }
-        var off by remember { mutableStateOf(Offset.Zero) }
-        var box by remember { mutableStateOf(androidx.compose.ui.geometry.Size(1f, 1f)) }
-        val scope = rememberCoroutineScope()
-        fun clamp(o: Offset, zz: Float): Offset {
-            val mx = box.width * (zz - 1f) / 2f; val my = box.height * (zz - 1f) / 2f
-            return Offset(o.x.coerceIn(-mx, mx), o.y.coerceIn(-my, my))
-        }
+        Spacer(Modifier.height(8.dp))
         Box(
-            Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-                .onSizeChanged { box = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
+            Modifier.fillMaxWidth().weight(1f).clipToBounds()
+                .onSizeChanged { view = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
                 .pointerInput(Unit) {
                     detectTransformGestures { centroid, pan, zoomBy, _ ->
                         val nz = (z * zoomBy).coerceIn(1f, 2.6f)
-                        val c = Offset(box.width / 2f, box.height / 2f)
+                        val c = Offset(view.width / 2f, view.height / 2f)
                         val r = nz / z
                         val o = Offset(off.x + (centroid.x - c.x - off.x) * (1f - r), off.y + (centroid.y - c.y - off.y) * (1f - r)) + pan
                         z = nz; off = clamp(o, nz)
                     }
                 }
+                // Double-tap is watched in the Initial pass, so it also works on top of buildings:
+                // their own tap is held back briefly (see LocalIslandTapGate) and cancelled here.
                 .pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = { at ->
-                        val sz = z; val so = off
-                        val tz = if (z > 1.3f) 1f else 2f
-                        val c = Offset(box.width / 2f, box.height / 2f)
-                        val to = if (tz == 1f) Offset.Zero else clamp(Offset((c.x - at.x) * (tz - 1f), (c.y - at.y) * (tz - 1f)), tz)
-                        scope.launch {
-                            androidx.compose.animation.core.animate(0f, 1f, animationSpec = tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { f, _ ->
-                                z = sz + (tz - sz) * f
-                                off = Offset(so.x + (to.x - so.x) * f, so.y + (to.y - so.y) * f)
+                    var lastUp = 0L
+                    var lastPos = Offset.Zero
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        val quick = lastUp > 0 && down.uptimeMillis - lastUp < viewConfiguration.doubleTapTimeoutMillis &&
+                            (down.position - lastPos).getDistance() < viewConfiguration.touchSlop * 4
+                        if (quick) {
+                            pendingTap?.cancel(); pendingTap = null
+                            do {
+                                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                e.changes.forEach { it.consume() }
+                            } while (e.changes.any { it.pressed })
+                            lastUp = 0L
+                            val at = down.position
+                            val tz = if (z > 1.3f) 1f else 2f
+                            val c = Offset(view.width / 2f, view.height / 2f)
+                            animateTo(tz, if (tz == 1f) Offset.Zero else clamp(Offset((c.x - at.x) * (tz - 1f), (c.y - at.y) * (tz - 1f)), tz))
+                        } else {
+                            var multi = false
+                            var up: androidx.compose.ui.input.pointer.PointerInputChange? = null
+                            while (true) {
+                                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                if (e.changes.size > 1) multi = true
+                                if (e.changes.none { it.pressed }) { up = e.changes.firstOrNull(); break }
                             }
+                            val moved = up == null || (up.position - down.position).getDistance() > viewConfiguration.touchSlop
+                            if (!multi && !moved && up != null) { lastUp = up.uptimeMillis; lastPos = up.position } else lastUp = 0L
                         }
-                    })
-                }
-                .graphicsLayer { scaleX = z; scaleY = z; translationX = off.x; translationY = off.y },
-        ) { content() }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                    .onSizeChanged { isle = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
+                    .graphicsLayer { scaleX = z; scaleY = z; translationX = off.x; translationY = off.y },
+            ) {
+                // Signs read the zoom lazily and stay the same size on screen.
+                androidx.compose.runtime.CompositionLocalProvider(LocalIslandZoom provides { z }, LocalIslandTapGate provides tapGate) { content() }
+            }
+        }
     }
 }
 
