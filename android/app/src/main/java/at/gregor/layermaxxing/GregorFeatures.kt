@@ -91,6 +91,28 @@ object ChatTools {
     }
 
     /** Chat-list filters; navigation shortcuts (groups, topics …) are chips too but not filters. */
+    /**
+     * True when a chat line is just one to three emoji (no letters or digits):
+     * such a line is drawn as a sticker instead of a text bubble.
+     */
+    fun isEmojiOnly(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty() || t.length > 16) return false
+        if (t.any { it.isLetterOrDigit() || it in ".,!?;:-_()[]{}<>/\\'\"@#%&*+=~^`|" }) return false
+        var count = 0
+        var i = 0
+        while (i < t.length) {
+            val cp = t.codePointAt(i)
+            val isJoinerOrMod = cp == 0x200D || cp in 0xFE00..0xFE0F || cp in 0x1F3FB..0x1F3FF
+            if (!isJoinerOrMod && !Character.isWhitespace(cp)) {
+                val prev = if (i > 0) t.codePointBefore(i) else -1
+                if (prev != 0x200D) count++
+            }
+            i += Character.charCount(cp)
+        }
+        return count in 1..3
+    }
+
     enum class ListFilter(val label: String) { ALL("Alle"), UNREAD("Ungelesen"), LETTERS("Briefe") }
 
     fun filterConversations(list: List<Conversation>, query: String, filter: ListFilter): List<Conversation> {

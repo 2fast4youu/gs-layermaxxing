@@ -121,15 +121,22 @@ class VillageVisualReview {
         LayermaxxingTheme("light") {
             androidx.compose.material3.Surface {
                 androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    ThreadHeader(friends[0], false, 2, 3, true, {}, {}, {}, {}, {}, {}, {}, {}, {})
                     androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f).fillMaxSize().chatWallpaper()) {
                         androidx.compose.foundation.layout.Column(
                             androidx.compose.ui.Modifier.padding(10.dp),
                             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
                         ) {
+                            DayMark("HEUTE")
                             ThreadChatBubble(ApiClient.ChatMessage(1, 2, 1, "Servus! Kommst du am Samstag mit aufs Brennerhaus?", now - 600, null), false, {}, {})
                             ThreadChatBubble(ApiClient.ChatMessage(2, 1, 2, "Ja klar, ich bring die Schlüssel mit", now - 500, now - 400), true, {}, {})
                             ThreadChatBubble(ApiClient.ChatMessage(3, 2, 1, "> Ja klar, ich bring die Schlüssel mit\n\nPerfekt, dann um 9 beim Parkplatz", now - 300, null), false, {}, {})
                             ThreadChatBubble(ApiClient.ChatMessage(4, 1, 2, "👍", now - 60, null), true, {}, {})
+                            LetterActivityRow(
+                                ApiClient.Message(9, 2, "Gerfried", true, "Für Samstag", "", "ok", now - 3600, "timed", now - 10, null, null, true, false, null, true, true, null, null, null, emptyList(), null, null, null),
+                                LetterState.READY, now, outgoing = false, pulsing = false, onOpenRoom = {},
+                            )
+                            ThreadChatBubble(ApiClient.ChatMessage(5, 2, 1, "Hast du den Brief schon gesehen? Den hab ich dir letzte Woche vom Leuchtturm geschickt 🙂", now - 30, null), false, {}, {})
                         }
                     }
                     Composer(ComposerPlan(true, true, "Nachricht", 0, null), "", {}, {}, {}, {})

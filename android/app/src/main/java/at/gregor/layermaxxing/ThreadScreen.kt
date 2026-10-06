@@ -280,11 +280,7 @@ internal fun ThreadScreen(
             item { Spacer(Modifier.height(6.dp)) }
             items(items, key = { it.key }) { item ->
                 when (item) {
-                    is TimelineItem.DayMark -> Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-                        Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f), shadowElevation = 1.dp) {
-                            Text(item.label, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    is TimelineItem.DayMark -> DayMark(item.label)
                     is TimelineItem.Entry -> when (val entry = item.entry) {
                         is ThreadEntry.Chat -> ThreadChatBubble(
                             entry.message, entry.outgoing,
@@ -322,13 +318,13 @@ internal fun ThreadScreen(
         quote?.let { quoted ->
             Row(
                 Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .8f), RoundedCornerShape(12.dp))
+                    .background(Harbour.palette().card, RoundedCornerShape(12.dp))
                     .height(IntrinsicSize.Min),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.width(4.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary, RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)))
+                Box(Modifier.width(4.dp).fillMaxHeight().background(Harbour.palette().sea, RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)))
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 6.dp)) {
-                    Text("Antwort", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Antwort", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Harbour.palette().sea)
                     Text(ChatTools.parseReply(quoted).second, maxLines = 2, fontSize = 13.sp, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
                 Box(
@@ -441,7 +437,7 @@ internal fun ThreadScreen(
  * one calm row instead of a stack of strips.
  */
 @Composable
-private fun ThreadHeader(
+internal fun ThreadHeader(
     friend: ApiClient.UserSummary,
     menu: Boolean,
     topicsBadge: Int,
@@ -457,47 +453,48 @@ private fun ThreadHeader(
     onRemove: () -> Unit,
     onBlock: () -> Unit,
 ) {
+    val p = Harbour.palette()
     Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).height(62.dp).padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth().background(p.head).height(66.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onBack)
                 .semantics { contentDescription = "Zurück zu Chats"; role = Role.Button },
             contentAlignment = Alignment.Center,
-        ) { Text("←", fontSize = 22.sp) }
+        ) { Text("‹", fontSize = 30.sp, color = p.onHead) }
         Row(
             Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable(onClick = onInfo)
                 .semantics { contentDescription = "Infos zu ${friend.name}"; role = Role.Button }
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = profileColor(friend.displayColor).copy(alpha = .18f),
-                modifier = Modifier.size(40.dp),
-            ) { Box(contentAlignment = Alignment.Center) { Text(friend.avatarEmoji, fontSize = 21.sp) } }
+            IslandAvatar(friend.avatarEmoji, profileColor(friend.displayColor), 44.dp, p)
             Column(Modifier.padding(start = 10.dp)) {
-                Text(friend.name, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1)
-                Text(if (topicsBadge > 0) "$topicsBadge offene Themen · Info antippen" else "Info antippen", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(friend.name, style = Harbour.Title.copy(fontSize = 19.sp), color = p.onHead, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(
+                    if (topicsBadge > 0) "$topicsBadge offene Themen · Insel-Info" else "Insel-Info antippen",
+                    fontSize = 11.sp, color = p.onHead.copy(alpha = .7f), maxLines = 1,
+                )
             }
         }
-        // Only when a letter actually waits for me does an envelope show up here;
+        // Only when a letter actually waits for me does a seal show up here;
         // otherwise letters and topics live in the ⋮ menu (and in the timeline).
         if (lettersUrgent) Box(
             Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onLetterRoom)
                 .semantics { contentDescription = "Briefe – einer wartet auf dich"; role = Role.Button },
             contentAlignment = Alignment.Center,
         ) {
-            Text("✉", fontSize = 20.sp, color = MaterialTheme.colorScheme.tertiary)
-            Box(Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 9.dp).size(9.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error))
+            Text("✉", fontSize = 21.sp, color = p.gold)
+            Box(Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 10.dp).size(8.dp).clip(CircleShape).background(p.wax))
         }
         Box {
             Box(
-                Modifier.size(48.dp).clickable { onMenu(true) }
+                Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable { onMenu(true) }
                     .semantics { contentDescription = "Weitere Aktionen"; role = Role.Button },
                 contentAlignment = Alignment.Center,
-            ) { Text("⋮", fontSize = 22.sp) }
+            ) { Text("⋮", fontSize = 22.sp, color = p.onHead) }
             DropdownMenu(menu, { onMenu(false) }) {
                 DropdownMenuItem(text = { Text(if (lettersBadge > 0) "✉  Briefe ($lettersBadge)" else "✉  Briefe") }, onClick = { onMenu(false); onLetterRoom() })
                 DropdownMenuItem(text = { Text(if (topicsBadge > 0) "#  Themen ($topicsBadge offen)" else "#  Themen") }, onClick = { onMenu(false); onTopics() })
@@ -604,16 +601,17 @@ internal fun Composer(
             }
             return@Column
         }
+        val p = Harbour.palette()
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.fillMaxWidth().background(p.paperDeep).padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            // One pill like WhatsApp: the letter button sits inside, where the attach clip would be.
+            // A paper capsule; the letter seal sits inside where an attach clip would be.
             Row(
                 Modifier.weight(1f).heightIn(min = 50.dp)
-                    .shadow(1.dp, RoundedCornerShape(25.dp))
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(25.dp))
+                    .background(p.card, RoundedCornerShape(25.dp))
+                    .border(1.dp, p.line, RoundedCornerShape(25.dp))
                     .padding(start = 6.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -623,7 +621,8 @@ internal fun Composer(
                     modifier = Modifier.weight(1f),
                     maxLines = 5,
                     enabled = plan.inputEnabled,
-                    placeholder = { Text(plan.placeholder, fontSize = 15.sp, maxLines = 1) },
+                    placeholder = { Text(plan.placeholder, fontSize = 15.sp, maxLines = 1, color = p.inkSoft) },
+                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 15.sp, color = p.ink),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send, capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
                     // Messenger convention: sending keeps the keyboard and the focus.
                     keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) onSend() }),
@@ -631,31 +630,34 @@ internal fun Composer(
                         focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                         disabledContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent, cursorColor = p.sea,
                     ),
                 )
                 if (plan.sealVisible) Box(
                     Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable(onClick = onCompose)
                         .semantics { contentDescription = LetterAccess.LABEL_LONG; role = Role.Button },
                     contentAlignment = Alignment.Center,
-                ) { Text("✦", fontSize = 20.sp, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold) }
+                ) { Text("✉", fontSize = 20.sp, color = p.wax, fontWeight = FontWeight.Bold) }
             }
             if (plan.inputEnabled) {
                 val ready = text.isNotBlank()
-                Surface(
+                Box(
                     modifier = Modifier.size(48.dp)
-                        .clip(RoundedCornerShape(50))
+                        .shadow(if (ready) 3.dp else 0.dp, CircleShape)
+                        .background(
+                            if (ready) Brush.verticalGradient(listOf(p.sea, p.seaDeep))
+                            else Brush.verticalGradient(listOf(p.sea.copy(alpha = .4f), p.seaDeep.copy(alpha = .4f))),
+                            CircleShape,
+                        )
+                        .clip(CircleShape)
                         .clickable(enabled = ready, onClick = onSend)
                         .semantics { contentDescription = "Senden"; role = Role.Button },
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = if (ready) 1f else .45f),
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shadowElevation = if (ready) 2.dp else 0.dp,
-                ) { Box(contentAlignment = Alignment.Center) { Text("➤", fontSize = 19.sp) } }
+                    contentAlignment = Alignment.Center,
+                ) { PaperBoat(Color.White, Modifier.size(26.dp)) }
             } else Surface(
                 modifier = Modifier.heightIn(min = 50.dp).clip(RoundedCornerShape(25.dp)).clickable(onClick = onRules),
-                shape = RoundedCornerShape(25.dp), color = MaterialTheme.colorScheme.secondaryContainer,
-            ) { Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) { Text("Regeln", fontSize = 13.sp) } }
+                shape = RoundedCornerShape(25.dp), color = p.card, border = BorderStroke(1.dp, p.line),
+            ) { Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) { Text("Regeln", fontSize = 13.sp, color = p.ink) } }
         }
     }
 }
@@ -860,9 +862,11 @@ private fun sealGlyphFor(mode: String): String = when (mode) {
 @Composable
 internal fun ThreadChatBubble(message: ApiClient.ChatMessage, outgoing: Boolean, onActions: () -> Unit, onSwipeReply: (() -> Unit)?) {
     val (quoted, body) = ChatTools.parseReply(message.text)
-    val bubble = if (outgoing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-    val onBubble = if (outgoing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-    val shape = if (outgoing) RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp) else RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp)
+    val p = Harbour.palette()
+    val bubble = if (outgoing) p.mine else p.theirs
+    val onBubble = if (outgoing) p.onMine else p.ink
+    val shape = if (outgoing) RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp) else RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp)
+    val emojiOnly = ChatTools.isEmojiOnly(body)
     var drag by remember(message.id) { mutableStateOf(0f) }
     val swipe = Modifier.pointerInput(message.id, onSwipeReply) {
         if (onSwipeReply == null) return@pointerInput
@@ -871,39 +875,70 @@ internal fun ThreadChatBubble(message: ApiClient.ChatMessage, outgoing: Boolean,
             onDragCancel = { drag = 0f },
         ) { _: androidx.compose.ui.input.pointer.PointerInputChange, amount: Float -> drag = (drag + amount).coerceIn(0f, 96.dp.toPx()) }
     }
+    val time = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(message.createdAt))
     Row(
         Modifier.fillMaxWidth().then(swipe).graphicsLayer { translationX = drag }
-            .padding(start = if (outgoing) 52.dp else 0.dp, end = if (outgoing) 0.dp else 52.dp),
+            .padding(start = if (outgoing) 56.dp else 2.dp, end = if (outgoing) 2.dp else 56.dp),
         horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
     ) {
-        Surface(
-            modifier = Modifier.clip(shape).combinedClickable(onClick = onActions, onLongClick = onActions),
-            color = bubble, contentColor = onBubble, shape = shape, shadowElevation = 1.dp,
+        if (emojiOnly && quoted == null) {
+            // A lone emoji is a sticker on the paper, not text in a box.
+            Column(
+                Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = onActions, onLongClick = onActions).padding(4.dp),
+                horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
+            ) {
+                Text(body, fontSize = 34.sp)
+                BubbleMeta(time, outgoing, message.readAt != null, p.inkSoft, p)
+            }
+            return@Row
+        }
+        Box(
+            Modifier.clip(shape).background(bubble)
+                .border(1.dp, if (outgoing) Color.Transparent else p.line, shape)
+                .combinedClickable(onClick = onActions, onLongClick = onActions),
         ) {
-            Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 5.dp).width(IntrinsicSize.Max)) {
+            Column(Modifier.padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 6.dp).width(IntrinsicSize.Max)) {
                 quoted?.let {
                     Row(
-                        Modifier.fillMaxWidth().padding(bottom = 4.dp)
-                            .background(onBubble.copy(alpha = .07f), RoundedCornerShape(8.dp)).height(IntrinsicSize.Min),
+                        Modifier.fillMaxWidth().padding(bottom = 5.dp)
+                            .background(onBubble.copy(alpha = .06f), RoundedCornerShape(10.dp)).height(IntrinsicSize.Min),
                     ) {
-                        Box(Modifier.width(3.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary, RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp)))
-                        Text(it, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp, maxLines = 2, color = onBubble.copy(alpha = .75f), overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Box(Modifier.width(3.dp).fillMaxHeight().background(p.sea, RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp)))
+                        Text(it, Modifier.padding(horizontal = 8.dp, vertical = 5.dp), fontSize = 12.sp, maxLines = 2, color = onBubble.copy(alpha = .72f), overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
                 }
-                Text(body, fontSize = 15.sp, modifier = Modifier.widthIn(min = 40.dp))
-                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(message.createdAt)),
-                        fontSize = 10.sp, color = onBubble.copy(alpha = .6f),
-                    )
-                    if (outgoing) Text(
-                        if (message.readAt != null) " ✓✓" else " ✓", fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                        color = if (message.readAt != null) Color(0xFF2E8BD6) else Color(0xFF8A8A8A),
-                        modifier = Modifier.semantics { contentDescription = if (message.readAt != null) "gelesen" else "zugestellt" },
-                    )
-                }
+                Text(body, fontSize = 15.sp, lineHeight = 20.sp, color = onBubble, modifier = Modifier.widthIn(min = 40.dp))
+                Box(Modifier.align(Alignment.End)) { BubbleMeta(time, outgoing, message.readAt != null, onBubble.copy(alpha = .55f), p) }
             }
         }
+    }
+}
+
+/** Time and delivery marks of a bubble: one tick sent, two sea-blue ticks read. */
+@Composable
+private fun BubbleMeta(time: String, outgoing: Boolean, read: Boolean, muted: Color, p: HarbourPalette) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(time, fontSize = 10.sp, color = muted)
+        if (outgoing) Text(
+            if (read) " ✓✓" else " ✓", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+            color = if (read) p.read else muted,
+            modifier = Modifier.semantics { contentDescription = if (read) "gelesen" else "zugestellt" },
+        )
+    }
+}
+
+/** A day separator: a small paper tab pinned in the middle of the timeline. */
+@Composable
+internal fun DayMark(label: String) {
+    val p = Harbour.palette()
+    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        Text(
+            label,
+            Modifier.background(p.card.copy(alpha = .92f), RoundedCornerShape(10.dp))
+                .border(1.dp, p.line, RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            fontSize = 11.sp, fontWeight = FontWeight.Bold, color = p.inkSoft, letterSpacing = .4.sp,
+        )
     }
 }
 
@@ -920,21 +955,9 @@ private fun SheetAction(glyph: String, label: String, enabled: Boolean = true, o
     }
 }
 
-/** A soft patterned chat background so bubbles read like a messenger, tinted by the active theme. */
+/** The harbour paper behind a conversation, tinted by the active theme. */
 @Composable
-internal fun Modifier.chatWallpaper(): Modifier {
-    val base = MaterialTheme.colorScheme.surfaceContainerLow
-    val dot = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .12f)
-    return this.background(base).drawBehind {
-        val step = 28.dp.toPx()
-        var y = 0f; var row = 0
-        while (y < size.height) {
-            var x = if (row % 2 == 0) 0f else step / 2
-            while (x < size.width) { drawCircle(dot, radius = 1.6.dp.toPx(), center = androidx.compose.ui.geometry.Offset(x, y)); x += step }
-            y += step; row++
-        }
-    }
-}
+internal fun Modifier.chatWallpaper(): Modifier = this.harbourPaper(Harbour.palette())
 
 @Composable
 internal fun EpOpportunityCard(opportunity: EpOpportunity, onProposeEp: (EpOpportunity) -> Unit) {

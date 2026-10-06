@@ -153,37 +153,55 @@ internal fun ChatsScreen(
     var filter by remember { mutableStateOf(ChatTools.ListFilter.ALL) }
     val now = remember(conversations) { Instant.now().epochSecond }
     val matches = ChatTools.filterConversations(conversations, search, filter)
+    val p = Harbour.palette()
     @OptIn(ExperimentalMaterial3Api::class)
     androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize()) {
-            // WhatsApp layout: one search pill, one row of chips, then the list.
-            // A brand-new account has nothing to search or filter: hide both.
+    Box(Modifier.fillMaxSize().harbourPaper(p)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 150.dp)) {
             val firstRun = conversations.isEmpty() && requests.isEmpty()
             if (!firstRun) item {
-                androidx.compose.material3.TextField(
-                    search, { search = it },
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp).heightIn(min = 50.dp),
-                    placeholder = { Text("Suchen", fontSize = 15.sp) }, leadingIcon = { Text("⌕", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 15.sp),
-                    trailingIcon = if (search.isNotEmpty()) ({ TextButton(onClick = { search = "" }) { Text("✕") } }) else null,
-                    singleLine = true, shape = RoundedCornerShape(26.dp),
-                    colors = androidx.compose.material3.TextFieldDefaults.colors(
-                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .7f),
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .7f),
-                    ),
-                )
+                // The harbour's logbook head: one line of news, search beneath it.
+                val news = conversations.count { it.hasNews }
+                Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 2.dp)) {
+                    Text(
+                        when { news == 0 -> "Alles ist gelesen"; news == 1 -> "1 Gespräch wartet auf dich"; else -> "$news Gespräche warten auf dich" },
+                        fontSize = 13.sp, color = p.inkSoft, fontFamily = Kit.Body,
+                    )
+                }
             }
             if (!firstRun) item {
-                // A soft fade on the right edge says "there is more" without clipping a chip hard.
-                val fadeTo = MaterialTheme.colorScheme.surface
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp).heightIn(min = 46.dp)
+                        .background(p.card.copy(alpha = if (p.dark) .9f else .85f), RoundedCornerShape(14.dp))
+                        .border(1.dp, p.line, RoundedCornerShape(14.dp))
+                        .padding(start = 14.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("⌕", fontSize = 18.sp, color = p.inkSoft)
+                    androidx.compose.foundation.text.BasicTextField(
+                        search, { search = it }, Modifier.weight(1f).padding(start = 10.dp, top = 12.dp, bottom = 12.dp),
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = p.ink, fontFamily = Kit.Body),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(p.sea),
+                        decorationBox = { inner ->
+                            Box { if (search.isEmpty()) Text("Freunde und Nachrichten suchen", fontSize = 15.sp, color = p.inkSoft.copy(alpha = .8f), maxLines = 1); inner() }
+                        },
+                    )
+                    if (search.isNotEmpty()) Box(
+                        Modifier.size(40.dp).clip(CircleShape).clickable { search = "" }
+                            .semantics { contentDescription = "Suche leeren"; role = Role.Button },
+                        contentAlignment = Alignment.Center,
+                    ) { Text("✕", color = p.inkSoft) }
+                }
+            }
+            if (!firstRun) item {
+                val fadeTo = p.paper
                 androidx.compose.foundation.lazy.LazyRow(
                     contentPadding = PaddingValues(start = 14.dp, end = 28.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 4.dp).drawWithContent {
+                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp).drawWithContent {
                         drawContent()
-                        val w = 32.dp.toPx()
+                        val w = 28.dp.toPx()
                         drawRect(
                             androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Transparent, fadeTo), startX = size.width - w, endX = size.width),
                             topLeft = androidx.compose.ui.geometry.Offset(size.width - w, 0f), size = androidx.compose.ui.geometry.Size(w, size.height),
@@ -192,90 +210,96 @@ internal fun ChatsScreen(
                 ) {
                     items(ChatTools.ListFilter.entries) { f ->
                         val count = if (f == ChatTools.ListFilter.UNREAD) conversations.count { it.hasNews } else 0
-                        ListChip(if (count > 0) "${f.label} $count" else f.label, selected = filter == f) { filter = f }
+                        ListChip(if (count > 0) "${f.label} $count" else f.label, selected = filter == f, p = p) { filter = f }
                     }
-                    // Filters only. Gruppen and Themen open their list; the Wörterbuch
-                    // lives under "Mehr", the village has its own tab.
-                    item { ListChip("Gruppen" + if (groupCount > 0) " $groupCount" else "", selected = false, onClick = onGroups) }
-                    if (topicCount > 0) item { ListChip("Themen $topicCount", selected = false, onClick = onTopicsHub) }
+                    item { ListChip("Gruppen" + if (groupCount > 0) " $groupCount" else "", selected = false, p = p, onClick = onGroups) }
+                    if (topicCount > 0) item { ListChip("Themen $topicCount", selected = false, p = p, onClick = onTopicsHub) }
                 }
             }
             if (requests.isNotEmpty()) items(requests, key = { it.key }) { request ->
-                Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) { RequestCard(request, onRespond) }
+                Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) { RequestCard(request, onRespond, p) }
             }
             if (Sparks.entryVisible(sparkInbox, sparkSent)) item {
-                Box(Modifier.padding(horizontal = 8.dp)) { SparkEntryRow(sparkInbox, sparkSent, onOpenSparks) }
+                Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) { SparkEntryRow(sparkInbox, sparkSent, onOpenSparks, p) }
             }
             if (conversations.isEmpty()) item {
-                Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Spacer(Modifier.height(60.dp))
-                    Text("💬", fontSize = 42.sp)
-                    Text("Noch keine Chats", style = MaterialTheme.typography.titleLarge)
-                    Text("Füge eine Person über ihren Benutzernamen hinzu. Sobald sie annimmt, könnt ihr schreiben.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Spacer(Modifier.height(48.dp))
+                    IslandAvatar("⛵", p.sea, 92.dp, p)
+                    Text("Dein Hafen ist noch still", style = Harbour.Title, color = p.ink, textAlign = TextAlign.Center)
+                    Text(
+                        "Füge eine Person über ihren Benutzernamen hinzu. Sobald sie annimmt, legt euer erstes Boot ab.",
+                        color = p.inkSoft, textAlign = TextAlign.Center, fontSize = 14.sp,
+                    )
                     Spacer(Modifier.height(6.dp))
-                    Button(onClick = onGoPeople, modifier = Modifier.height(48.dp)) { Text("＋  Person hinzufügen") }
+                    Button(
+                        onClick = onGoPeople, modifier = Modifier.height(50.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = p.seaDeep, contentColor = Color.White),
+                    ) { Text("＋  Person hinzufügen", fontWeight = FontWeight.Bold) }
                 }
             } else if (matches.isEmpty()) item {
                 Text(
                     if (search.isNotBlank()) "Keine Chats zu „${search.trim()}“." else "Hier ist gerade nichts.",
                     Modifier.fillMaxWidth().padding(28.dp), textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = p.inkSoft,
                 )
             }
-            items(matches, key = { "conv-${it.friendId}" }) { conversation -> ConversationRow(conversation, now, onOpen) }
-            // Room so the last row is never trapped under the round actions.
-            item { Spacer(Modifier.height(150.dp)) }
+            items(matches, key = { "conv-${it.friendId}" }) { conversation -> ConversationRow(conversation, now, onOpen, p) }
         }
         Column(
             Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.End,
         ) {
             if (sparkEnabled) RoundAction(
-                glyph = "✨",
                 description = "Freundesfunke senden",
-                container = MaterialTheme.colorScheme.surfaceVariant,
-                content = MaterialTheme.colorScheme.onSurfaceVariant,
-                onClick = onSendSpark,
-                size = 46,
-            )
-            if (conversations.isNotEmpty() || requests.isNotEmpty()) RoundAction(
-                glyph = "＋",
-                description = "Neuer Chat: Person finden oder Freundschaftsanfrage senden",
-                container = MaterialTheme.colorScheme.primary,
-                content = MaterialTheme.colorScheme.onPrimary,
-                onClick = onGoPeople,
-            )
+                container = p.card, content = p.gold, onClick = onSendSpark, size = 46, border = p.line,
+            ) { Text("✦", fontSize = 20.sp, color = p.gold, fontWeight = FontWeight.Bold) }
+            if (conversations.isNotEmpty() || requests.isNotEmpty()) Row(
+                Modifier.heightIn(min = 56.dp)
+                    .shadow(6.dp, RoundedCornerShape(28.dp))
+                    .background(Brush.verticalGradient(listOf(p.sea, p.seaDeep)), RoundedCornerShape(28.dp))
+                    .clip(RoundedCornerShape(28.dp)).clickable(onClick = onGoPeople)
+                    .semantics { contentDescription = "Neuer Chat: Person finden oder Freundschaftsanfrage senden"; role = Role.Button }
+                    .padding(start = 18.dp, end = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("＋", fontSize = 20.sp, color = Color.White)
+                Spacer(Modifier.width(8.dp))
+                Text("Neuer Chat", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
         }
     }
     }
 }
 
-/** A filter or shortcut chip of the chat list. */
+/** A filter or shortcut chip of the chat list: a small paper tab, sea-glass when chosen. */
 @Composable
-private fun ListChip(text: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(50)).clickable(onClick = onClick)
-            .semantics { role = Role.Button },
-        shape = RoundedCornerShape(50),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .7f),
-        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+private fun ListChip(text: String, selected: Boolean, p: HarbourPalette, onClick: () -> Unit) {
+    Box(
+        Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(12.dp))
+            .background(if (selected) p.seaDeep else p.card.copy(alpha = .75f))
+            .border(1.dp, if (selected) Color.Transparent else p.line, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button }
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
-            Text(text, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
-        }
+        Text(text, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1,
+            color = if (selected) Color.White else p.ink)
     }
 }
 
-/** A round action of the overview. Never smaller than a 56 dp touch target. */
+/** A round action of the overview. */
 @Composable
 private fun RoundAction(
-    glyph: String,
     description: String,
     container: Color,
     content: Color,
     onClick: () -> Unit,
     size: Int = 56,
+    border: Color = Color.Transparent,
+    glyph: @Composable () -> Unit,
 ) {
     Surface(
         modifier = Modifier.size(size.dp)
@@ -284,8 +308,9 @@ private fun RoundAction(
         shape = RoundedCornerShape(50),
         color = container,
         contentColor = content,
-        shadowElevation = 6.dp,
-    ) { Box(contentAlignment = Alignment.Center) { Text(glyph, fontSize = 24.sp) } }
+        border = BorderStroke(1.dp, border),
+        shadowElevation = 4.dp,
+    ) { Box(contentAlignment = Alignment.Center) { glyph() } }
 }
 
 /**
@@ -295,7 +320,7 @@ private fun RoundAction(
  * names a sender: the count is all there is to say.
  */
 @Composable
-private fun SparkEntryRow(inbox: List<SparkItem>, sent: List<SparkSent>, onOpen: () -> Unit) {
+private fun SparkEntryRow(inbox: List<SparkItem>, sent: List<SparkSent>, onOpen: () -> Unit, p: HarbourPalette) {
     val unopened = Sparks.unopenedCount(inbox)
     val underway = sent.count { !it.opened }
     val line = when {
@@ -304,33 +329,37 @@ private fun SparkEntryRow(inbox: List<SparkItem>, sent: List<SparkSent>, onOpen:
         else -> "Alles gelesen"
     }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(18.dp)).clickable(onClick = onOpen)
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(16.dp))
+            .background(p.card.copy(alpha = .8f)).border(1.dp, p.line, RoundedCornerShape(16.dp))
+            .clickable(onClick = onOpen)
             .semantics { contentDescription = "Funken öffnen. $line"; role = Role.Button }
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("✨", fontSize = 24.sp, modifier = Modifier.padding(end = 12.dp))
+        Text("✦", fontSize = 22.sp, color = p.gold, modifier = Modifier.padding(end = 12.dp))
         Column(Modifier.weight(1f)) {
-            Text("Funken", fontWeight = FontWeight.Bold)
-            Text(line, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Funken", fontWeight = FontWeight.Bold, color = p.ink)
+            Text(line, fontSize = 13.sp, color = p.inkSoft)
         }
-        if (unopened > 0) Chip("$unopened", MaterialTheme.colorScheme.tertiary)
+        if (unopened > 0) WaxSeal("$unopened", p.gold)
     }
 }
 
 @Composable
-private fun RequestCard(request: PendingRequest, onRespond: (PendingRequest, Boolean) -> Unit) {
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+private fun RequestCard(request: PendingRequest, onRespond: (PendingRequest, Boolean) -> Unit, p: HarbourPalette) {
+    Column(
+        Modifier.fillMaxWidth().background(p.card, RoundedCornerShape(16.dp))
+            .border(1.dp, p.gold.copy(alpha = .45f), RoundedCornerShape(16.dp)).padding(15.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(request.headline, fontWeight = FontWeight.Bold)
-            if (request.detail.isNotBlank()) Text(request.detail, fontSize = 13.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onRespond(request, true) }) { Text("Annehmen") }
-                OutlinedButton(onClick = { onRespond(request, false) }) { Text("Ablehnen") }
-            }
+        Text(request.headline, fontWeight = FontWeight.Bold, color = p.ink)
+        if (request.detail.isNotBlank()) Text(request.detail, fontSize = 13.sp, color = p.inkSoft)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { onRespond(request, true) },
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = p.seaDeep, contentColor = Color.White),
+            ) { Text("Annehmen") }
+            OutlinedButton(onClick = { onRespond(request, false) }) { Text("Ablehnen", color = p.ink) }
         }
     }
 }
@@ -338,75 +367,65 @@ private fun RequestCard(request: PendingRequest, onRespond: (PendingRequest, Boo
 /**
  * One conversation in the overview.
  *
- * A flat row on the page rather than a grey rounded tile: the name and the
- * preview carry the hierarchy, a coloured avatar disc anchors the person, and
- * only the counts that mean something are drawn. Nothing here is a box inside a
- * box inside a box.
+ * The friend appears as their little island; letters waiting at the harbour show
+ * as a seal, unread chat lines as a sea-blue count. Unread rows carry a soft card
+ * so the eye lands there first; quiet rows stay flat on the paper.
  */
 @Composable
-private fun ConversationRow(conversation: Conversation, now: Long, onOpen: (Long) -> Unit) {
+private fun ConversationRow(conversation: Conversation, now: Long, onOpen: (Long) -> Unit, p: HarbourPalette) {
     val news = conversation.hasNews
-    val accent = MaterialTheme.colorScheme.primary
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 72.dp).clickable { onOpen(conversation.friendId) }
-            .padding(start = 14.dp, end = 14.dp, top = 9.dp, bottom = 9.dp),
+        Modifier.fillMaxWidth()
+            .clickable { onOpen(conversation.friendId) }
+            .heightIn(min = 76.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = profileColor(conversation.displayColor).copy(alpha = .22f),
-            modifier = Modifier.size(52.dp),
-        ) { Box(contentAlignment = Alignment.Center) { Text(conversation.avatarEmoji, fontSize = 26.sp) } }
-        Column(Modifier.weight(1f).padding(start = 13.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        IslandAvatar(conversation.avatarEmoji, profileColor(conversation.displayColor), 54.dp, p, news = news)
+        Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     conversation.friendName, Modifier.weight(1f), fontSize = 16.sp, maxLines = 1,
-                    fontWeight = if (news) FontWeight.Bold else FontWeight.SemiBold,
+                    fontWeight = if (news) FontWeight.ExtraBold else FontWeight.Bold, color = p.ink,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
                 Text(
                     ChatTools.listTime(conversation.lastActivityAt, now), fontSize = 12.sp,
-                    color = if (news) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (news) p.sea else p.inkSoft,
                     fontWeight = if (news) FontWeight.Bold else FontWeight.Normal,
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val preview = conversation.preview
+                val body = ChatTools.parseReply(preview.text).second.replace('\n', ' ')
                 val line = when {
                     conversation.silenced -> "Briefe und Chat sind aus"
-                    else -> (if (preview.fromMe) "Du: " else "") + (if (preview.sealed) "✦ " else "") +
-                        (ChatTools.parseReply(preview.text).second.replace('\n', ' '))
+                    preview.sealed -> (if (preview.fromMe) "Du: " else "") + "✉ " + body
+                    else -> (if (preview.fromMe) "Du: " else "") + body
                 }
                 Text(
                     line, Modifier.weight(1f), fontSize = 14.sp, maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     fontStyle = if (preview.sealed) FontStyle.Italic else FontStyle.Normal,
-                    color = if (conversation.silenced) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = when {
+                        conversation.silenced -> MaterialTheme.colorScheme.error
+                        preview.sealed -> p.wax
+                        news -> p.ink.copy(alpha = .85f)
+                        else -> p.inkSoft
+                    },
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (conversation.lockedLetters > 0) Text("🔒${conversation.lockedLetters}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (conversation.readyLetters > 0) Chip("✦${conversation.readyLetters}", MaterialTheme.colorScheme.tertiary)
-                    if (conversation.awaitingMe > 0) Chip("✓${conversation.awaitingMe}", MaterialTheme.colorScheme.secondary)
-                    if (conversation.unreadChats > 0) UnreadDot(conversation.unreadChats, accent)
+                Row(Modifier.padding(start = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (conversation.lockedLetters > 0) Text("🔒${conversation.lockedLetters}", fontSize = 11.sp, color = p.inkSoft)
+                    if (conversation.readyLetters > 0) WaxSeal("${conversation.readyLetters}", p.wax,
+                        Modifier.semantics { contentDescription = "${conversation.readyLetters} Briefe bereit" })
+                    if (conversation.awaitingMe > 0) WaxSeal("${conversation.awaitingMe}", p.gold,
+                        Modifier.semantics { contentDescription = "${conversation.awaitingMe} Briefe warten auf deine Freigabe" })
+                    if (conversation.unreadChats > 0) WaxSeal(if (conversation.unreadChats > 99) "99+" else "${conversation.unreadChats}", p.sea)
                 }
             }
         }
     }
-    HorizontalDivider(Modifier.padding(start = 79.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
-}
-
-/** The round unread counter of a chat row. */
-@Composable
-private fun UnreadDot(count: Int, color: Color) {
-    Box(Modifier.sizeIn(minWidth = 22.dp, minHeight = 22.dp).background(color, RoundedCornerShape(50)).padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
-        Text(if (count > 99) "99+" else "$count", color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun Chip(text: String, color: Color) {
-    Surface(color = color, shape = RoundedCornerShape(50)) {
-        Text(text, Modifier.padding(horizontal = 8.dp, vertical = 2.dp), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-    }
+    HorizontalDivider(Modifier.padding(start = 82.dp, end = 16.dp), color = p.line)
 }
 
 // ---------------------------------------------------------------------------
