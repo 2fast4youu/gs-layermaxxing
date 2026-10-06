@@ -860,7 +860,7 @@ private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name
 }
 
 @Composable
-private fun FriendSheet(
+internal fun FriendSheet(
     friend: ApiClient.UserSummary,
     info: ApiClient.IslandInfo?,
     label: String?,
@@ -1005,7 +1005,7 @@ private fun QuestRow(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> U
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NewQuestSheet(
+internal fun NewQuestSheet(
     pals: List<ApiClient.UserSummary>,
     groups: List<ApiClient.Group>,
     presetPeer: Long?,
@@ -1150,7 +1150,7 @@ private fun rememberIsleReducedMotion(): Boolean {
 /** Pick or type a personal name for a friend; empty = back to the level name. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun LabelDialog(name: String, current: String?, onDismiss: () -> Unit, onSave: (String?) -> Unit) {
+internal fun LabelDialog(name: String, current: String?, onDismiss: () -> Unit, onSave: (String?) -> Unit) {
     var text by rememberSaveable { mutableStateOf(current ?: "") }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,

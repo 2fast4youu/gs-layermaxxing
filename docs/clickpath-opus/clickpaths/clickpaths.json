@@ -1,0 +1,249 @@
+{
+ "journeys": [
+  {
+   "title": "Mit einem Freund chatten",
+   "taps": 2,
+   "file": "01-mit-einem-freund-chatten.png"
+  },
+  {
+   "title": "Brief an einen Freund schreiben",
+   "taps": 2,
+   "file": "02-brief-an-einen-freund-schreiben.png"
+  },
+  {
+   "title": "Neuen Brief lesen",
+   "taps": 3,
+   "file": "03-neuen-brief-lesen.png"
+  },
+  {
+   "title": "Quest mit Freund anlegen",
+   "taps": 2,
+   "file": "04-quest-mit-freund-anlegen.png"
+  },
+  {
+   "title": "Freund einen Spitznamen geben",
+   "taps": 3,
+   "file": "05-freund-einen-spitznamen-geben.png"
+  },
+  {
+   "title": "„Ich bin hier“ / Status setzen",
+   "taps": 2,
+   "file": "06-ich-bin-hier-status-setzen.png"
+  },
+  {
+   "title": "Lebensort bauen",
+   "taps": 3,
+   "file": "07-lebensort-bauen.png"
+  },
+  {
+   "title": "Deko setzen",
+   "taps": 3,
+   "file": "08-deko-setzen.png"
+  },
+  {
+   "title": "Gruppe erstellen",
+   "taps": 3,
+   "file": "09-gruppe-erstellen.png"
+  },
+  {
+   "title": "Thema fürs nächste Gespräch notieren",
+   "taps": 4,
+   "file": "10-thema-furs-nachste-gesprach-noti.png"
+  },
+  {
+   "title": "Freunde finden",
+   "taps": 2,
+   "file": "11-freunde-finden.png"
+  },
+  {
+   "title": "Einstellungen / Debug-Modus",
+   "taps": 3,
+   "file": "12-einstellungen-debug-modus.png"
+  },
+  {
+   "title": "Punkte ansehen",
+   "taps": 1,
+   "file": "13-punkte-ansehen.png"
+  }
+ ],
+ "theme": {
+  "03-room": [
+   "PARTLY",
+   "Türkis/Creme ok, aber nackte Material-Liste"
+  ],
+  "04-card": [
+   "OLD",
+   "altes buntes Alpendorf; BuildingCard im App-Code nirgends mehr benutzt"
+  ],
+  "05-chats": [
+   "FITS",
+   "Hafenpapier, gedämpftes Teal"
+  ],
+  "06-thread": [
+   "PARTLY",
+   "Chat ok, Kopfleiste dunkelblau/Standard"
+  ],
+  "07-glossary": [
+   "FITS",
+   "Creme + Teal, ruhig"
+  ],
+  "08-topics-room": [
+   "PARTLY",
+   "Farben ok, sonst Standard-Forum"
+  ],
+  "09-groups-room": [
+   "PARTLY",
+   "großes weißes Panel, schwere schwarze Schrift"
+  ],
+  "12-empty-chats": [
+   "FITS",
+   "Hafen-Text + Boot-Illustration"
+  ],
+  "13-chat-extras": [
+   "PARTLY",
+   "ok, aber unruhig: viele Emoji/Werkzeuge"
+  ],
+  "13-login": [
+   "PARTLY",
+   "Insel im Hintergrund, Formular lavendel/Material"
+  ],
+  "14-chat-actions": [
+   "PARTLY",
+   "loses Werkzeug-Palette, kein fertiger Look"
+  ],
+  "14-more": [
+   "OLD",
+   "flache lavendel Material-Liste – im Inselmodus 'Mein Haus'"
+  ],
+  "20-inseln": [
+   "FITS",
+   "Kernstil"
+  ],
+  "21-inseln-leer": [
+   "FITS",
+   "Kernstil"
+  ],
+  "22-meine-insel": [
+   "FITS",
+   "Kernstil"
+  ],
+  "23-besuch": [
+   "FITS",
+   "Kernstil"
+  ],
+  "24-deko-wahl": [
+   "PARTLY",
+   "Deko-Bilder gut, Hintergrund reines Weiß"
+  ],
+  "25-bauen": [
+   "PARTLY",
+   "Bilder gut, Formular weiß/Standard"
+  ],
+  "25-schiff": [
+   "FITS",
+   "dunkles Glas-Sheet über Meer"
+  ],
+  "26-inseln-debug": [
+   "DEBUG",
+   "nur Debug-Modus (Hitboxen) – kein Theme-Thema"
+  ],
+  "26-ort": [
+   "PARTLY",
+   "kleines Inselbild, Rest weißes Material-Formular"
+  ],
+  "27-insel-zoom": [
+   "FITS",
+   "Kernstil"
+  ],
+  "28-insel-doppeltipp": [
+   "FITS",
+   "Kernstil"
+  ],
+  "29-insel-einzeltipp": [
+   "FITS",
+   "Postamt, Holz + Siegel"
+  ],
+  "30-post": [
+   "FITS",
+   "Holz, Umschläge, Wachssiegel"
+  ],
+  "31-hafen": [
+   "FITS",
+   "Kork, Zettel, Küste"
+  ],
+  "32-leuchtturm": [
+   "FITS",
+   "Küste, Holzschild"
+  ],
+  "33-bibliothek": [
+   "FITS",
+   "Holz + Papier"
+  ],
+  "34-gemeindehaus": [
+   "FITS",
+   "warmes Holz"
+  ],
+  "35-haus": [
+   "FITS",
+   "gemaltes Portrait, Holz"
+  ],
+  "36-topics-screen": [
+   "OLD",
+   "weißes Material-Layout, graue Rahmen"
+  ],
+  "37-ep-screen": [
+   "OLD",
+   "blau/grau Formular, kein Inselbezug"
+  ],
+  "38-letter-room": [
+   "OLD",
+   "dunkelbraun/schwarz – bricht mit ruhigem Creme/Teal"
+  ],
+  "39-spark-room": [
+   "PARTLY",
+   "Sand-Karten ok, Knopf blau, keine Welt"
+  ],
+  "40-thread-info-sheet": [
+   "OLD",
+   "weiße Einstellungsseite, Standard-Schalter"
+  ],
+  "41-quest-dialog": [
+   "PARTLY",
+   "Spielschrift ok, Dialog lavendel"
+  ],
+  "42-glossary-term-dialog": [
+   "PARTLY",
+   "Mini-Dialog, lavendel"
+  ],
+  "43-friend-sheet": [
+   "FITS",
+   "Inselbild, Teal/Creme"
+  ],
+  "45-label-dialog": [
+   "PARTLY",
+   "lavendel Formular, blaue Chips"
+  ],
+  "46-recovery-dialog": [
+   "PARTLY",
+   "generischer Dialog"
+  ],
+  "47-proof-dialog": [
+   "PARTLY",
+   "technischer Dialog, lavendel"
+  ],
+  "48-ep-proposal-dialog": [
+   "PARTLY",
+   "Formular lavendel/blau"
+  ],
+  "49-request-dialog": [
+   "PARTLY",
+   "grau-lavendel Material"
+  ]
+ },
+ "counts": {
+  "FITS": 18,
+  "PARTLY": 18,
+  "OLD": 6,
+  "DEBUG": 1
+ }
+}

@@ -1495,7 +1495,7 @@ private fun DateTimeChooser(value: LocalDateTime, onChange: (LocalDateTime) -> U
 }
 
 @Composable
-private fun RecoveryDialog(code: String, onDismiss: () -> Unit) {
+internal fun RecoveryDialog(code: String, onDismiss: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
     AlertDialog(
@@ -1512,7 +1512,7 @@ private fun RecoveryDialog(code: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ProofDialog(proof: ApiClient.ProofDetails, onDismiss: () -> Unit) {
+internal fun ProofDialog(proof: ApiClient.ProofDetails, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) context.contentResolver.openOutputStream(uri)?.use { it.write(proof.rawExport.toByteArray()) }

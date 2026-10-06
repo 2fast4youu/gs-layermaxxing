@@ -1,0 +1,783 @@
+{
+  "capture": "ClickpathVisualReview",
+  "test": "JAVA_HOME=/home/gregor/Android/Jdk ./gradlew :app:testDebugUnitTest --tests at.gregor.layermaxxing.ClickpathVisualReview --no-daemon",
+  "nonblank_rule": "nonwhite_pixels > 0 and at least one channel variance > 0",
+  "actual_nonblank": 43,
+  "missing": 1,
+  "images": [
+    {
+      "file": "03-room.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 2570711,
+      "nonwhite_fraction": 0.77999393,
+      "mean_rgb": [
+        118.774,
+        154.317,
+        156.496
+      ],
+      "variance_rgb": [
+        5856.895,
+        3245.477,
+        3116.328
+      ]
+    },
+    {
+      "file": "04-card.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3287122,
+      "nonwhite_fraction": 0.99736423,
+      "mean_rgb": [
+        154.51,
+        138.746,
+        94.683
+      ],
+      "variance_rgb": [
+        6023.376,
+        3914.612,
+        3984.52
+      ]
+    },
+    {
+      "file": "05-chats.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3291481,
+      "nonwhite_fraction": 0.99868682,
+      "mean_rgb": [
+        234.525,
+        227.073,
+        208.854
+      ],
+      "variance_rgb": [
+        1563.04,
+        940.043,
+        748.604
+      ]
+    },
+    {
+      "file": "06-thread.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3294377,
+      "nonwhite_fraction": 0.99956551,
+      "mean_rgb": [
+        226.234,
+        222.23,
+        209.635
+      ],
+      "variance_rgb": [
+        3594.833,
+        2762.855,
+        2075.965
+      ]
+    },
+    {
+      "file": "07-glossary.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 2516623,
+      "nonwhite_fraction": 0.76358278,
+      "mean_rgb": [
+        211.88,
+        222.374,
+        222.504
+      ],
+      "variance_rgb": [
+        5487.404,
+        3826.589,
+        3814.472
+      ]
+    },
+    {
+      "file": "08-topics-room.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 2156754,
+      "nonwhite_fraction": 0.6543929,
+      "mean_rgb": [
+        140.147,
+        169.024,
+        170.899
+      ],
+      "variance_rgb": [
+        7438.309,
+        4178.889,
+        4055.701
+      ]
+    },
+    {
+      "file": "09-groups-room.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 711489,
+      "nonwhite_fraction": 0.21587689,
+      "mean_rgb": [
+        214.456,
+        227.042,
+        227.388
+      ],
+      "variance_rgb": [
+        6335.04,
+        3180.16,
+        3147.327
+      ]
+    },
+    {
+      "file": "12-empty-chats.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3292092,
+      "nonwhite_fraction": 0.9988722,
+      "mean_rgb": [
+        234.759,
+        227.389,
+        208.772
+      ],
+      "variance_rgb": [
+        1490.569,
+        829.808,
+        532.078
+      ]
+    },
+    {
+      "file": "13-chat-extras.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3271835,
+      "nonwhite_fraction": 0.99272591,
+      "mean_rgb": [
+        222.943,
+        220.421,
+        206.704
+      ],
+      "variance_rgb": [
+        3709.564,
+        2637.104,
+        1856.473
+      ]
+    },
+    {
+      "file": "13-login.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295809,
+      "nonwhite_fraction": 1.0,
+      "mean_rgb": [
+        156.89,
+        159.535,
+        163.369
+      ],
+      "variance_rgb": [
+        10308.305,
+        9404.795,
+        9448.699
+      ]
+    },
+    {
+      "file": "14-chat-actions.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3243839,
+      "nonwhite_fraction": 0.98423149,
+      "mean_rgb": [
+        247.31,
+        244.566,
+        243.423
+      ],
+      "variance_rgb": [
+        492.099,
+        478.107,
+        918.413
+      ]
+    },
+    {
+      "file": "14-more.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295503,
+      "nonwhite_fraction": 0.99990715,
+      "mean_rgb": [
+        243.56,
+        242.873,
+        247.397
+      ],
+      "variance_rgb": [
+        797.361,
+        768.233,
+        785.149
+      ]
+    },
+    {
+      "file": "20-inseln.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295569,
+      "nonwhite_fraction": 0.99992718,
+      "mean_rgb": [
+        99.513,
+        119.918,
+        117.483
+      ],
+      "variance_rgb": [
+        1853.812,
+        1193.594,
+        1161.108
+      ]
+    },
+    {
+      "file": "21-inseln-leer.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 2836637,
+      "nonwhite_fraction": 0.86068003,
+      "mean_rgb": [
+        117.83,
+        140.196,
+        141.558
+      ],
+      "variance_rgb": [
+        4273.547,
+        2949.901,
+        2783.82
+      ]
+    },
+    {
+      "file": "22-meine-insel.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295363,
+      "nonwhite_fraction": 0.99986468,
+      "mean_rgb": [
+        99.665,
+        117.824,
+        112.606
+      ],
+      "variance_rgb": [
+        1539.407,
+        885.759,
+        1014.056
+      ]
+    },
+    {
+      "file": "23-besuch.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295569,
+      "nonwhite_fraction": 0.99992718,
+      "mean_rgb": [
+        99.722,
+        118.065,
+        113.024
+      ],
+      "variance_rgb": [
+        1501.815,
+        885.38,
+        1034.396
+      ]
+    },
+    {
+      "file": "24-deko-wahl.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 2156913,
+      "nonwhite_fraction": 0.65444114,
+      "mean_rgb": [
+        246.551,
+        244.771,
+        239.762
+      ],
+      "variance_rgb": [
+        929.615,
+        766.083,
+        1008.864
+      ]
+    },
+    {
+      "file": "25-bauen.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 1528747,
+      "nonwhite_fraction": 0.46384575,
+      "mean_rgb": [
+        245.152,
+        244.414,
+        242.177
+      ],
+      "variance_rgb": [
+        1316.65,
+        1209.187,
+        1364.503
+      ]
+    },
+    {
+      "file": "25-schiff.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295809,
+      "nonwhite_fraction": 1.0,
+      "mean_rgb": [
+        60.553,
+        148.198,
+        154.367
+      ],
+      "variance_rgb": [
+        1349.937,
+        4100.289,
+        3622.529
+      ]
+    },
+    {
+      "file": "26-inseln-debug.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295569,
+      "nonwhite_fraction": 0.99992718,
+      "mean_rgb": [
+        106.068,
+        116.259,
+        115.393
+      ],
+      "variance_rgb": [
+        2128.944,
+        1336.466,
+        1176.444
+      ]
+    },
+    {
+      "file": "26-ort.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 1374987,
+      "nonwhite_fraction": 0.41719256,
+      "mean_rgb": [
+        239.0,
+        240.923,
+        240.769
+      ],
+      "variance_rgb": [
+        2519.079,
+        1832.841,
+        1908.868
+      ]
+    },
+    {
+      "file": "27-insel-zoom.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295506,
+      "nonwhite_fraction": 0.99990807,
+      "mean_rgb": [
+        125.088,
+        119.055,
+        90.965
+      ],
+      "variance_rgb": [
+        2628.707,
+        1649.991,
+        1789.256
+      ]
+    },
+    {
+      "file": "28-insel-doppeltipp.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295466,
+      "nonwhite_fraction": 0.99989593,
+      "mean_rgb": [
+        116.263,
+        118.412,
+        98.142
+      ],
+      "variance_rgb": [
+        2447.366,
+        1477.689,
+        1728.189
+      ]
+    },
+    {
+      "file": "29-insel-einzeltipp.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295809,
+      "nonwhite_fraction": 1.0,
+      "mean_rgb": [
+        125.158,
+        106.075,
+        85.933
+      ],
+      "variance_rgb": [
+        2213.907,
+        1879.469,
+        1449.972
+      ]
+    },
+    {
+      "file": "30-post.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295809,
+      "nonwhite_fraction": 1.0,
+      "mean_rgb": [
+        125.158,
+        106.075,
+        85.933
+      ],
+      "variance_rgb": [
+        2213.907,
+        1879.469,
+        1449.972
+      ]
+    },
+    {
+      "file": "31-hafen.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3294562,
+      "nonwhite_fraction": 0.99962164,
+      "mean_rgb": [
+        151.168,
+        131.313,
+        103.103
+      ],
+      "variance_rgb": [
+        2620.086,
+        2127.9,
+        2171.664
+      ]
+    },
+    {
+      "file": "32-leuchtturm.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3285667,
+      "nonwhite_fraction": 0.99692276,
+      "mean_rgb": [
+        103.813,
+        102.407,
+        95.523
+      ],
+      "variance_rgb": [
+        4479.927,
+        3219.282,
+        2390.634
+      ]
+    },
+    {
+      "file": "33-bibliothek.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295809,
+      "nonwhite_fraction": 1.0,
+      "mean_rgb": [
+        210.227,
+        198.196,
+        177.146
+      ],
+      "variance_rgb": [
+        4427.952,
+        4589.696,
+        4502.135
+      ]
+    },
+    {
+      "file": "34-gemeindehaus.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3283798,
+      "nonwhite_fraction": 0.99635567,
+      "mean_rgb": [
+        133.987,
+        107.798,
+        85.812
+      ],
+      "variance_rgb": [
+        2021.331,
+        1669.53,
+        1404.835
+      ]
+    },
+    {
+      "file": "35-haus.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3294810,
+      "nonwhite_fraction": 0.99969689,
+      "mean_rgb": [
+        174.641,
+        159.865,
+        134.853
+      ],
+      "variance_rgb": [
+        2743.771,
+        2363.038,
+        2414.498
+      ]
+    },
+    {
+      "file": "36-topics-screen.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3295809,
+      "nonwhite_fraction": 1.0,
+      "mean_rgb": [
+        248.496,
+        247.527,
+        251.572
+      ],
+      "variance_rgb": [
+        190.851,
+        184.315,
+        177.783
+      ]
+    },
+    {
+      "file": "37-ep-screen.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3294144,
+      "nonwhite_fraction": 0.99949481,
+      "mean_rgb": [
+        229.29,
+        229.506,
+        235.968
+      ],
+      "variance_rgb": [
+        1316.608,
+        1165.506,
+        1025.053
+      ]
+    },
+    {
+      "file": "38-letter-room.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3292528,
+      "nonwhite_fraction": 0.99900449,
+      "mean_rgb": [
+        39.961,
+        34.305,
+        27.767
+      ],
+      "variance_rgb": [
+        431.298,
+        486.43,
+        928.744
+      ]
+    },
+    {
+      "file": "39-spark-room.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3293257,
+      "nonwhite_fraction": 0.99922568,
+      "mean_rgb": [
+        235.279,
+        233.285,
+        232.307
+      ],
+      "variance_rgb": [
+        1865.509,
+        1475.386,
+        1282.938
+      ]
+    },
+    {
+      "file": "40-thread-info-sheet.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3291774,
+      "nonwhite_fraction": 0.99877572,
+      "mean_rgb": [
+        237.924,
+        238.288,
+        242.68
+      ],
+      "variance_rgb": [
+        1985.47,
+        1664.913,
+        1204.034
+      ]
+    },
+    {
+      "file": "41-quest-dialog.png",
+      "width": 1233,
+      "height": 1328,
+      "pixels": 1637424,
+      "nonwhite_pixels": 1634539,
+      "nonwhite_fraction": 0.99823809,
+      "mean_rgb": [
+        221.706,
+        220.925,
+        224.984
+      ],
+      "variance_rgb": [
+        2078.074,
+        1571.907,
+        1617.552
+      ]
+    },
+    {
+      "file": "42-glossary-term-dialog.png",
+      "width": 887,
+      "height": 539,
+      "pixels": 478093,
+      "nonwhite_pixels": 478042,
+      "nonwhite_fraction": 0.99989333,
+      "mean_rgb": [
+        224.334,
+        222.39,
+        227.246
+      ],
+      "variance_rgb": [
+        1525.689,
+        1496.251,
+        1552.453
+      ]
+    },
+    {
+      "file": "43-friend-sheet.png",
+      "width": 1233,
+      "height": 2673,
+      "pixels": 3295809,
+      "nonwhite_pixels": 3275154,
+      "nonwhite_fraction": 0.99373295,
+      "mean_rgb": [
+        239.047,
+        240.462,
+        240.785
+      ],
+      "variance_rgb": [
+        1788.39,
+        1127.785,
+        1269.029
+      ]
+    },
+    {
+      "file": "45-label-dialog.png",
+      "width": 1233,
+      "height": 1416,
+      "pixels": 1745928,
+      "nonwhite_pixels": 1745877,
+      "nonwhite_fraction": 0.99997079,
+      "mean_rgb": [
+        224.046,
+        222.606,
+        228.335
+      ],
+      "variance_rgb": [
+        1374.931,
+        1281.259,
+        1227.812
+      ]
+    },
+    {
+      "file": "46-recovery-dialog.png",
+      "width": 1146,
+      "height": 754,
+      "pixels": 864084,
+      "nonwhite_pixels": 860503,
+      "nonwhite_fraction": 0.99585573,
+      "mean_rgb": [
+        209.562,
+        209.77,
+        218.015
+      ],
+      "variance_rgb": [
+        3510.142,
+        2944.848,
+        2337.338
+      ]
+    },
+    {
+      "file": "47-proof-dialog.png",
+      "width": 1001,
+      "height": 732,
+      "pixels": 732732,
+      "nonwhite_pixels": 730665,
+      "nonwhite_fraction": 0.99717905,
+      "mean_rgb": [
+        213.666,
+        211.628,
+        219.141
+      ],
+      "variance_rgb": [
+        3016.456,
+        2902.672,
+        2467.065
+      ]
+    },
+    {
+      "file": "48-ep-proposal-dialog.png",
+      "width": 1233,
+      "height": 1272,
+      "pixels": 1568376,
+      "nonwhite_pixels": 1565938,
+      "nonwhite_fraction": 0.99844553,
+      "mean_rgb": [
+        221.916,
+        220.838,
+        227.163
+      ],
+      "variance_rgb": [
+        1749.197,
+        1494.105,
+        1221.774
+      ]
+    },
+    {
+      "file": "49-request-dialog.png",
+      "width": 1227,
+      "height": 816,
+      "pixels": 1001232,
+      "nonwhite_pixels": 999167,
+      "nonwhite_fraction": 0.99793754,
+      "mean_rgb": [
+        217.68,
+        216.992,
+        223.907
+      ],
+      "variance_rgb": [
+        2489.567,
+        2133.187,
+        1757.543
+      ]
+    }
+  ]
+}

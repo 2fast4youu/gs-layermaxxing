@@ -920,7 +920,7 @@ internal class ComposerExtras(
  * crypto sentence — so the conversation itself carries no explanatory prose.
  */
 @Composable
-private fun ThreadInfoSheet(
+internal fun ThreadInfoSheet(
     friend: ApiClient.UserSummary,
     settings: ApiClient.FriendshipSettings?,
     epLine: String,

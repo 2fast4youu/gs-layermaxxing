@@ -1,0 +1,10 @@
+{
+  "coordinate_space": "Robolectric screenshot pixels; gesture code uses Compose root coordinates",
+  "actions": [
+    {"screen":"29-insel-einzeltipp.png","type":"tap","semantics":"contentDescription=Post","bounds":"runtime semantics node; exact bounds not exported by existing test","evidence":"VillageVisualReview.kt:333-336"},
+    {"screen":"28-insel-doppeltipp.png","type":"double_tap","semantics":null,"bounds":{"x":370,"y":1657,"note":"0.30 × root width, 0.62 × root height for 1233×2673 output"},"evidence":"VillageVisualReview.kt:330-332"},
+    {"screen":"27-insel-zoom.png","type":"pinch","semantics":null,"bounds":{"start1":[576,1336],"end1":[313,1276],"start2":[657,1336],"end2":[920,1276],"note":"translated from root center and offsets; approximate screenshot pixels"},"evidence":"VillageVisualReview.kt:323-329"},
+    {"screen":"26-inseln-debug.png","type":"inspection","semantics":"worldTap labels and hitboxes visible","bounds":"visual hitbox overlay; no exported node bounds","evidence":"VillageVisualReview.kt:361-363; DebugMode.kt:37-42"}
+  ],
+  "limitations": ["Existing renderer captures pixels only; it does not export Compose semantics tree or per-node bounds.","Other navigation edges are source-derived in edges.json, not runtime tap traces."]
+}
