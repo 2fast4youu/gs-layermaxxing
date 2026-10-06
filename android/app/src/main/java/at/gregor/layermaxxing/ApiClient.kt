@@ -106,6 +106,25 @@ class ApiClient(
         val id: Long, val term: String, val creatorName: String, val explanations: List<GlossaryExplanation>, val canDelete: Boolean,
     )
 
+    data class Quest(
+        val id: Long, val title: String, val details: String, val icon: String, val points: Int,
+        val creatorId: Long, val creatorName: String, val targetType: String, val targetName: String, val targetId: Long?,
+        val createdAt: Long, val completedAt: Long?, val completedByName: String?, val canDelete: Boolean,
+    )
+    data class IslandInfo(val friendId: Long, val qp: Int, val ep: Int, val score: Int, val level: Int, val nextAt: Int?)
+    data class Islands(val qp: Int, val friends: List<IslandInfo>, val score: Int = qp)
+    data class DecorItem(val key: String, val unlockAt: Int, val unlocked: Boolean)
+    data class HomeIsland(
+        val userId: Long, val decor: Map<Int, String>, val score: Int, val items: List<DecorItem>,
+        /** "Mein Leben als Insel": real places on building plots. */
+        val places: Map<Int, LifePlace> = emptyMap(),
+        val plots: Int = 0,
+        val plotUnlocks: List<Int> = emptyList(),
+        /** Only on the own island: where my figure stands (null = on the plaza). */
+        val here: Here? = null,
+    )
+    data class LifePlace(val kind: String, val name: String)
+    data class Here(val plot: Int?, val status: String)
     data class Topic(
         val id: Long, val title: String, val details: String, val creatorName: String,
         val targetType: String, val targetName: String, val targetId: Long?, val createdAt: Long, val completedAt: Long?,
@@ -150,6 +169,14 @@ class ApiClient(
     data class ChatMessage(
         val id: Long, val senderId: Long, val recipientId: Long, val text: String,
         val createdAt: Long, val readAt: Long?,
+        val editedAt: Long? = null, val deleted: Boolean = false, val pinnedAt: Long? = null,
+        /** text, image, voice or sticker. */
+        val kind: String = "text", val attachmentMime: String? = null, val hasAttachment: Boolean = false,
+        val reactions: List<Reaction> = emptyList(),
+    )
+    data class ChatPresence(
+        val typing: Boolean, val online: Boolean, val lastSeenAt: Long?,
+        val chatDayToday: Boolean, val chatDays: Int, val chatPoints: Int,
     )
     data class ProofDetails(
         val messageId: Long, val title: String, val legacy: Boolean, val releaseRule: String,
@@ -293,8 +320,18 @@ class ApiClient(
         val lastCipher = it.nullableString("last_ciphertext")
         val lastNonce = it.nullableString("last_nonce")
         val lastKey = it.nullableString("last_encryption_key")
-        val lastText = if (lastCipher != null && lastNonce != null && lastKey != null)
+        val decrypted = if (lastCipher != null && lastNonce != null && lastKey != null)
             runCatching { CryptoBox.decrypt(lastCipher, lastNonce, lastKey) }.getOrNull() else null
+        // Media, stickers and deleted lines get a neutral word instead of their raw text.
+        val lastText = when {
+            it.optBoolean("last_deleted") -> "Nachricht gelöscht"
+            else -> when (it.optString("last_kind", "text")) {
+                "image" -> "📷 Foto"
+                "voice" -> "🍾 Flaschenpost"
+                "sticker" -> "Sticker"
+                else -> decrypted
+            }
+        }
         ChatThread(
             it.getLong("friend_id"), it.getString("friend_name"), it.optString("avatar_emoji", "👤"),
             it.optString("display_color", "#6750A4"), it.getLong("last_message_at"), it.getInt("unread_count"),
@@ -304,17 +341,66 @@ class ApiClient(
     suspend fun chatMessages(token: String, friendId: Long): List<ChatMessage> = array(
         token, "api/chats/$friendId/messages",
     ) {
+        val deleted = it.optBoolean("deleted")
         ChatMessage(
             it.getLong("id"), it.getLong("sender_id"), it.getLong("recipient_id"),
-            CryptoBox.decrypt(it.getString("ciphertext"), it.getString("nonce"), it.getString("encryption_key")),
+            if (deleted) "" else CryptoBox.decrypt(it.getString("ciphertext"), it.getString("nonce"), it.getString("encryption_key")),
             it.getLong("created_at"), it.nullableLong("read_at"),
+            editedAt = it.nullableLong("edited_at"), deleted = deleted, pinnedAt = it.nullableLong("pinned_at"),
+            kind = it.optString("kind", "text").ifBlank { "text" }, attachmentMime = it.nullableString("attachment_mime"),
+            hasAttachment = it.optBoolean("has_attachment"),
+            reactions = it.optJSONArray("reactions")?.objects()?.map { r ->
+                Reaction(r.getLong("user_id"), r.getString("name"), r.getString("emoji"))
+            }.orEmpty(),
         )
     }
-    suspend fun sendChat(token: String, friendId: Long, text: String) = io {
+
+    /**
+     * Sends one chat line. Photos and voice notes travel as an attachment that is
+     * encrypted with the same fresh key as the line itself.
+     */
+    suspend fun sendChat(
+        token: String, friendId: Long, text: String, kind: String = "text",
+        attachment: ByteArray? = null, attachmentMime: String? = null,
+    ) = io {
         val encrypted = CryptoBox.encrypt(text)
-        execute(authorized(token, "api/chats/$friendId/messages").post(JSONObject()
+        val body = JSONObject()
             .put("ciphertext", encrypted.ciphertext).put("nonce", encrypted.nonce)
-            .put("encryption_key", encrypted.key).body()).build()).getLong("id")
+            .put("encryption_key", encrypted.key).put("kind", kind)
+        if (attachment != null) {
+            val sealed = CryptoBox.encryptBytes(attachment, encrypted.key)
+            body.put("attachment_mime", attachmentMime).put("attachment_ciphertext", sealed.ciphertext)
+                .put("attachment_nonce", sealed.nonce)
+        }
+        execute(authorized(token, "api/chats/$friendId/messages").post(body.body()).build()).getLong("id")
+    }
+    suspend fun chatAttachment(token: String, friendId: Long, messageId: Long): ByteArray = io {
+        val j = execute(authorized(token, "api/chats/$friendId/messages/$messageId/attachment").get().build())
+        CryptoBox.decryptBytes(j.getString("ciphertext"), j.getString("nonce"), j.getString("encryption_key"))
+    }
+    suspend fun editChat(token: String, friendId: Long, messageId: Long, text: String) = io {
+        val encrypted = CryptoBox.encrypt(text)
+        execute(authorized(token, "api/chats/$friendId/messages/$messageId").patch(JSONObject()
+            .put("ciphertext", encrypted.ciphertext).put("nonce", encrypted.nonce)
+            .put("encryption_key", encrypted.key).body()).build()); Unit
+    }
+    suspend fun deleteChat(token: String, friendId: Long, messageId: Long) =
+        unitCall(authorized(token, "api/chats/$friendId/messages/$messageId").delete().build())
+    /** An empty emoji removes my reaction. */
+    suspend fun reactChat(token: String, friendId: Long, messageId: Long, emoji: String) = unitCall(
+        authorized(token, "api/chats/$friendId/messages/$messageId/reaction").put(JSONObject().put("emoji", emoji).body()).build()
+    )
+    suspend fun pinChat(token: String, friendId: Long, messageId: Long, pinned: Boolean) = unitCall(
+        authorized(token, "api/chats/$friendId/messages/$messageId/pin").put(JSONObject().put("pinned", pinned).body()).build()
+    )
+    suspend fun chatTyping(token: String, friendId: Long) =
+        unitCall(authorized(token, "api/chats/$friendId/typing").post(JSONObject().body()).build())
+    suspend fun chatPresence(token: String, friendId: Long): ChatPresence = io {
+        val j = execute(authorized(token, "api/chats/$friendId/presence").get().build())
+        ChatPresence(
+            j.optBoolean("typing"), j.optBoolean("online"), j.nullableLong("last_seen_at"),
+            j.optBoolean("chat_day_today"), j.optInt("chat_days"), j.optInt("chat_points"),
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -368,6 +454,66 @@ class ApiClient(
             .post(JSONObject().put("phase", "release").body()).build()).getBoolean("advanced")
     }
 
+    suspend fun quests(token: String): List<Quest> = array(token, "api/quests") { j ->
+        Quest(
+            id = j.getLong("id"), title = j.getString("title"), details = j.optString("details"), icon = j.optString("icon", "star"),
+            points = j.getInt("points"), creatorId = j.getLong("creator_id"), creatorName = j.getString("creator_name"),
+            targetType = j.getString("target_type"), targetName = j.optString("target_name"), targetId = j.nullableLong("target_id"),
+            createdAt = j.getLong("created_at"), completedAt = j.nullableLong("completed_at"),
+            completedByName = j.nullableString("completed_by_name"), canDelete = j.getBoolean("can_delete"),
+        )
+    }
+    suspend fun createQuest(token: String, title: String, details: String, icon: String, points: Int, peerId: Long?, groupId: Long?) = io {
+        val body = JSONObject().put("title", title.trim()).put("details", details.trim()).put("icon", icon).put("points", points)
+        peerId?.let { body.put("peer_user_id", it) }
+        groupId?.let { body.put("group_id", it) }
+        execute(authorized(token, "api/quests").post(body.body()).build()).getLong("id")
+    }
+    suspend fun setQuestCompleted(token: String, id: Long, completed: Boolean) = unitCall(
+        authorized(token, "api/quests/$id").patch(JSONObject().put("completed", completed).body()).build()
+    )
+    suspend fun deleteQuest(token: String, id: Long) = unitCall(authorized(token, "api/quests/$id").delete().build())
+    suspend fun islands(token: String): Islands = io {
+        val j = execute(authorized(token, "api/islands").get().build())
+        val arr = j.getJSONArray("friends")
+        Islands(j.optInt("qp"), score = j.optInt("score", j.optInt("qp")), friends = (0 until arr.length()).map { i ->
+            val f = arr.getJSONObject(i)
+            IslandInfo(f.getLong("friend_id"), f.getInt("qp"), f.getInt("ep"), f.getInt("score"), f.getInt("level"),
+                if (f.isNull("next_at")) null else f.getInt("next_at"))
+        })
+    }
+    suspend fun island(token: String, userId: Long): HomeIsland = io {
+        val j = execute(authorized(token, "api/island/$userId").get().build())
+        val d = j.getJSONObject("decor")
+        val items = j.getJSONArray("items")
+        HomeIsland(
+            j.getLong("user_id"), d.keys().asSequence().associate { it.toInt() to d.getString(it) }, j.getInt("score"),
+            (0 until items.length()).map { i -> items.getJSONObject(i).let { DecorItem(it.getString("key"), it.getInt("unlock_at"), it.getBoolean("unlocked")) } },
+            places = j.optJSONObject("places")?.let { p ->
+                p.keys().asSequence().associate { k -> k.toInt() to p.getJSONObject(k).let { LifePlace(it.getString("kind"), it.optString("name")) } }
+            }.orEmpty(),
+            plots = j.optInt("plots", 0),
+            plotUnlocks = j.optJSONArray("plot_unlocks")?.let { a -> (0 until a.length()).map { a.getInt(it) } }.orEmpty(),
+            here = j.optJSONObject("here")?.let { h -> Here(if (h.isNull("plot")) null else h.getInt("plot"), h.optString("status")) },
+        )
+    }
+    suspend fun setPlaces(token: String, places: Map<Int, LifePlace>) = unitCall(
+        authorized(token, "api/island/places").put(
+            JSONObject().put("places", JSONObject().apply {
+                places.forEach { (k, v) -> put(k.toString(), JSONObject().put("kind", v.kind).put("name", v.name)) }
+            }).body()
+        ).build()
+    )
+    suspend fun setHere(token: String, plot: Int?, status: String) = unitCall(
+        authorized(token, "api/island/here").put(
+            JSONObject().put("plot", plot ?: JSONObject.NULL).put("status", status).body()
+        ).build()
+    )
+    suspend fun setDecor(token: String, decor: Map<Int, String>) = unitCall(
+        authorized(token, "api/island/decor").put(
+            JSONObject().put("slots", JSONObject().apply { decor.forEach { (k, v) -> put(k.toString(), v) } }).body()
+        ).build()
+    )
     suspend fun topics(token: String): List<Topic> = array(token, "api/topics", ::parseTopic)
     suspend fun createTopic(token: String, title: String, details: String, peerId: Long?, groupId: Long?) = io {
         val encrypted = CryptoBox.encrypt(JSONObject().put("title", title.trim()).put("details", details.trim()).toString())

@@ -26,7 +26,7 @@ APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
-SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks"]
+SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places"]
 # One-time creative entitlement for the accounts that already exist on the test
 # server when this version first starts. The marker row makes the migration
 # idempotent: later restarts and newly registered accounts stay unentitled.
@@ -165,7 +165,16 @@ def initialize_database() -> None:
             "commitment_salt": "TEXT", "plaintext_sha256": "TEXT", "commitment": "TEXT",
             "signing_public_key": "TEXT", "signature": "TEXT", "protocol_version": "INTEGER",
             "canonical_metadata": "TEXT", "minimum_release_at": "INTEGER",
+            # Chat extras (test branch): edit/delete marks, pins and media kind.
+            "edited_at": "INTEGER", "deleted_at": "INTEGER", "pinned_at": "INTEGER", "pinned_by": "INTEGER",
+            "chat_kind": "TEXT NOT NULL DEFAULT 'text'",
         })
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS chat_typing (
+            user_id INTEGER NOT NULL, friend_id INTEGER NOT NULL, at INTEGER NOT NULL,
+            PRIMARY KEY(user_id,friend_id)
+        );
+        """)
         conn.execute(
             "UPDATE messages SET mode='manual' WHERE manual_release=1 AND mode='timed' AND release_at=?",
             (MANUAL_RELEASE_SENTINEL,),
@@ -232,6 +241,21 @@ def initialize_database() -> None:
             slot INTEGER NOT NULL CHECK(slot BETWEEN 0 AND 5),
             item TEXT NOT NULL,
             PRIMARY KEY(user_id,slot),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS island_places (
+            user_id INTEGER NOT NULL,
+            plot INTEGER NOT NULL CHECK(plot BETWEEN 0 AND 15),
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY(user_id,plot),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS island_here (
+            user_id INTEGER PRIMARY KEY,
+            plot INTEGER,
+            status TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_quests_peer ON quests(peer_user_id,completed_at);
@@ -579,6 +603,21 @@ class QuestUpdate(BaseModel):
     completed: bool
 
 
+class PlaceIn(BaseModel):
+    kind: str = Field(min_length=1, max_length=24)
+    name: str = Field(default="", max_length=40)
+
+
+class PlacesUpdate(BaseModel):
+    # plot index ("0".."8") -> building; missing plots stay empty
+    places: dict[str, PlaceIn] = Field(default_factory=dict)
+
+
+class HereUpdate(BaseModel):
+    plot: int | None = None
+    status: str = Field(default="", max_length=60)
+
+
 class DecorUpdate(BaseModel):
     # slot index ("0".."5") -> item key; missing slots stay empty
     slots: dict[str, str] = Field(default_factory=dict)
@@ -593,10 +632,36 @@ class GlossaryExplanationWrite(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
 
+CHAT_KINDS = {"text", "image", "voice", "sticker"}
+CHAT_MEDIA_MAX = 3_000_000  # base64 characters, about 2.2 MB of media
+CHAT_EDIT_WINDOW = 24 * 3600
+TYPING_TTL = 8
+ONLINE_TTL = 120
+
+
 class ChatMessageCreate(BaseModel):
     ciphertext: str = Field(min_length=1, max_length=100_000)
     nonce: str = Field(min_length=1, max_length=256)
     encryption_key: str = Field(min_length=1, max_length=256)
+    kind: str = "text"
+    attachment_mime: str | None = Field(default=None, max_length=100)
+    attachment_ciphertext: str | None = Field(default=None, max_length=CHAT_MEDIA_MAX)
+    attachment_nonce: str | None = Field(default=None, max_length=256)
+
+
+class ChatMessageEdit(BaseModel):
+    ciphertext: str = Field(min_length=1, max_length=100_000)
+    nonce: str = Field(min_length=1, max_length=256)
+    encryption_key: str = Field(min_length=1, max_length=256)
+
+
+class ChatReaction(BaseModel):
+    # Empty removes my reaction.
+    emoji: str = Field(default="", max_length=8)
+
+
+class ChatPin(BaseModel):
+    pinned: bool
 
 
 class SparkCreate(BaseModel):
@@ -1526,6 +1591,36 @@ def decor_of(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
         "SELECT slot,item FROM island_decor WHERE user_id=? ORDER BY slot", (user_id,))}
 
 
+# "Mein Leben als Insel": building plots for real places (home, uni, the hut,
+# the club ...). Building land grows with the player's score; nothing is spent.
+# The catalogue is a whitelist so new kinds only need a sprite and one line.
+PLACE_KINDS = ("home", "bude", "uni", "hut", "club", "station", "city", "desk", "work", "cafe")
+# Plot n becomes buildable at PLOT_UNLOCKS[n] points (plot 0 = the home island's house).
+PLOT_UNLOCKS = (0, 0, 0, 40, 80, 120, 200, 300, 450)
+DEFAULT_PLACES = {0: ("home", "Zuhause")}
+
+
+def places_of(conn: sqlite3.Connection, user_id: int) -> dict[str, dict]:
+    rows = {r["plot"]: {"kind": r["kind"], "name": r["name"]} for r in conn.execute(
+        "SELECT plot,kind,name FROM island_places WHERE user_id=? ORDER BY plot", (user_id,))}
+    if not rows and not conn.execute("SELECT 1 FROM island_here WHERE user_id=?", (user_id,)).fetchone():
+        rows = {p: {"kind": k, "name": n} for p, (k, n) in DEFAULT_PLACES.items()}
+    return {str(p): v for p, v in sorted(rows.items())}
+
+
+def life_island(conn: sqlite3.Connection, user_id: int, score: int, own: bool) -> dict:
+    out = {
+        "places": places_of(conn, user_id),
+        "plots": sum(1 for at in PLOT_UNLOCKS if score >= at),
+        "plot_unlocks": list(PLOT_UNLOCKS),
+        "place_kinds": list(PLACE_KINDS),
+    }
+    if own:
+        here = conn.execute("SELECT plot,status,updated_at FROM island_here WHERE user_id=?", (user_id,)).fetchone()
+        out["here"] = {"plot": here["plot"], "status": here["status"], "updated_at": here["updated_at"]} if here else None
+    return out
+
+
 @app.get("/api/island/{user_id}")
 def island_of(user_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
     with db() as conn:
@@ -1536,7 +1631,51 @@ def island_of(user_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
         return {
             "user_id": user_id, "decor": decor_of(conn, user_id), "score": score,
             "items": [{"key": k, "unlock_at": v, "unlocked": score >= v} for k, v in DECOR_ITEMS.items()],
+            # Where the owner's figure stands is private: only the owner gets "here".
+            **life_island(conn, user_id, score, own=user_id == user["id"]),
         }
+
+
+@app.put("/api/island/places")
+def set_places(payload: PlacesUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        qp, ep = own_score(conn, user["id"])
+        score = qp + EP_WEIGHT * ep
+        clean: dict[int, tuple[str, str]] = {}
+        for plot, place in payload.places.items():
+            if not plot.isdigit() or not 0 <= int(plot) < len(PLOT_UNLOCKS):
+                raise HTTPException(422, "Unbekannter Bauplatz")
+            if PLOT_UNLOCKS[int(plot)] > score:
+                raise HTTPException(403, "Dieses Bauland ist noch nicht frei")
+            if place.kind not in PLACE_KINDS:
+                raise HTTPException(422, "Unbekanntes Gebäude")
+            clean[int(plot)] = (place.kind, " ".join(place.name.split()))
+        conn.execute("DELETE FROM island_places WHERE user_id=?", (user["id"],))
+        conn.executemany("INSERT INTO island_places(user_id,plot,kind,name) VALUES (?,?,?,?)",
+                         [(user["id"], p, k, n) for p, (k, n) in clean.items()])
+        # Remember that the player has decided (an emptied island stays empty);
+        # the figure leaves a place that no longer exists.
+        conn.execute("INSERT OR IGNORE INTO island_here(user_id,plot,status,updated_at) VALUES (?,NULL,'',?)", (user["id"], now_ts()))
+        here = conn.execute("SELECT plot FROM island_here WHERE user_id=?", (user["id"],)).fetchone()["plot"]
+        if here is not None and here not in clean:
+            conn.execute("UPDATE island_here SET plot=NULL,status='' WHERE user_id=?", (user["id"],))
+        return {"ok": True, **life_island(conn, user["id"], score, own=True)}
+
+
+@app.put("/api/island/here")
+def set_here(payload: HereUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        if not conn.execute("SELECT 1 FROM island_here WHERE user_id=?", (user["id"],)).fetchone():
+            # First touch turns the default home into a real row.
+            conn.executemany("INSERT OR IGNORE INTO island_places(user_id,plot,kind,name) VALUES (?,?,?,?)",
+                             [(user["id"], p, k, n) for p, (k, n) in DEFAULT_PLACES.items()])
+        if payload.plot is not None and not conn.execute(
+                "SELECT 1 FROM island_places WHERE user_id=? AND plot=?", (user["id"], payload.plot)).fetchone():
+            raise HTTPException(422, "Dort steht noch kein Gebäude")
+        conn.execute("""INSERT INTO island_here(user_id,plot,status,updated_at) VALUES (?,?,?,?)
+                        ON CONFLICT(user_id) DO UPDATE SET plot=excluded.plot,status=excluded.status,updated_at=excluded.updated_at""",
+                     (user["id"], payload.plot, " ".join(payload.status.split()) if payload.plot is not None else "", now_ts()))
+        return {"ok": True}
 
 
 @app.put("/api/island/decor")
@@ -1572,10 +1711,11 @@ def islands(user: sqlite3.Row = Depends(current_user)) -> dict:
             if blocked(conn, me, f["id"]):
                 continue
             qp, ep = pair_qp(conn, me, f["id"]), pair_ep(conn, me, f["id"])
-            score = qp + EP_WEIGHT * ep
+            chat = min(chat_days_together(conn, me, f["id"]), CHAT_DAY_CAP) * CHAT_DAY_POINTS
+            score = qp + EP_WEIGHT * ep + chat
             level = island_level(score)
             nxt = ISLAND_THRESHOLDS[level] if level < len(ISLAND_THRESHOLDS) else None
-            result.append({"friend_id": f["id"], "qp": qp, "ep": ep, "score": score, "level": level, "next_at": nxt})
+            result.append({"friend_id": f["id"], "qp": qp, "ep": ep, "chat": chat, "score": score, "level": level, "next_at": nxt})
         own_qp = int(conn.execute("""SELECT COALESCE(SUM(q.points),0) FROM quests q WHERE q.completed_at IS NOT NULL AND
                                   ((q.peer_user_id IS NOT NULL AND (q.creator_id=? OR q.peer_user_id=?)) OR EXISTS(
                                   SELECT 1 FROM group_members gm WHERE gm.group_id=q.group_id AND gm.user_id=?))""",
@@ -1852,12 +1992,42 @@ def list_chat_threads(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
                     "friend_id": friend_id, "friend_name": friend["name"],
                     "avatar_emoji": friend["avatar_emoji"], "display_color": friend["display_color"],
                     "last_message_at": row["created_at"], "unread_count": 0,
-                    "last_sender_id": row["sender_id"], "last_ciphertext": row["ciphertext"],
-                    "last_nonce": row["nonce"], "last_encryption_key": row["encryption_key"],
+                    "last_sender_id": row["sender_id"],
+                    "last_ciphertext": None if row["deleted_at"] is not None else row["ciphertext"],
+                    "last_nonce": None if row["deleted_at"] is not None else row["nonce"],
+                    "last_encryption_key": None if row["deleted_at"] is not None else row["encryption_key"],
+                    "last_kind": row["chat_kind"] or "text", "last_deleted": row["deleted_at"] is not None,
                 }
             if row["recipient_id"] == user["id"] and row["read_at"] is None:
                 threads[friend_id]["unread_count"] += 1
     return list(threads.values())
+
+
+def chat_view(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    deleted = row["deleted_at"] is not None
+    return {
+        "id": row["id"], "sender_id": row["sender_id"], "recipient_id": row["recipient_id"],
+        # A deleted line keeps its place in the flow but loses its content.
+        "ciphertext": None if deleted else row["ciphertext"], "nonce": None if deleted else row["nonce"],
+        "encryption_key": None if deleted else row["encryption_key"],
+        "created_at": row["created_at"], "read_at": row["read_at"],
+        "edited_at": row["edited_at"], "deleted": deleted, "pinned_at": row["pinned_at"],
+        "kind": row["chat_kind"] or "text",
+        "attachment_mime": None if deleted else row["attachment_mime"],
+        "has_attachment": (not deleted) and row["attachment_ciphertext"] is not None,
+        "reactions": [] if deleted else reactions(conn, row["id"]),
+    }
+
+
+def chat_row(conn: sqlite3.Connection, user_id: int, friend_id: int, message_id: int) -> sqlite3.Row:
+    row = conn.execute(
+        """SELECT * FROM messages WHERE id=? AND message_class='instant' AND
+           ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))""",
+        (message_id, user_id, friend_id, friend_id, user_id),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Nachricht nicht gefunden")
+    return row
 
 
 @app.get("/api/chats/{friend_id}/messages")
@@ -1870,29 +2040,161 @@ def list_chat_messages(friend_id: int, user: sqlite3.Row = Depends(current_user)
                AND recipient_id=? AND read_at IS NULL""", (read_at, friend_id, user["id"]),
         )
         rows = conn.execute(
-            """SELECT id,sender_id,recipient_id,ciphertext,nonce,encryption_key,created_at,read_at
-               FROM messages WHERE message_class='instant' AND
+            """SELECT * FROM messages WHERE message_class='instant' AND
                ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))
                ORDER BY created_at,id""", (user["id"], friend_id, friend_id, user["id"]),
         ).fetchall()
-    return [dict(row) for row in rows]
+        return [chat_view(conn, row) for row in rows]
 
 
 @app.post("/api/chats/{friend_id}/messages", status_code=201)
 def create_chat_message(
     friend_id: int, payload: ChatMessageCreate, user: sqlite3.Row = Depends(current_user),
 ) -> dict:
+    if payload.kind not in CHAT_KINDS:
+        raise HTTPException(422, "Unbekannte Nachrichtenart")
+    media = payload.kind in {"image", "voice"}
+    if media != (payload.attachment_ciphertext is not None and payload.attachment_nonce is not None):
+        raise HTTPException(422, "Bild und Sprachnachricht brauchen genau einen Anhang")
+    if media and not (payload.attachment_mime or "").startswith("image/" if payload.kind == "image" else "audio/"):
+        raise HTTPException(422, "Anhang passt nicht zur Nachrichtenart")
     current = now_ts()
     with db() as conn:
         require_chat_enabled(conn, user["id"], friend_id)
         cur = conn.execute(
             """INSERT INTO messages(sender_id,recipient_id,ciphertext,nonce,encryption_key,release_at,
-               created_at,released_at,title,mode,message_class)
-               VALUES (?,?,?,?,?,?,?,?,?,'instant','instant')""",
+               created_at,released_at,title,mode,message_class,chat_kind,attachment_mime,
+               attachment_ciphertext,attachment_nonce)
+               VALUES (?,?,?,?,?,?,?,?,?,'instant','instant',?,?,?,?)""",
             (user["id"], friend_id, payload.ciphertext, payload.nonce, payload.encryption_key,
-             current, current, current, ""),
+             current, current, current, "", payload.kind,
+             payload.attachment_mime if media else None, payload.attachment_ciphertext if media else None,
+             payload.attachment_nonce if media else None),
         )
+        # Sending ends my typing state at once.
+        conn.execute("DELETE FROM chat_typing WHERE user_id=? AND friend_id=?", (user["id"], friend_id))
     return {"id": int(cur.lastrowid)}
+
+
+@app.get("/api/chats/{friend_id}/messages/{message_id}/attachment")
+def chat_attachment(friend_id: int, message_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        require_chat_enabled(conn, user["id"], friend_id)
+        row = chat_row(conn, user["id"], friend_id, message_id)
+        if row["deleted_at"] is not None or row["attachment_ciphertext"] is None:
+            raise HTTPException(404, "Kein Anhang")
+        return {"mime": row["attachment_mime"], "ciphertext": row["attachment_ciphertext"],
+                "nonce": row["attachment_nonce"], "encryption_key": row["encryption_key"]}
+
+
+@app.patch("/api/chats/{friend_id}/messages/{message_id}")
+def edit_chat_message(friend_id: int, message_id: int, payload: ChatMessageEdit,
+                      user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        require_chat_enabled(conn, user["id"], friend_id)
+        row = chat_row(conn, user["id"], friend_id, message_id)
+        if row["sender_id"] != user["id"]:
+            raise HTTPException(403, "Nur eigene Nachrichten können bearbeitet werden")
+        if row["deleted_at"] is not None or (row["chat_kind"] or "text") != "text":
+            raise HTTPException(409, "Diese Nachricht kann nicht bearbeitet werden")
+        if now_ts() - row["created_at"] > CHAT_EDIT_WINDOW:
+            raise HTTPException(409, "Bearbeiten geht nur innerhalb von 24 Stunden")
+        conn.execute("UPDATE messages SET ciphertext=?,nonce=?,encryption_key=?,edited_at=? WHERE id=?",
+                     (payload.ciphertext, payload.nonce, payload.encryption_key, now_ts(), message_id))
+    return {"ok": True}
+
+
+@app.delete("/api/chats/{friend_id}/messages/{message_id}")
+def delete_chat_message(friend_id: int, message_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        require_chat_enabled(conn, user["id"], friend_id)
+        row = chat_row(conn, user["id"], friend_id, message_id)
+        if row["sender_id"] != user["id"]:
+            raise HTTPException(403, "Nur eigene Nachrichten können gelöscht werden")
+        conn.execute("""UPDATE messages SET deleted_at=?,ciphertext='',nonce='',encryption_key='',
+                        attachment_ciphertext=NULL,attachment_nonce=NULL,attachment_mime=NULL,pinned_at=NULL,
+                        pinned_by=NULL WHERE id=?""", (now_ts(), message_id))
+        conn.execute("DELETE FROM message_reactions WHERE message_id=?", (message_id,))
+    return {"ok": True}
+
+
+@app.put("/api/chats/{friend_id}/messages/{message_id}/reaction")
+def react_chat_message(friend_id: int, message_id: int, payload: ChatReaction,
+                       user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        require_chat_enabled(conn, user["id"], friend_id)
+        row = chat_row(conn, user["id"], friend_id, message_id)
+        if row["deleted_at"] is not None:
+            raise HTTPException(409, "Gelöschte Nachricht")
+        emoji = payload.emoji.strip()
+        if not emoji:
+            conn.execute("DELETE FROM message_reactions WHERE message_id=? AND user_id=?", (message_id, user["id"]))
+        else:
+            conn.execute("""INSERT INTO message_reactions(message_id,user_id,emoji,created_at) VALUES (?,?,?,?)
+                         ON CONFLICT(message_id,user_id) DO UPDATE SET emoji=excluded.emoji,created_at=excluded.created_at""",
+                         (message_id, user["id"], emoji, now_ts()))
+    return {"ok": True}
+
+
+@app.put("/api/chats/{friend_id}/messages/{message_id}/pin")
+def pin_chat_message(friend_id: int, message_id: int, payload: ChatPin,
+                     user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        require_chat_enabled(conn, user["id"], friend_id)
+        row = chat_row(conn, user["id"], friend_id, message_id)
+        if row["deleted_at"] is not None:
+            raise HTTPException(409, "Gelöschte Nachricht")
+        if payload.pinned:
+            conn.execute("UPDATE messages SET pinned_at=?,pinned_by=? WHERE id=?", (now_ts(), user["id"], message_id))
+        else:
+            conn.execute("UPDATE messages SET pinned_at=NULL,pinned_by=NULL WHERE id=?", (message_id,))
+    return {"ok": True}
+
+
+@app.post("/api/chats/{friend_id}/typing")
+def chat_typing(friend_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        require_chat_enabled(conn, user["id"], friend_id)
+        conn.execute("""INSERT INTO chat_typing(user_id,friend_id,at) VALUES (?,?,?)
+                     ON CONFLICT(user_id,friend_id) DO UPDATE SET at=excluded.at""", (user["id"], friend_id, now_ts()))
+    return {"ok": True}
+
+
+def chat_days_together(conn: sqlite3.Connection, a: int, b: int) -> int:
+    """Days on which both friends wrote to each other in the chat (UTC days)."""
+    return int(conn.execute(
+        """SELECT COUNT(*) FROM (
+             SELECT created_at/86400 d FROM messages WHERE message_class='instant' AND deleted_at IS NULL
+               AND sender_id=? AND recipient_id=?
+             INTERSECT
+             SELECT created_at/86400 d FROM messages WHERE message_class='instant' AND deleted_at IS NULL
+               AND sender_id=? AND recipient_id=?)""", (a, b, b, a)).fetchone()[0])
+
+
+CHAT_DAY_POINTS = 1
+CHAT_DAY_CAP = 60
+
+
+@app.get("/api/chats/{friend_id}/presence")
+def chat_presence(friend_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    current = now_ts()
+    with db() as conn:
+        require_chat_enabled(conn, user["id"], friend_id)
+        typing = conn.execute("SELECT at FROM chat_typing WHERE user_id=? AND friend_id=?", (friend_id, user["id"])).fetchone()
+        seen = conn.execute("SELECT COALESCE(MAX(last_seen_at),0) FROM sessions WHERE user_id=?", (friend_id,)).fetchone()[0]
+        today = current // 86400
+        wrote = {r["sender_id"] for r in conn.execute(
+            """SELECT DISTINCT sender_id FROM messages WHERE message_class='instant' AND deleted_at IS NULL
+               AND created_at/86400=? AND ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))""",
+            (today, user["id"], friend_id, friend_id, user["id"]))}
+        days = chat_days_together(conn, user["id"], friend_id)
+    return {
+        "typing": bool(typing and current - typing["at"] <= TYPING_TTL),
+        "online": bool(seen and current - seen <= ONLINE_TTL),
+        "last_seen_at": seen or None,
+        "chat_day_today": user["id"] in wrote and friend_id in wrote,
+        "chat_days": days, "chat_points": min(days, CHAT_DAY_CAP) * CHAT_DAY_POINTS,
+    }
 
 
 # ---------------------------------------------------------------------------

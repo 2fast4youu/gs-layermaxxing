@@ -1,5 +1,8 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.border
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -290,35 +293,44 @@ internal fun LetterActivityRow(
 ) {
     val tag = FiefScenes.envelopeTag(state, max(0L, (message.releaseAt ?: now) - now))
     val title = message.title.ifBlank { Conversations.SEALED_FALLBACK }
-    val accent = when {
-        state == LetterState.READY -> MaterialTheme.colorScheme.tertiary
-        state == LetterState.LOCKED_MUTUAL_WAITING_ME -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.outline
+    val p = Harbour.palette()
+    val seal = when {
+        state == LetterState.READY -> p.wax
+        state == LetterState.LOCKED_MUTUAL_WAITING_ME -> p.gold
+        else -> p.inkSoft.copy(alpha = .7f)
     }
+    val shape = RoundedCornerShape(16.dp)
+    // A letter in the flow is an envelope on the paper: cream card, a dashed
+    // airmail edge, and a wax seal whose colour says whether it may be opened.
     Row(
-        Modifier.fillMaxWidth(if (outgoing) .82f else .82f).heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 14.dp))
-            .background(accent.copy(alpha = if (pulsing) .30f else .12f))
+        Modifier.fillMaxWidth(.84f).heightIn(min = 60.dp)
+            .clip(shape)
+            .background(if (pulsing) p.gold.copy(alpha = .22f) else p.card)
+            .border(1.dp, seal.copy(alpha = .35f), shape)
+            .drawBehind {
+                // the envelope flap: two faint diagonals from the top corners
+                val c = p.inkSoft.copy(alpha = .10f); val w = 1.dp.toPx()
+                drawLine(c, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(size.width / 2, size.height * .55f), w)
+                drawLine(c, androidx.compose.ui.geometry.Offset(size.width, 0f), androidx.compose.ui.geometry.Offset(size.width / 2, size.height * .55f), w)
+            }
             .clickable(onClick = onOpenRoom)
             .semantics {
                 contentDescription = "$title, ${stateWord(state)}. Im Briefe öffnen"
                 role = Role.Button
             }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            FiefScenes.envelopeAsset(state, message.incoming).let(::envelopeGlyph),
-            fontSize = 20.sp, modifier = Modifier.padding(end = 10.dp),
-        )
-        Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, fontSize = 14.sp)
+        WaxSeal(if (state == LetterState.READY || state == LetterState.LOCKED_MUTUAL_WAITING_ME) "✉" else FiefScenes.envelopeAsset(state, message.incoming).let(::envelopeGlyph), seal, Modifier.size(34.dp))
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(title, fontWeight = FontWeight.Bold, maxLines = 1, fontSize = 14.sp, color = p.ink,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text(
                 listOfNotNull(stateWord(state), tag?.takeIf { state != LetterState.READY }).joinToString(" · "),
-                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp, color = if (state == LetterState.READY) p.wax else p.inkSoft, maxLines = 1,
             )
         }
-        Text("›", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("›", fontSize = 22.sp, color = p.inkSoft)
     }
 }
 

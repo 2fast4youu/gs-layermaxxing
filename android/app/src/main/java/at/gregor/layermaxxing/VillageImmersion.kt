@@ -30,18 +30,18 @@ internal fun VillageTheme(enabled: Boolean, content: @Composable () -> Unit) {
     fun TextStyle.display() = copy(fontFamily = Kit.Display, fontWeight = FontWeight.Normal)
     MaterialTheme(
         colorScheme = lightColorScheme(
-            primary = Color(0xFF3E8E2A), onPrimary = Color.White,
-            primaryContainer = Color(0xFFD7EFC6), onPrimaryContainer = Color(0xFF173A0C),
+            primary = Color(0xFF17A2A6), onPrimary = Color.White,
+            primaryContainer = Color(0xFFCFF1F0), onPrimaryContainer = Color(0xFF0B3F42),
             secondary = Color(0xFF2F5E9E), onSecondary = Color.White,
             secondaryContainer = Color(0xFFDCE7F6), onSecondaryContainer = Color(0xFF0F2747),
             tertiary = Color(0xFFB5832A), onTertiary = Color.White,
-            background = Color(0xFFFFF9EC), onBackground = Color(0xFF2A2219),
-            surface = Color(0xFFFFF9EC), onSurface = Color(0xFF2A2219),
-            surfaceVariant = Color(0xFFF3E8D2), onSurfaceVariant = Color(0xFF6B5B48),
-            outline = Color(0xFFC9B48E), outlineVariant = Color(0xFFE6D8BC),
-            surfaceContainer = Color(0xFFF8EEDB), surfaceContainerHigh = Color(0xFFF3E8D2),
-            surfaceContainerLow = Color(0xFFFCF4E4), surfaceContainerLowest = Color.White,
-            surfaceContainerHighest = Color(0xFFEFE2C8), surfaceDim = Color(0xFFEADCC0), surfaceBright = Color(0xFFFFF9EC),
+            background = Color.White, onBackground = Color(0xFF1F3B4D),
+            surface = Color.White, onSurface = Color(0xFF1F3B4D),
+            surfaceVariant = Color(0xFFEFF7F7), onSurfaceVariant = Color(0xFF5E7884),
+            outline = Color(0xFFB7D3D6), outlineVariant = Color(0xFFDDEDEE),
+            surfaceContainer = Color(0xFFF2F9F9), surfaceContainerHigh = Color(0xFFEAF5F5),
+            surfaceContainerLow = Color(0xFFF7FBFB), surfaceContainerLowest = Color.White,
+            surfaceContainerHighest = Color(0xFFE2F0F1), surfaceDim = Color(0xFFDCEBEC), surfaceBright = Color.White,
         ),
         typography = Typography(
             displayLarge = base.displayLarge.display(), displayMedium = base.displayMedium.display(), displaySmall = base.displaySmall.display(),
@@ -76,8 +76,9 @@ internal fun VillageRoom(
     LaunchedEffect(Unit) { entered = true }
     val rise by animateFloatAsState(if (entered) 1f else 0f, spring(dampingRatio = .78f, stiffness = 380f), label = "room-rise")
     Box(Modifier.fillMaxSize()) {
-        if (!mapBehind) Image(painterResource(R.drawable.village_plate), null, Modifier.fillMaxSize().blur(2.dp), contentScale = ContentScale.Crop)
-        Box(Modifier.fillMaxSize().background(Color(0xCC0B1424)).pointerInput(Unit) {
+        if (!mapBehind) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Isle.SeaTop, Isle.SeaBottom))))
+        // A light sea veil: the island stays visible around the open building.
+        Box(Modifier.fillMaxSize().background(Color(0x5517555A)).pointerInput(Unit) {
             awaitPointerEventScope { while (true) awaitPointerEvent() }
         })
         Column(
@@ -90,8 +91,8 @@ internal fun VillageRoom(
             RoomHeader(icon, title, onBack = null, onClose = onClose)
             Box(
                 Modifier.weight(1f, fill = false).fillMaxWidth()
-                    .shadow(18.dp, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp), ambientColor = Kit.Navy, spotColor = Kit.Navy)
-                    .background(Kit.Ivory, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                    .shadow(12.dp, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                    .background(Color.White, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
                     .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)),
             ) { CompositionLocalProvider(LocalInVillageRoom provides true) { content() } }
         }

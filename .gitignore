@@ -36,3 +36,4 @@ captures/
 *.zip
 .DS_Store
 Thumbs.db
+android/.kotlin/

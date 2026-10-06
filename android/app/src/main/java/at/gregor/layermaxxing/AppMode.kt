@@ -8,8 +8,8 @@ package at.gregor.layermaxxing
  * into [BOTH]. Stored "game" keys migrate there and start in the village.
  */
 enum class AppMode(val key: String, val label: String, val detail: String) {
-    MESSENGER("messenger", "Messenger", "Chats, Briefe, Themen und Gruppen – ohne Dorf."),
-    BOTH("both", "Messenger + Dorf", "Alles vom Messenger, dazu das Dorf, das mit euch wächst.");
+    MESSENGER("messenger", "Messenger", "Chats, Briefe, Themen und Gruppen – ohne Inseln."),
+    BOTH("both", "Messenger + Inseln", "Alles vom Messenger, dazu eine Insel pro Freund, die mit euch wächst.");
     val startTab: MainTab get() = MainTab.CHATS
     val showsValley: Boolean get() = this != MESSENGER
     fun tabs(): List<MainTab> = when (this) {
