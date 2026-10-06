@@ -119,6 +119,7 @@ internal fun BoxWithConstraintsScope.LifeLayer(
     showFigure: Boolean,
     onPlot: ((Int) -> Unit)?,
     onFigure: (() -> Unit)?,
+    tags: Boolean = true,
 ) {
     val w = maxWidth; val h = maxHeight
     val zoom = LocalIslandZoom.current
@@ -138,7 +139,7 @@ internal fun BoxWithConstraintsScope.LifeLayer(
                 .then(if (onPlot != null) Modifier.worldTap(if (place == null) "Bauplatz bebauen" else "$label öffnen") { gate { onPlot(i) } } else Modifier),
             alignment = Alignment.BottomCenter,
         )
-        Box(Modifier.offset(x = w * x - 60.dp, y = h * y + 2.dp).width(120.dp).then(keep), Alignment.TopCenter) {
+        if (tags) Box(Modifier.offset(x = w * x - 60.dp, y = h * y + 2.dp).width(120.dp).then(keep), Alignment.TopCenter) {
             PlaceTag(if (place == null) "＋ Bauplatz" else label, accent = place == null)
         }
     }

@@ -121,6 +121,7 @@ internal fun HubIsland(
     showFigure: Boolean = false,
     onPlot: ((Int) -> Unit)? = null,
     onFigure: (() -> Unit)? = null,
+    lifeTags: Boolean = true,
 ) {
     val plan = androidx.compose.runtime.remember(seed, decor) {
         val base = IslandPlans.home(seed)
@@ -140,6 +141,7 @@ internal fun HubIsland(
         if (life != null) LifeLayer(
             places = life.places, plots = life.plots, unlocks = life.plotUnlocks, here = life.here?.plot,
             showFigure = showFigure && onSlot == null, onPlot = if (onSlot == null) onPlot else null, onFigure = onFigure,
+            tags = lifeTags,
         )
         if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (x, y) ->
             val item = decor[i]

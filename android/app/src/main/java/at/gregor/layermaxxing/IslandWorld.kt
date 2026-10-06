@@ -270,7 +270,7 @@ internal fun IslandWorld(
                 }
             }
             else -> IslandMap(
-                ownName = ownName, pals = pals, infoById = infoById, letters = letters, homeDecor = home?.decor.orEmpty(), labels = labels,
+                ownName = ownName, pals = pals, infoById = infoById, letters = letters, homeDecor = home?.decor.orEmpty(), homeLife = home, labels = labels,
                 onHome = { view = "home" }, onFriend = { selectedFriend = it }, ownSeed = ownId ?: 1L,
             )
         }
@@ -475,6 +475,7 @@ private fun IslandMap(
     infoById: Map<Long, ApiClient.IslandInfo>,
     letters: List<ApiClient.Message>,
     homeDecor: Map<Int, String>,
+    homeLife: ApiClient.HomeIsland? = null,
     labels: Map<Long, String> = emptyMap(),
     onHome: () -> Unit,
     onFriend: (Long) -> Unit,
@@ -667,7 +668,8 @@ private fun IslandMap(
                 .worldTap("Meine Insel öffnen", onHome),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false, seed = ownSeed)
+            // The overview shows the same life buildings as the close-up, just without name tags.
+            HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false, seed = ownSeed, life = homeLife, lifeTags = false)
             Row(
                 Modifier.offset(y = (-8).dp).background(Color(0xD9243A3F), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
