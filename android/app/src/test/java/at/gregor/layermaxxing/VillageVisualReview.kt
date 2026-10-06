@@ -1,5 +1,7 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.foundation.layout.height
+
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -140,6 +142,57 @@ class VillageVisualReview {
                         }
                     }
                     Composer(ComposerPlan(true, true, "Nachricht", 0, null), "", {}, {}, {}, {})
+                }
+            }
+        }
+    }
+
+    @Test fun chatExtras() = shot("13-chat-extras") {
+        val now = java.time.Instant.now().epochSecond
+        val heart = listOf(ApiClient.Reaction(2, "Gerfried", "❤️"), ApiClient.Reaction(1, "Gregor", "❤️"))
+        val terms = listOf(ApiClient.GlossaryTerm(1, "Brennerhaus", "Gregor", emptyList(), false))
+        LayermaxxingTheme("light") {
+            androidx.compose.material3.Surface {
+                androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    ThreadHeader(friends[0], false, 0, 0, false, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                        presenceLine = "schreibt gerade …", online = true, chatDays = 12)
+                    PinnedStrip(listOf(ApiClient.ChatMessage(7, 2, 1, "Schlüssel liegt unter dem roten Blumentopf", now - 9000, null, pinnedAt = now)), Harbour.palette()) {}
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f).fillMaxSize().chatWallpaper()) {
+                        androidx.compose.foundation.layout.Column(
+                            androidx.compose.ui.Modifier.padding(10.dp),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+                        ) {
+                            ThreadChatBubble(ApiClient.ChatMessage(1, 2, 1, "Samstag aufs Brennerhaus wandern?", now - 600, null, reactions = heart), false, {}, {}, ownUserId = 1, glossary = terms)
+                            ThreadChatBubble(ApiClient.ChatMessage(2, 1, 2, "Bin dabei, ich mach eine Quest draus", now - 500, now - 400, editedAt = now - 450), true, {}, {}, ownUserId = 1)
+                            ThreadChatBubble(ApiClient.ChatMessage(3, 2, 1, ChatExtras.stickerText("palm"), now - 300, null, kind = "sticker"), false, {}, {}, ownUserId = 1)
+                            ThreadChatBubble(ApiClient.ChatMessage(4, 1, 2, "0:07", now - 200, now - 100, kind = "voice", hasAttachment = true), true, {}, {}, ownUserId = 1,
+                                media = { m, tint -> VoiceNote(m.text, { ByteArray(0) }, tint, Harbour.palette()) })
+                            ThreadChatBubble(ApiClient.ChatMessage(5, 2, 1, "", now - 90, null, deleted = true), false, {}, {}, ownUserId = 1)
+                            TypingBubble("Gerfried")
+                        }
+                    }
+                    StickerTray(Harbour.palette()) {}
+                    Composer(ComposerPlan(true, true, "Nachricht", 0, null), "", {}, {}, {}, {},
+                        extras = ComposerExtras(true, false, "0:00", {}, {}, {}, {}))
+                }
+            }
+        }
+    }
+
+    @Test fun chatActions() = shot("14-chat-actions") {
+        LayermaxxingTheme("light") {
+            androidx.compose.material3.Surface {
+                androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize().padding(top = 40.dp)) {
+                    ReactionBar("❤️", Harbour.palette()) {}
+                    androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(20.dp))
+                    androidx.compose.foundation.layout.Row(androidx.compose.ui.Modifier.padding(12.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                        ChatExtras.STICKERS.take(4).forEach { HarbourSticker(it, 80.dp) }
+                    }
+                    androidx.compose.foundation.layout.Row(androidx.compose.ui.Modifier.padding(12.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                        ChatExtras.STICKERS.drop(4).forEach { HarbourSticker(it, 80.dp) }
+                    }
+                    Composer(ComposerPlan(true, true, "Nachricht", 0, null), "", {}, {}, {}, {},
+                        extras = ComposerExtras(false, true, "0:12", {}, {}, {}, {}))
                 }
             }
         }

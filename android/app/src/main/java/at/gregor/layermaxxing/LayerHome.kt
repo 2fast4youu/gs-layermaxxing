@@ -198,6 +198,8 @@ fun LayerHome(
     // Exactly one letter composer exists in the whole app. The thread, the letter
     // section and the castle post office all open this one, never a second copy.
     var composeLetterFriend by remember { mutableStateOf<Long?>(null) }
+    // A chat line turned into a letter arrives here as the letter's first draft.
+    var composeLetterText by remember { mutableStateOf("") }
     var fogVisible by remember { mutableStateOf(false) }
     val opened = remember { mutableStateMapOf<Long, OpenedMessage>() }
     // Session-scoped dismissals: a snoozed request dialog or an "not now" EP card
@@ -513,6 +515,7 @@ fun LayerHome(
                     onRespond = ::respondRequest,
                     act = ::act, onBack = { openThreadFriend = null },
                     onComposeLetter = { composeLetterFriend = it },
+                    onLetterFromChat = { id, body -> composeLetterText = body; composeLetterFriend = id },
                     onOpenLetter = ::openLetter,
                     onLockedTap = ::lockedLetterTap,
                     onProof = { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } },
@@ -584,15 +587,15 @@ fun LayerHome(
     }
     composeLetterFriend?.let { friendId ->
         ModalBottomSheet(
-            onDismissRequest = { composeLetterFriend = null },
+            onDismissRequest = { composeLetterFriend = null; composeLetterText = "" },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             dragHandle = null,
         ) {
             SendScreen(
                 token, api, friends, groups, friendshipSettings, initialRecipient = friendId,
-                creativeActive = creativeActive,
-                onClose = { composeLetterFriend = null },
-                onSent = { _, _ -> composeLetterFriend = null; act {} },
+                creativeActive = creativeActive, initialText = composeLetterText,
+                onClose = { composeLetterFriend = null; composeLetterText = "" },
+                onSent = { _, _ -> composeLetterFriend = null; composeLetterText = ""; act {} },
             )
         }
     }
@@ -865,11 +868,11 @@ private fun SendScreen(
     token: String, api: ApiClient, friends: List<ApiClient.UserSummary>, groups: List<ApiClient.Group>,
     settings: List<ApiClient.FriendshipSettings>,
     initialRecipient: Long?, creativeActive: Boolean = false,
-    onClose: () -> Unit, onSent: (Long?, Long?) -> Unit,
+    onClose: () -> Unit, onSent: (Long?, Long?) -> Unit, initialText: String = "",
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var title by remember { mutableStateOf("") }; var coverNote by remember { mutableStateOf("") }; var text by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }; var coverNote by remember { mutableStateOf("") }; var text by remember(initialText) { mutableStateOf(initialText) }
     var selected by remember(initialRecipient) { mutableStateOf(initialRecipient?.let(::setOf) ?: emptySet()) }; var groupId by remember { mutableStateOf<Long?>(null) }
     var mode by remember { mutableStateOf(ComposeMode.DURATION) }; var amount by remember { mutableStateOf("3") }
     var modeMenu by remember { mutableStateOf(false) }

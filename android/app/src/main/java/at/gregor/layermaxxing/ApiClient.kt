@@ -159,6 +159,14 @@ class ApiClient(
     data class ChatMessage(
         val id: Long, val senderId: Long, val recipientId: Long, val text: String,
         val createdAt: Long, val readAt: Long?,
+        val editedAt: Long? = null, val deleted: Boolean = false, val pinnedAt: Long? = null,
+        /** text, image, voice or sticker. */
+        val kind: String = "text", val attachmentMime: String? = null, val hasAttachment: Boolean = false,
+        val reactions: List<Reaction> = emptyList(),
+    )
+    data class ChatPresence(
+        val typing: Boolean, val online: Boolean, val lastSeenAt: Long?,
+        val chatDayToday: Boolean, val chatDays: Int, val chatPoints: Int,
     )
     data class ProofDetails(
         val messageId: Long, val title: String, val legacy: Boolean, val releaseRule: String,
@@ -302,8 +310,18 @@ class ApiClient(
         val lastCipher = it.nullableString("last_ciphertext")
         val lastNonce = it.nullableString("last_nonce")
         val lastKey = it.nullableString("last_encryption_key")
-        val lastText = if (lastCipher != null && lastNonce != null && lastKey != null)
+        val decrypted = if (lastCipher != null && lastNonce != null && lastKey != null)
             runCatching { CryptoBox.decrypt(lastCipher, lastNonce, lastKey) }.getOrNull() else null
+        // Media, stickers and deleted lines get a neutral word instead of their raw text.
+        val lastText = when {
+            it.optBoolean("last_deleted") -> "Nachricht gelöscht"
+            else -> when (it.optString("last_kind", "text")) {
+                "image" -> "📷 Foto"
+                "voice" -> "🍾 Flaschenpost"
+                "sticker" -> "Sticker"
+                else -> decrypted
+            }
+        }
         ChatThread(
             it.getLong("friend_id"), it.getString("friend_name"), it.optString("avatar_emoji", "👤"),
             it.optString("display_color", "#6750A4"), it.getLong("last_message_at"), it.getInt("unread_count"),
@@ -313,17 +331,66 @@ class ApiClient(
     suspend fun chatMessages(token: String, friendId: Long): List<ChatMessage> = array(
         token, "api/chats/$friendId/messages",
     ) {
+        val deleted = it.optBoolean("deleted")
         ChatMessage(
             it.getLong("id"), it.getLong("sender_id"), it.getLong("recipient_id"),
-            CryptoBox.decrypt(it.getString("ciphertext"), it.getString("nonce"), it.getString("encryption_key")),
+            if (deleted) "" else CryptoBox.decrypt(it.getString("ciphertext"), it.getString("nonce"), it.getString("encryption_key")),
             it.getLong("created_at"), it.nullableLong("read_at"),
+            editedAt = it.nullableLong("edited_at"), deleted = deleted, pinnedAt = it.nullableLong("pinned_at"),
+            kind = it.optString("kind", "text").ifBlank { "text" }, attachmentMime = it.nullableString("attachment_mime"),
+            hasAttachment = it.optBoolean("has_attachment"),
+            reactions = it.optJSONArray("reactions")?.objects()?.map { r ->
+                Reaction(r.getLong("user_id"), r.getString("name"), r.getString("emoji"))
+            }.orEmpty(),
         )
     }
-    suspend fun sendChat(token: String, friendId: Long, text: String) = io {
+
+    /**
+     * Sends one chat line. Photos and voice notes travel as an attachment that is
+     * encrypted with the same fresh key as the line itself.
+     */
+    suspend fun sendChat(
+        token: String, friendId: Long, text: String, kind: String = "text",
+        attachment: ByteArray? = null, attachmentMime: String? = null,
+    ) = io {
         val encrypted = CryptoBox.encrypt(text)
-        execute(authorized(token, "api/chats/$friendId/messages").post(JSONObject()
+        val body = JSONObject()
             .put("ciphertext", encrypted.ciphertext).put("nonce", encrypted.nonce)
-            .put("encryption_key", encrypted.key).body()).build()).getLong("id")
+            .put("encryption_key", encrypted.key).put("kind", kind)
+        if (attachment != null) {
+            val sealed = CryptoBox.encryptBytes(attachment, encrypted.key)
+            body.put("attachment_mime", attachmentMime).put("attachment_ciphertext", sealed.ciphertext)
+                .put("attachment_nonce", sealed.nonce)
+        }
+        execute(authorized(token, "api/chats/$friendId/messages").post(body.body()).build()).getLong("id")
+    }
+    suspend fun chatAttachment(token: String, friendId: Long, messageId: Long): ByteArray = io {
+        val j = execute(authorized(token, "api/chats/$friendId/messages/$messageId/attachment").get().build())
+        CryptoBox.decryptBytes(j.getString("ciphertext"), j.getString("nonce"), j.getString("encryption_key"))
+    }
+    suspend fun editChat(token: String, friendId: Long, messageId: Long, text: String) = io {
+        val encrypted = CryptoBox.encrypt(text)
+        execute(authorized(token, "api/chats/$friendId/messages/$messageId").patch(JSONObject()
+            .put("ciphertext", encrypted.ciphertext).put("nonce", encrypted.nonce)
+            .put("encryption_key", encrypted.key).body()).build()); Unit
+    }
+    suspend fun deleteChat(token: String, friendId: Long, messageId: Long) =
+        unitCall(authorized(token, "api/chats/$friendId/messages/$messageId").delete().build())
+    /** An empty emoji removes my reaction. */
+    suspend fun reactChat(token: String, friendId: Long, messageId: Long, emoji: String) = unitCall(
+        authorized(token, "api/chats/$friendId/messages/$messageId/reaction").put(JSONObject().put("emoji", emoji).body()).build()
+    )
+    suspend fun pinChat(token: String, friendId: Long, messageId: Long, pinned: Boolean) = unitCall(
+        authorized(token, "api/chats/$friendId/messages/$messageId/pin").put(JSONObject().put("pinned", pinned).body()).build()
+    )
+    suspend fun chatTyping(token: String, friendId: Long) =
+        unitCall(authorized(token, "api/chats/$friendId/typing").post(JSONObject().body()).build())
+    suspend fun chatPresence(token: String, friendId: Long): ChatPresence = io {
+        val j = execute(authorized(token, "api/chats/$friendId/presence").get().build())
+        ChatPresence(
+            j.optBoolean("typing"), j.optBoolean("online"), j.nullableLong("last_seen_at"),
+            j.optBoolean("chat_day_today"), j.optInt("chat_days"), j.optInt("chat_points"),
+        )
     }
 
     // -----------------------------------------------------------------------

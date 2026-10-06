@@ -1,6 +1,7 @@
 package at.gregor.layermaxxing
 
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.background
@@ -143,8 +144,25 @@ internal fun ThreadScreen(
     onLockedTap: (ApiClient.Message) -> Unit,
     onProof: (ApiClient.Message) -> Unit, onProposeEp: (EpOpportunity) -> Unit,
     topics: List<ApiClient.Topic>, epLine: String, creativeActive: Boolean,
+    onLetterFromChat: ((Long, String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var presence by remember(friend.id, token) { mutableStateOf<ApiClient.ChatPresence?>(null) }
+    var glossary by remember(token) { mutableStateOf<List<ApiClient.GlossaryTerm>>(emptyList()) }
+    var glossaryOpen by remember(friend.id, token) { mutableStateOf<ApiClient.GlossaryTerm?>(null) }
+    var editing by remember(friend.id, token) { mutableStateOf<ApiClient.ChatMessage?>(null) }
+    var confirmDeleteChat by remember(friend.id, token) { mutableStateOf<ApiClient.ChatMessage?>(null) }
+    var questDraft by remember(friend.id, token) { mutableStateOf<ChatExtras.QuestDraft?>(null) }
+    var stickersOpen by remember(friend.id, token) { mutableStateOf(false) }
+    var photoView by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var notice by remember(friend.id, token) { mutableStateOf<String?>(null) }
+    var lastTypingPing by remember(friend.id, token) { mutableStateOf(0L) }
+    var recording by remember(friend.id, token) { mutableStateOf(false) }
+    var recordMs by remember(friend.id, token) { mutableStateOf(0L) }
+    val recorder = remember(friend.id) { BottleRecorder(context) }
+    androidx.compose.runtime.DisposableEffect(friend.id) { onDispose { recorder.cancel() } }
+    val attachments = remember(friend.id, token) { mutableStateMapOf<Long, ByteArray>() }
     var chat by remember(friend.id, token) { mutableStateOf<List<ApiClient.ChatMessage>>(emptyList()) }
     var text by remember(friend.id, token) { mutableStateOf("") }
     var menu by remember { mutableStateOf(false) }
@@ -183,6 +201,47 @@ internal fun ThreadScreen(
             .onFailure { threadError = it.message }
     }
     LaunchedEffect(friend.id, token, chatsEnabled) { while (true) { reloadChat(); delay(5_000) } }
+    // Presence is light: typing, online and the shared chat days, every 3 s.
+    LaunchedEffect(friend.id, token, chatsEnabled) {
+        if (!chatsEnabled) { presence = null; return@LaunchedEffect }
+        var counted = false
+        while (true) {
+            runCatching { api.chatPresence(token, friend.id) }.onSuccess { pr ->
+                // The growth note appears once, the moment today becomes a shared chat day.
+                if (pr.chatDayToday && presence?.chatDayToday == false && !counted) { notice = ChatExtras.growthNote(pr); counted = true }
+                presence = pr
+            }
+            delay(3_000)
+        }
+    }
+    LaunchedEffect(token) { runCatching { api.glossary(token) }.onSuccess { glossary = it } }
+    LaunchedEffect(notice) { if (notice != null) { delay(4_500); notice = null } }
+    LaunchedEffect(recording) {
+        while (recording) { recordMs = recorder.elapsedMs(); if (recordMs >= ChatExtras.VOICE_MAX_MS) break; delay(200) }
+    }
+    suspend fun loadAttachment(id: Long): ByteArray =
+        attachments[id] ?: api.chatAttachment(token, friend.id, id).also { attachments[id] = it }
+    fun sendMedia(kind: String, bytes: ByteArray, mime: String, caption: String = "") {
+        scope.launch {
+            sending = true
+            try {
+                runCatching { api.sendChat(token, friend.id, caption, kind, bytes, mime) }
+                    .onSuccess { reloadChat() }.onFailure { threadError = it.message }
+            } finally { sending = false }
+        }
+    }
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            val bytes = preparePhoto(context, uri)
+            if (bytes == null) threadError = "Foto konnte nicht gelesen werden" else sendMedia("image", bytes, "image/jpeg")
+        }
+    }
+    fun startRecording() {
+        if (recorder.start()) { recording = true; recordMs = 0 } else threadError = "Aufnahme nicht möglich"
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startRecording() else threadError = "Für Flaschenpost braucht die App das Mikrofon"
+    }
     LaunchedEffect(friend.id) { while (true) { now = Instant.now().epochSecond; delay(20_000) } }
 
     val openedIds = opened.keys.toSet()
@@ -223,6 +282,9 @@ internal fun ThreadScreen(
             onLetterRoom = { roomFocusLetterId = null; roomOpen = true },
             onRemove = { confirmRemove = true },
             onBlock = { confirmBlock = true },
+            presenceLine = ChatExtras.presenceLine(friend.name, presence, now),
+            online = presence?.online == true,
+            chatDays = presence?.chatDays ?: 0,
         )
         // Anything that waits for my answer sits directly under the head, in the
         // conversation it belongs to, and is answerable without any navigation.
@@ -257,6 +319,10 @@ internal fun ThreadScreen(
             )
             TextButton(onClick = { searchOpen = false; query = "" }) { Text("Fertig") }
         }
+        PinnedStrip(chat.filter { it.pinnedAt != null && !it.deleted }, Harbour.palette()) { id ->
+            items.indexOfFirst { it is TimelineItem.Entry && it.entry is ThreadEntry.Chat && it.entry.message.id == id }
+                .takeIf { it >= 0 }?.let { scope.launch { listState.animateScrollToItem(it) } }
+        }
         val actionable = band.filter { it.bucket != LetterBucket.IN_TRANSIT }
         if (actionable.isNotEmpty()) SealBandRow(
             band = actionable,
@@ -284,8 +350,21 @@ internal fun ThreadScreen(
                     is TimelineItem.Entry -> when (val entry = item.entry) {
                         is ThreadEntry.Chat -> ThreadChatBubble(
                             entry.message, entry.outgoing,
-                            onActions = { selectedChat = entry.message },
-                            onSwipeReply = if (chatsEnabled) ({ quote = entry.message.text }) else null,
+                            onActions = { if (!entry.message.deleted) selectedChat = entry.message },
+                            onSwipeReply = if (chatsEnabled && !entry.message.deleted) ({ quote = ChatExtras.previewText(entry.message) }) else null,
+                            ownUserId = ownUserId,
+                            glossary = glossary,
+                            onTerm = { glossaryOpen = it },
+                            onReact = { emoji ->
+                                val next = ChatExtras.toggledReaction(ChatExtras.myReaction(entry.message.reactions, ownUserId), emoji)
+                                scope.launch { runCatching { api.reactChat(token, friend.id, entry.message.id, next) }.onSuccess { reloadChat() } }
+                            },
+                            media = { msg, tint ->
+                                when (msg.kind) {
+                                    "image" -> ChatPhoto({ loadAttachment(msg.id) }, Harbour.palette()) { photoView = it }
+                                    "voice" -> VoiceNote(msg.text.ifBlank { "Sprachnachricht" }, { loadAttachment(msg.id) }, tint, Harbour.palette())
+                                }
+                            },
                         )
                         // A letter is an event in the flow, not a block in it: the
                         // row says what happened and hands over to the Briefraum,
@@ -309,7 +388,17 @@ internal fun ThreadScreen(
                     }
                 }
             }
+            if (presence?.typing == true) item(key = "typing") { TypingBubble(friend.name) }
             item { Spacer(Modifier.height(6.dp)) }
+        }
+        // A short growth note floats over the timeline, never inside it.
+        notice?.let { n ->
+            Text(
+                n, Modifier.align(Alignment.TopCenter).padding(top = 10.dp, start = 16.dp, end = 16.dp)
+                    .background(Harbour.palette().seaDeep.copy(alpha = .94f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                color = Color.White, fontSize = 12.sp, textAlign = TextAlign.Center,
+            )
         }
         }
         threadError?.let {
@@ -334,20 +423,77 @@ internal fun ThreadScreen(
                 ) { Text("✕", fontSize = 16.sp) }
             }
         }
+        if (stickersOpen && plan.inputEnabled) StickerTray(Harbour.palette()) { key ->
+            stickersOpen = false
+            scope.launch {
+                runCatching { api.sendChat(token, friend.id, ChatExtras.stickerText(key), "sticker") }
+                    .onSuccess { reloadChat() }.onFailure { threadError = it.message }
+            }
+        }
+        editing?.let { e ->
+            Row(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp)
+                    .background(Harbour.palette().card, RoundedCornerShape(12.dp)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("✎", Modifier.padding(start = 12.dp), color = Harbour.palette().gold, fontSize = 16.sp)
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Text("Nachricht bearbeiten", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Harbour.palette().gold)
+                    Text(ChatTools.parseReply(e.text).second, maxLines = 1, fontSize = 13.sp, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { editing = null; text = "" }
+                        .semantics { contentDescription = "Bearbeiten abbrechen"; role = Role.Button },
+                    contentAlignment = Alignment.Center,
+                ) { Text("✕", fontSize = 16.sp) }
+            }
+        }
         Composer(
             plan = plan.copy(inputEnabled = plan.inputEnabled && !sending),
             text = text,
-            onText = { text = it },
+            onText = {
+                text = it
+                val ms = SystemClock.elapsedRealtime()
+                if (editing == null && ChatExtras.shouldPingTyping(lastTypingPing, ms, it)) {
+                    lastTypingPing = ms
+                    scope.launch { runCatching { api.chatTyping(token, friend.id) } }
+                }
+            },
+            extras = ComposerExtras(
+                stickersOpen = stickersOpen,
+                recording = recording,
+                recordLabel = ChatExtras.voiceLabel(recordMs),
+                onStickers = { stickersOpen = !stickersOpen },
+                onPhoto = { photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onRecord = {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording()
+                    else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                },
+                onStopRecord = { send ->
+                    recording = false
+                    val result = recorder.stop()
+                    if (send) {
+                        if (result == null) threadError = "Flaschenpost war zu kurz"
+                        else sendMedia("voice", result.first, "audio/mp4", ChatExtras.voiceLabel(result.second))
+                    }
+                },
+            ),
             onCompose = { onComposeLetter(friend.id) },
             onRules = { rulesOpen = true },
             onSend = {
                 scope.launch {
                     val sent = text.trim()
+                    val edit = editing
                     if (sent.isNotEmpty() && !sending) {
                         sending = true
                         try {
-                            runCatching { api.sendChat(token, friend.id, ChatTools.replyText(quote, sent)) }
-                                .onSuccess { text = ""; quote = null; reloadChat() }.onFailure { threadError = it.message }
+                            if (edit != null) {
+                                // Keep the quote of the edited line, change only its body.
+                                val keptQuote = ChatTools.parseReply(edit.text).first
+                                runCatching { api.editChat(token, friend.id, edit.id, ChatTools.replyText(keptQuote, sent)) }
+                                    .onSuccess { text = ""; editing = null; reloadChat() }.onFailure { threadError = it.message }
+                            } else runCatching { api.sendChat(token, friend.id, ChatTools.replyText(quote, sent)) }
+                                .onSuccess { text = ""; quote = null; stickersOpen = false; reloadChat() }.onFailure { threadError = it.message }
                         } finally { sending = false }
                     }
                 }
@@ -358,12 +504,29 @@ internal fun ThreadScreen(
     selectedChat?.let { message ->
         ModalBottomSheet(onDismissRequest = { selectedChat = null }) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                ReactionBar(ChatExtras.myReaction(message.reactions, ownUserId), Harbour.palette()) { emoji ->
+                    val next = ChatExtras.toggledReaction(ChatExtras.myReaction(message.reactions, ownUserId), emoji)
+                    selectedChat = null
+                    scope.launch { runCatching { api.reactChat(token, friend.id, message.id, next) }.onSuccess { reloadChat() }.onFailure { threadError = it.message } }
+                }
                 Text(
-                    ChatTools.parseReply(message.text).second.take(300), Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    ChatExtras.previewText(message).take(300), Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     maxLines = 4, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                SheetAction("↩", "Antworten", enabled = chatsEnabled) { quote = message.text; selectedChat = null }
-                SheetAction("⧉", "Kopieren") { clipboard.setText(AnnotatedString(ChatTools.parseReply(message.text).second)); selectedChat = null }
+                SheetAction("↩", "Antworten", enabled = chatsEnabled) { quote = ChatExtras.previewText(message); selectedChat = null }
+                if (message.kind == "text") SheetAction("⧉", "Kopieren") { clipboard.setText(AnnotatedString(ChatTools.parseReply(message.text).second)); selectedChat = null }
+                if (ChatExtras.canEdit(message, ownUserId, now)) SheetAction("✎", "Bearbeiten") {
+                    editing = message; quote = null; text = ChatTools.parseReply(message.text).second; selectedChat = null
+                }
+                SheetAction("📌", if (message.pinnedAt != null) "Loslösen" else "Anpinnen – als Erinnerung") {
+                    selectedChat = null
+                    scope.launch { runCatching { api.pinChat(token, friend.id, message.id, message.pinnedAt == null) }.onSuccess { reloadChat() }.onFailure { threadError = it.message } }
+                }
+                if (message.kind == "text") SheetAction("⭐", "Als gemeinsame Quest") { questDraft = ChatExtras.questDraft(message.text); selectedChat = null }
+                if (message.kind == "text" && onLetterFromChat != null) SheetAction("✉", "Als Brief verschicken", enabled = letterAction.enabled) {
+                    onLetterFromChat(friend.id, ChatTools.parseReply(message.text).second); selectedChat = null
+                }
+                if (ChatExtras.canDelete(message, ownUserId)) SheetAction("🗑", "Löschen") { confirmDeleteChat = message; selectedChat = null }
                 Text(
                     "Gesendet ${socialDate(message.createdAt)}" + (message.readAt?.let { " · gelesen ${socialDate(it)}" } ?: ""),
                     Modifier.padding(horizontal = 12.dp, vertical = 10.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -371,6 +534,27 @@ internal fun ThreadScreen(
                 Spacer(Modifier.height(16.dp))
             }
         }
+    }
+    questDraft?.let { draft ->
+        ChatQuestDialog(friend.name, draft, onCreate = { q: ChatExtras.QuestDraft ->
+            questDraft = null
+            scope.launch {
+                runCatching { api.createQuest(token, q.title, q.details, q.icon, q.points, friend.id, null) }
+                    .onSuccess { notice = "⭐ Quest „${q.title}“ liegt jetzt auf euren Inseln" }
+                    .onFailure { threadError = it.message }
+            }
+        }, onDismiss = { questDraft = null })
+    }
+    glossaryOpen?.let { GlossaryTermDialog(it) { glossaryOpen = null } }
+    photoView?.let { PhotoViewer(it) { photoView = null } }
+    confirmDeleteChat?.let { m ->
+        ConfirmDialog(
+            "Nachricht löschen?", "Sie verschwindet für euch beide. Ein kleiner Hinweis bleibt im Verlauf.",
+            {
+                confirmDeleteChat = null
+                scope.launch { runCatching { api.deleteChat(token, friend.id, m.id) }.onSuccess { reloadChat() }.onFailure { threadError = it.message } }
+            },
+        ) { confirmDeleteChat = null }
     }
     if (roomOpen) LetterRoom(
         friendName = friend.name,
@@ -452,6 +636,9 @@ internal fun ThreadHeader(
     onLetterRoom: () -> Unit,
     onRemove: () -> Unit,
     onBlock: () -> Unit,
+    presenceLine: String? = null,
+    online: Boolean = false,
+    chatDays: Int = 0,
 ) {
     val p = Harbour.palette()
     Row(
@@ -469,13 +656,23 @@ internal fun ThreadHeader(
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IslandAvatar(friend.avatarEmoji, profileColor(friend.displayColor), 44.dp, p)
+            Box {
+                IslandAvatar(friend.avatarEmoji, profileColor(friend.displayColor), 44.dp, p)
+                // A small green lantern on the island while the friend is around.
+                if (online) Box(
+                    Modifier.align(Alignment.BottomEnd).size(13.dp).clip(CircleShape).background(p.head).padding(2.dp)
+                        .clip(CircleShape).background(Color(0xFF6CCB7A)),
+                )
+            }
             Column(Modifier.padding(start = 10.dp)) {
                 Text(friend.name, style = Harbour.Title.copy(fontSize = 19.sp), color = p.onHead, maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                val typing = presenceLine == "schreibt gerade …"
                 Text(
-                    if (topicsBadge > 0) "$topicsBadge offene Themen · Insel-Info" else "Insel-Info antippen",
-                    fontSize = 11.sp, color = p.onHead.copy(alpha = .7f), maxLines = 1,
+                    presenceLine ?: if (topicsBadge > 0) "$topicsBadge offene Themen · Insel-Info" else "Insel-Info antippen",
+                    fontSize = 11.sp, maxLines = 1,
+                    color = if (typing) Color(0xFF9BE3C2) else p.onHead.copy(alpha = .7f),
+                    fontStyle = if (typing) FontStyle.Italic else FontStyle.Normal,
                 )
             }
         }
@@ -499,6 +696,9 @@ internal fun ThreadHeader(
                 DropdownMenuItem(text = { Text(if (lettersBadge > 0) "✉  Briefe ($lettersBadge)" else "✉  Briefe") }, onClick = { onMenu(false); onLetterRoom() })
                 DropdownMenuItem(text = { Text(if (topicsBadge > 0) "#  Themen ($topicsBadge offen)" else "#  Themen") }, onClick = { onMenu(false); onTopics() })
                 DropdownMenuItem(text = { Text("⌕  Im Chat suchen") }, onClick = { onMenu(false); onSearch() })
+                if (chatDays > 0) DropdownMenuItem(
+                    text = { Text("🌱  $chatDays gemeinsame Chat-Tage", color = p.inkSoft) }, onClick = { onMenu(false); onInfo() },
+                )
                 HorizontalDivider()
                 DropdownMenuItem(text = { Text("Regeln & Info") }, onClick = { onMenu(false); onInfo() })
                 DropdownMenuItem(text = { Text("Freund entfernen") }, onClick = { onMenu(false); onRemove() })
@@ -589,6 +789,7 @@ internal fun Composer(
     onCompose: () -> Unit,
     onRules: () -> Unit,
     onSend: () -> Unit,
+    extras: ComposerExtras? = null,
 ) {
     Column(Modifier.fillMaxWidth().imePadding()) {
         plan.blockedReason?.let { reason ->
@@ -607,14 +808,41 @@ internal fun Composer(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
+            if (extras != null && extras.recording) {
+                // Recording replaces the whole capsule: discard, a calm red dot, time, send.
+                Row(
+                    Modifier.weight(1f).heightIn(min = 50.dp).background(p.card, RoundedCornerShape(25.dp))
+                        .border(1.dp, p.wax.copy(alpha = .5f), RoundedCornerShape(25.dp)).padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape).clickable { extras.onStopRecord(false) }
+                            .semantics { contentDescription = "Aufnahme verwerfen"; role = Role.Button },
+                        contentAlignment = Alignment.Center,
+                    ) { Text("🗑", fontSize = 18.sp) }
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(p.wax))
+                    Text("  🍾 Flaschenpost · ${extras.recordLabel}", Modifier.weight(1f), color = p.ink, fontSize = 14.sp)
+                }
+                Box(
+                    Modifier.size(48.dp).background(Brush.verticalGradient(listOf(p.sea, p.seaDeep)), CircleShape).clip(CircleShape)
+                        .clickable { extras.onStopRecord(true) }.semantics { contentDescription = "Flaschenpost senden"; role = Role.Button },
+                    contentAlignment = Alignment.Center,
+                ) { PaperBoat(Color.White, Modifier.size(26.dp)) }
+                return@Row
+            }
             // A paper capsule; the letter seal sits inside where an attach clip would be.
             Row(
                 Modifier.weight(1f).heightIn(min = 50.dp)
                     .background(p.card, RoundedCornerShape(25.dp))
                     .border(1.dp, p.line, RoundedCornerShape(25.dp))
-                    .padding(start = 6.dp, end = 4.dp),
+                    .padding(start = 2.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (extras != null && plan.inputEnabled) Box(
+                    Modifier.size(40.dp).clip(CircleShape).clickable(onClick = extras.onStickers)
+                        .semantics { contentDescription = if (extras.stickersOpen) "Sticker schließen" else "Sticker"; role = Role.Button },
+                    contentAlignment = Alignment.Center,
+                ) { Text(if (extras.stickersOpen) "⌨" else "☺", fontSize = 21.sp, color = if (extras.stickersOpen) p.sea else p.inkSoft) }
                 androidx.compose.material3.TextField(
                     value = text,
                     onValueChange = onText,
@@ -638,8 +866,20 @@ internal fun Composer(
                         .semantics { contentDescription = LetterAccess.LABEL_LONG; role = Role.Button },
                     contentAlignment = Alignment.Center,
                 ) { Text("✉", fontSize = 20.sp, color = p.wax, fontWeight = FontWeight.Bold) }
+                if (extras != null && plan.inputEnabled && text.isBlank()) Box(
+                    Modifier.size(40.dp).clip(CircleShape).clickable(onClick = extras.onPhoto)
+                        .semantics { contentDescription = "Foto senden"; role = Role.Button },
+                    contentAlignment = Alignment.Center,
+                ) { Text("📷", fontSize = 18.sp) }
             }
-            if (plan.inputEnabled) {
+            if (plan.inputEnabled && extras != null && text.isBlank()) {
+                // Empty field: the round button records a bottle post instead of sending.
+                Box(
+                    Modifier.size(48.dp).background(Brush.verticalGradient(listOf(p.sea, p.seaDeep)), CircleShape).clip(CircleShape)
+                        .clickable(onClick = extras.onRecord).semantics { contentDescription = "Flaschenpost aufnehmen"; role = Role.Button },
+                    contentAlignment = Alignment.Center,
+                ) { Text("🎙", fontSize = 20.sp) }
+            } else if (plan.inputEnabled) {
                 val ready = text.isNotBlank()
                 Box(
                     modifier = Modifier.size(48.dp)
@@ -661,6 +901,17 @@ internal fun Composer(
         }
     }
 }
+
+/** Optional chat extras of the composer: stickers, photo and bottle post. */
+internal class ComposerExtras(
+    val stickersOpen: Boolean,
+    val recording: Boolean,
+    val recordLabel: String,
+    val onStickers: () -> Unit,
+    val onPhoto: () -> Unit,
+    val onRecord: () -> Unit,
+    val onStopRecord: (send: Boolean) -> Unit,
+)
 
 /**
  * The separate info surface of a conversation.
@@ -860,13 +1111,22 @@ private fun sealGlyphFor(mode: String): String = when (mode) {
  * bubble to the right answers it.
  */
 @Composable
-internal fun ThreadChatBubble(message: ApiClient.ChatMessage, outgoing: Boolean, onActions: () -> Unit, onSwipeReply: (() -> Unit)?) {
+internal fun ThreadChatBubble(
+    message: ApiClient.ChatMessage, outgoing: Boolean, onActions: () -> Unit, onSwipeReply: (() -> Unit)?,
+    ownUserId: Long? = null,
+    glossary: List<ApiClient.GlossaryTerm> = emptyList(),
+    onTerm: (ApiClient.GlossaryTerm) -> Unit = {},
+    onReact: (String) -> Unit = {},
+    media: @Composable (ApiClient.ChatMessage, Color) -> Unit = { _, _ -> },
+) {
     val (quoted, body) = ChatTools.parseReply(message.text)
     val p = Harbour.palette()
     val bubble = if (outgoing) p.mine else p.theirs
     val onBubble = if (outgoing) p.onMine else p.ink
     val shape = if (outgoing) RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp) else RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp)
-    val emojiOnly = ChatTools.isEmojiOnly(body)
+    val sticker = ChatExtras.stickerKey(message)
+    val emojiOnly = message.kind == "text" && ChatTools.isEmojiOnly(body)
+    val chips = ChatExtras.reactionChips(message.reactions, ownUserId)
     var drag by remember(message.id) { mutableStateOf(0f) }
     val swipe = Modifier.pointerInput(message.id, onSwipeReply) {
         if (onSwipeReply == null) return@pointerInput
@@ -876,41 +1136,86 @@ internal fun ThreadChatBubble(message: ApiClient.ChatMessage, outgoing: Boolean,
         ) { _: androidx.compose.ui.input.pointer.PointerInputChange, amount: Float -> drag = (drag + amount).coerceIn(0f, 96.dp.toPx()) }
     }
     val time = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(message.createdAt))
-    Row(
+    val meta = (if (message.editedAt != null && !message.deleted) "bearbeitet · " else "") + time
+    Column(
         Modifier.fillMaxWidth().then(swipe).graphicsLayer { translationX = drag }
             .padding(start = if (outgoing) 56.dp else 2.dp, end = if (outgoing) 2.dp else 56.dp),
-        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
+        horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
     ) {
-        if (emojiOnly && quoted == null) {
-            // A lone emoji is a sticker on the paper, not text in a box.
-            Column(
+        when {
+            message.deleted -> Text(
+                "Nachricht gelöscht · $time",
+                Modifier.border(1.dp, p.line, shape).padding(horizontal = 12.dp, vertical = 7.dp),
+                fontSize = 13.sp, fontStyle = FontStyle.Italic, color = p.inkSoft,
+            )
+            // A sticker or a lone emoji sits on the paper, not text in a box.
+            sticker != null || (emojiOnly && quoted == null) -> Column(
                 Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = onActions, onLongClick = onActions).padding(4.dp),
                 horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
             ) {
-                Text(body, fontSize = 34.sp)
-                BubbleMeta(time, outgoing, message.readAt != null, p.inkSoft, p)
+                if (sticker != null) HarbourSticker(sticker, 104.dp) else Text(body, fontSize = 34.sp)
+                BubbleMeta(meta, outgoing, message.readAt != null, p.inkSoft, p)
             }
-            return@Row
-        }
-        Box(
-            Modifier.clip(shape).background(bubble)
-                .border(1.dp, if (outgoing) Color.Transparent else p.line, shape)
-                .combinedClickable(onClick = onActions, onLongClick = onActions),
-        ) {
-            Column(Modifier.padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 6.dp).width(IntrinsicSize.Max)) {
-                quoted?.let {
-                    Row(
-                        Modifier.fillMaxWidth().padding(bottom = 5.dp)
-                            .background(onBubble.copy(alpha = .06f), RoundedCornerShape(10.dp)).height(IntrinsicSize.Min),
-                    ) {
-                        Box(Modifier.width(3.dp).fillMaxHeight().background(p.sea, RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp)))
-                        Text(it, Modifier.padding(horizontal = 8.dp, vertical = 5.dp), fontSize = 12.sp, maxLines = 2, color = onBubble.copy(alpha = .72f), overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            else -> Box(
+                Modifier.clip(shape).background(bubble)
+                    .border(1.dp, if (outgoing) Color.Transparent else p.line, shape)
+                    .combinedClickable(onClick = onActions, onLongClick = onActions),
+            ) {
+                Column(Modifier.padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 6.dp).width(IntrinsicSize.Max)) {
+                    quoted?.let {
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 5.dp)
+                                .background(onBubble.copy(alpha = .06f), RoundedCornerShape(10.dp)).height(IntrinsicSize.Min),
+                        ) {
+                            Box(Modifier.width(3.dp).fillMaxHeight().background(p.sea, RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp)))
+                            Text(it, Modifier.padding(horizontal = 8.dp, vertical = 5.dp), fontSize = 12.sp, maxLines = 2, color = onBubble.copy(alpha = .72f), overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
                     }
+                    if (message.kind == "image" || message.kind == "voice") {
+                        media(message, onBubble)
+                        if (message.kind == "image" && body.isNotBlank()) Text(body, fontSize = 14.sp, color = onBubble, modifier = Modifier.padding(top = 4.dp))
+                    } else {
+                        // Insider words from the shared glossary are softly underlined and tappable.
+                        val hits = ChatExtras.glossaryHits(body, glossary)
+                        if (hits.isEmpty()) Text(body, fontSize = 15.sp, lineHeight = 20.sp, color = onBubble, modifier = Modifier.widthIn(min = 40.dp))
+                        else {
+                            val annotated = ChatExtras.underlined(body, hits, if (outgoing) onBubble else p.seaDeep)
+                            var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+                            Text(
+                                annotated, fontSize = 15.sp, lineHeight = 20.sp, color = onBubble, onTextLayout = { layout = it },
+                                modifier = Modifier.widthIn(min = 40.dp).pointerInput(hits) {
+                                    detectTapGestures(
+                                        onLongPress = { onActions() },
+                                        onTap = { pos ->
+                                            val offset = layout?.getOffsetForPosition(pos)
+                                            val hit = offset?.let { o -> hits.firstOrNull { o in it.start until it.end } }
+                                            val term = hit?.let { h -> glossary.firstOrNull { it.id == h.termId } }
+                                            if (term != null) onTerm(term) else onActions()
+                                        },
+                                    )
+                                },
+                            )
+                        }
+                    }
+                    Box(Modifier.align(Alignment.End)) { BubbleMeta(meta, outgoing, message.readAt != null, onBubble.copy(alpha = .55f), p) }
                 }
-                Text(body, fontSize = 15.sp, lineHeight = 20.sp, color = onBubble, modifier = Modifier.widthIn(min = 40.dp))
-                Box(Modifier.align(Alignment.End)) { BubbleMeta(time, outgoing, message.readAt != null, onBubble.copy(alpha = .55f), p) }
             }
         }
+        if (chips.isNotEmpty()) Box(Modifier.padding(top = 3.dp, start = 8.dp, end = 8.dp)) { ReactionChips(chips, p, onReact) }
+    }
+}
+
+/** The friend's „schreibt …“ bubble: three calm dots, no bouncing. */
+@Composable
+internal fun TypingBubble(name: String) {
+    val p = Harbour.palette()
+    Row(Modifier.fillMaxWidth().padding(start = 2.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.background(p.theirs, RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp)).border(1.dp, p.line, RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+                .semantics { contentDescription = "$name schreibt gerade" },
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) { repeat(3) { i -> Box(Modifier.size(7.dp).clip(CircleShape).background(p.inkSoft.copy(alpha = .35f + i * .2f))) } }
     }
 }
 

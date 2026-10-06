@@ -57,6 +57,9 @@ def test_instant_chat_is_separate_encrypted_thread_with_read_state(tmp_path, mon
             "id": message_id, "sender_id": a["user_id"], "recipient_id": b["user_id"],
             "ciphertext": "Y2lwaGVy", "nonce": "MTIzNDU2Nzg5MDEy", "encryption_key": "a2V5",
             "created_at": clock["now"], "read_at": clock["now"],
+            # Chat extras: plain text line, nothing edited, deleted, pinned or reacted.
+            "edited_at": None, "deleted": False, "pinned_at": None, "kind": "text",
+            "attachment_mime": None, "has_attachment": False, "reactions": [],
         }]
         assert client.get("/api/chats", headers=auth(b)).json()[0]["unread_count"] == 0
         change_settings(client, a, b, chats_enabled=False)
