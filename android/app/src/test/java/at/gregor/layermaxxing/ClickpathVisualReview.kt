@@ -63,7 +63,7 @@ class ClickpathVisualReview {
     }
     @Composable
     private fun light(content: @Composable () -> Unit) {
-        LayermaxxingTheme("light") { Surface { content() } }
+        LayermaxxingTheme("light") { Surface(Modifier.fillMaxSize()) { content() } }
     }
     private val api = ApiClient()
     private val act: ((suspend () -> Unit) -> Unit) = {}
@@ -82,4 +82,5 @@ class ClickpathVisualReview {
     @Test fun proofDialog() = shot("47-proof-dialog", dialog = true) { light { ProofDialog(ApiClient.ProofDetails(7, "Für Samstag", true, "timed", null, "{}"), {}) } }
     @Test fun epProposalDialog() = shot("48-ep-proposal-dialog", dialog = true) { light { EpProposalDialog(EpOpportunity(2, "Gerfried", 7, "Für Samstag", EpRole.I_OPENED_THEIR_LETTER), { _, _ -> }, {}) } }
     @Test fun requestDialog() = shot("49-request-dialog", dialog = true) { light { RequestDialog(PendingRequest(RequestKind.EP, 4, 2, "Gerfried", "Punkte-Anfrage von Gerfried", "Eine Anerkennung für deinen Brief."), {}, {}, {}) } }
+    @Test fun friendPage() = shot("50-friend-page") { light { FriendPage(friend, settings, "Allerbester Freund", listOf(ApiClient.Quest(1, "Gipfelrunde", "", "hike", 30, 1, "Gregor", "friend", "Gerfried", 2, now, null, null, true), ApiClient.Quest(2, "Grillabend", "", "grill", 20, 1, "Gregor", "friend", "Gerfried", 2, now, now, "Gerfried", true)), 3, 1, "Gegeben 4 · Erhalten 7 Punkte", {}, {}, {}, { _, _ -> }, {}, {}, {}) } }
 }

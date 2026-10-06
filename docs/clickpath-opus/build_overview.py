@@ -16,11 +16,11 @@ INK, MUTED, RED = (30, 50, 55), (110, 115, 115), (225, 70, 40)
 ROWS = [
  ("Freund antippen", "43-friend-sheet", "Insel eines Freundes", [
    ("06-thread", "Chat", ""), (None, "Brief schreiben", "Brief-Editor"),
-   ("45-label-dialog", "Wie nennst du …?", ""), (None, "+ Neue", "Neue Quest"),
+   ("45-label-dialog", "Wie nennst du …?", ""), ("44-new-quest-sheet", "+ Neue Quest", ""),
    ("23-besuch", "Insel besuchen", "")]),
  ("Im Chat", "06-thread", "aus Freund-Sheet / Chatliste", [
    ("13-chat-extras", "Extras", ""), ("14-chat-actions", "lange drücken", ""),
-   ("40-thread-info-sheet", "Name/Info", ""), ("38-letter-room", "✉ Briefe", ""),
+   ("50-friend-page", "Name → Freund-Seite", ""), ("40-thread-info-sheet", "⋮ → Info", ""), ("38-letter-room", "✉ Briefe", ""),
    ("41-quest-dialog", "→ Quest", ""), ("42-glossary-term-dialog", "Begriff", ""),
    ("48-ep-proposal-dialog", "Punkte vorschl.", ""), ("49-request-dialog", "Anfrage", "")]),
  ("Meine Insel", "22-meine-insel", "Leiste: Meine Insel", [
@@ -39,10 +39,10 @@ ROWS = [
  ("Direkt auf der Karte", None, "", [
    ("37-ep-screen", "⭐ Punkte", ""), ("25-schiff", "Boot antippen", ""),
    ("21-inseln-leer", "ohne Freunde", ""), ("26-inseln-debug", "Debug-Modus an", "")]),
- ("Alter Messenger-Modus (ohne Inseln)", "05-chats", "Tab Chats", [
+ ("Messenger-Modus / Hauptmenü (auch Leiste „Chats“ in der Insel)", "05-chats", "Tab / Leiste Chats", [
    ("13-login", "vor dem Login", ""), ("12-empty-chats", "leer", ""),
    ("39-spark-room", "Funken", ""), ("03-room", "Raum", ""),
-   ("04-card", "unbenutzt", "Code ungenutzt")]),
+   ("14-more", "Tab Mehr", "")]),
 ]
 
 def tile(name):
@@ -67,7 +67,7 @@ def build():
     W = leftW + 120 + max((t[0].width if t[0] else 0) + 110 + sum(max(k[0].width, MINW) + GAP for k in t[1]) for t in tiles) + 40
     H = 260 + rowH * len(ROWS) + 60
     img = Image.new("RGB", (W, H), (250, 247, 240)); d = ImageDraw.Draw(img)
-    d.text((40, 30), "GS Layermaxxing 7.7.1 – alle Screens auf einen Blick", fill=INK, font=font(46))
+    d.text((40, 30), "GS Layermaxxing 7.8 – alle Screens auf einen Blick", fill=INK, font=font(46))
     d.text((40, 92), "Start = Inselkarte. Jede Zeile: links der Screen, rechts alles, was man von dort öffnet (Tap-Text darüber).",
            fill=MUTED, font=font(24, False))
     x0 = 40

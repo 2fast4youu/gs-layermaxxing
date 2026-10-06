@@ -64,7 +64,7 @@ internal object Harbour {
         sea = Color(0xFF2F7F95), seaDeep = Color(0xFF1C4E66),
         mine = Color(0xFFD5ECE6), onMine = Color(0xFF173A40), theirs = Color(0xFFFFFCF5),
         gold = Color(0xFFC8962F), wax = Color(0xFFB3473C), read = Color(0xFF2F7F95),
-        head = Brush.verticalGradient(listOf(Color(0xFF1F3A55), Color(0xFF1A3047))), onHead = Color(0xFFFFF7E6),
+        head = Brush.verticalGradient(listOf(Color(0xFF2F7F95), Color(0xFF1C4E66))), onHead = Color(0xFFFFF7E6),
     )
     private val night = HarbourPalette(
         dark = true,

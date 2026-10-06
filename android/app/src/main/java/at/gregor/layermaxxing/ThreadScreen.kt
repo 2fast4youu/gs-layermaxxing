@@ -145,6 +145,10 @@ internal fun ThreadScreen(
     onProof: (ApiClient.Message) -> Unit, onProposeEp: (EpOpportunity) -> Unit,
     topics: List<ApiClient.Topic>, epLine: String, creativeActive: Boolean,
     onLetterFromChat: ((Long, String) -> Unit)? = null,
+    quests: List<ApiClient.Quest> = emptyList(),
+    label: String? = null,
+    onLabel: (String?) -> Unit = {},
+    onQuestDone: (ApiClient.Quest, Boolean) -> Unit = { _, _ -> },
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -173,6 +177,8 @@ internal fun ThreadScreen(
     var roomOpen by remember(friend.id, token) { mutableStateOf(false) }
     var roomFocusLetterId by remember(friend.id, token) { mutableStateOf<Long?>(null) }
     var infoOpen by remember(friend.id, token) { mutableStateOf(false) }
+    // The neutral friend page (nickname, quests, letters, topics, rules), opened from the head.
+    var pageOpen by remember(friend.id, token) { mutableStateOf(false) }
     var topicsOpen by remember(friend.id, token) { mutableStateOf(false) }
     // The bilateral rules are a sheet of this conversation, not a trip to
     // another tab: proposing, answering and withdrawing happen in place.
@@ -191,6 +197,7 @@ internal fun ThreadScreen(
     val listState = rememberLazyListState()
 
     // A sheet is a place: back closes it before it leaves the conversation.
+    BackHandler(enabled = pageOpen && !roomOpen && !topicsOpen && !rulesOpen) { pageOpen = false }
     BackHandler(enabled = roomOpen || infoOpen || topicsOpen || rulesOpen) {
         roomOpen = false; infoOpen = false; topicsOpen = false; rulesOpen = false
     }
@@ -276,7 +283,8 @@ internal fun ThreadScreen(
             onMenu = { menu = it },
             onBack = onBack,
             onSearch = { searchOpen = true },
-            onInfo = { infoOpen = true },
+            onInfo = { pageOpen = true },
+            onRulesInfo = { infoOpen = true },
             onRules = { rulesOpen = true },
             onTopics = { topicsOpen = true },
             onLetterRoom = { roomFocusLetterId = null; roomOpen = true },
@@ -540,7 +548,7 @@ internal fun ThreadScreen(
             questDraft = null
             scope.launch {
                 runCatching { api.createQuest(token, q.title, q.details, q.icon, q.points, friend.id, null) }
-                    .onSuccess { notice = "⭐ Quest „${q.title}“ liegt jetzt auf euren Inseln" }
+                    .onSuccess { notice = "⭐ Quest „${q.title}“ ist angelegt"; act {} }
                     .onFailure { threadError = it.message }
             }
         }, onDismiss = { questDraft = null })
@@ -556,6 +564,17 @@ internal fun ThreadScreen(
             },
         ) { confirmDeleteChat = null }
     }
+    if (pageOpen) FriendPage(
+        friend = friend, settings = settings, label = label,
+        quests = quests.filter { it.targetType == "friend" && it.targetId == friend.id },
+        lettersCount = letters.size,
+        openTopics = conversationTopics.count { it.completedAt == null },
+        epLine = epLine,
+        onBack = { pageOpen = false }, onLabel = onLabel,
+        onNewQuest = { questDraft = ChatExtras.QuestDraft("", "", "hike", 20) }, onQuestDone = onQuestDone,
+        onLetters = { roomFocusLetterId = null; roomOpen = true },
+        onTopics = { topicsOpen = true }, onRules = { rulesOpen = true },
+    )
     if (roomOpen) LetterRoom(
         friendName = friend.name,
         letters = letters,
@@ -639,6 +658,7 @@ internal fun ThreadHeader(
     presenceLine: String? = null,
     online: Boolean = false,
     chatDays: Int = 0,
+    onRulesInfo: () -> Unit = onInfo,
 ) {
     val p = Harbour.palette()
     Row(
@@ -669,7 +689,7 @@ internal fun ThreadHeader(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 val typing = presenceLine == "schreibt gerade …"
                 Text(
-                    presenceLine ?: if (topicsBadge > 0) "$topicsBadge offene Themen · Insel-Info" else "Insel-Info antippen",
+                    presenceLine ?: if (topicsBadge > 0) "$topicsBadge offene Themen · Freund-Seite" else "Antippen: Name, Quests, Regeln",
                     fontSize = 11.sp, maxLines = 1,
                     color = if (typing) Color(0xFF9BE3C2) else p.onHead.copy(alpha = .7f),
                     fontStyle = if (typing) FontStyle.Italic else FontStyle.Normal,
@@ -697,10 +717,11 @@ internal fun ThreadHeader(
                 DropdownMenuItem(text = { Text(if (topicsBadge > 0) "#  Themen ($topicsBadge offen)" else "#  Themen") }, onClick = { onMenu(false); onTopics() })
                 DropdownMenuItem(text = { Text("⌕  Im Chat suchen") }, onClick = { onMenu(false); onSearch() })
                 if (chatDays > 0) DropdownMenuItem(
-                    text = { Text("🌱  $chatDays gemeinsame Chat-Tage", color = p.inkSoft) }, onClick = { onMenu(false); onInfo() },
+                    text = { Text("🌱  $chatDays gemeinsame Chat-Tage", color = p.inkSoft) }, onClick = { onMenu(false); onRulesInfo() },
                 )
                 HorizontalDivider()
-                DropdownMenuItem(text = { Text("Regeln & Info") }, onClick = { onMenu(false); onInfo() })
+                DropdownMenuItem(text = { Text("⚖  Freundschaftsregeln") }, onClick = { onMenu(false); onRules() })
+                DropdownMenuItem(text = { Text("ⓘ  Info & Verschlüsselung") }, onClick = { onMenu(false); onRulesInfo() })
                 DropdownMenuItem(text = { Text("Freund entfernen") }, onClick = { onMenu(false); onRemove() })
                 DropdownMenuItem(
                     text = { Text("Blockieren", color = MaterialTheme.colorScheme.error) },

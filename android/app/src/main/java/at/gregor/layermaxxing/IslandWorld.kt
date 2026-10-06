@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -40,6 +41,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
@@ -108,7 +111,7 @@ internal object Isle {
     val TealDark = Color(0xFF2F5D5A)
     val Ink = Color(0xFF1F3B4D)
     val Muted = Color(0xFF6B8592)
-    val Card = Color(0xFFFFFFFF)
+    val Card = Color(0xFFFBF3E2) // harbour paper, never plain white
     val Sand = Color(0xFFFFF6E5)
     val Star = Color(0xFFC9A55C)
 
@@ -212,6 +215,8 @@ internal fun IslandWorld(
     onPoints: () -> Unit = {},
     savePlaces: suspend (Map<Int, ApiClient.LifePlace>) -> Unit = {},
     saveHere: suspend (Int?, String) -> Unit = { _, _ -> },
+    /** Unread count of the messenger, shown on the bar's way out to the chats. */
+    chatsBadge: Int = 0,
 ) {
     val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
@@ -291,14 +296,13 @@ internal fun IslandWorld(
                 if (view == "map") Pill { Text("$ownEmoji  $ownName", color = Color(0xFFFFF8E6), maxLines = 1) }
                 Spacer(Modifier.weight(1f))
             }
-            if (qp > 0) Pill(Modifier.padding(start = 6.dp).then(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Punkte ansehen") { onPoints() }.semantics { contentDescription = "$qp Punkte" })) {
-                Text("⭐ $qp", color = Color(0xFFFFF8E6))
+            // Points and letters are always one tap away; at zero they only fade back.
+            Pill(Modifier.padding(start = 6.dp).then(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Punkte ansehen") { onPoints() }.semantics { contentDescription = "$qp Punkte" })) {
+                Text("⭐ $qp", color = Color(0xFFFFF8E6).copy(alpha = if (qp > 0) 1f else .6f))
             }
-            if (ready > 0) {
-                Spacer(Modifier.width(6.dp))
-                Pill(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Briefe öffnen") { place = IsleBuilding.POST.name }.semantics { contentDescription = "$ready neue Briefe" }) {
-                    Text("✉ $ready", color = Color(0xFFFFF8E6))
-                }
+            Spacer(Modifier.width(6.dp))
+            Pill(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Briefe öffnen") { place = IsleBuilding.POST.name }.semantics { contentDescription = if (ready > 0) "$ready neue Briefe" else "Post" }) {
+                Text(if (ready > 0) "✉ $ready" else "✉", color = Color(0xFFFFF8E6).copy(alpha = if (ready > 0) 1f else .6f))
             }
         }
         if (pals.isEmpty() && view == "map") {
@@ -336,9 +340,12 @@ internal fun IslandWorld(
             ) {
                 if (editing) BarItem("✓", "Fertig") { editing = false }
                 else {
-                    BarItem("🗺", "Karte", selected = view == "map" && place == null) { place = null; view = "map" }
+                    // Long-press on the map is the shortcut out to the messenger's main menu.
+                    BarItem("🗺", "Karte", selected = view == "map" && place == null, onLongClick = onBack) { place = null; view = "map" }
                     BarItem("🏝", "Meine Insel", selected = view == "home" && place == null, badge = incoming.size) { place = null; view = "home" }
                     BarItem("⚓", "Hafen", selected = place == IsleBuilding.HARBOUR.name, badge = openQuests) { place = IsleBuilding.HARBOUR.name }
+                    // The one fixed way out of the island world: always visible, one tap.
+                    BarItem("💬", "Chats", badge = chatsBadge) { place = null; onBack() }
                 }
             }
         }
@@ -971,7 +978,7 @@ private fun LetterColumn(
 }
 
 @Composable
-private fun QuestRow(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> Unit, onDelete: ((ApiClient.Quest) -> Unit)?) {
+internal fun QuestRow(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> Unit, onDelete: ((ApiClient.Quest) -> Unit)?) {
     val done = q.completedAt != null
     Row(
         Modifier.fillMaxWidth().padding(vertical = 4.dp).background(if (done) Isle.Sand else Color(0xFFF2FAFA), RoundedCornerShape(16.dp))
@@ -1003,7 +1010,11 @@ private fun QuestRow(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> U
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The one quest form of the app. The island, the harbour, the campfire, the
+ * friend page and a chat message all open this same dialog – only the presets differ.
+ */
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun NewQuestSheet(
     pals: List<ApiClient.UserSummary>,
@@ -1012,57 +1023,61 @@ internal fun NewQuestSheet(
     presetGroup: Long?,
     onDismiss: () -> Unit,
     onCreate: (String, String, String, Int, Long?, Long?) -> Unit,
+    draft: ChatExtras.QuestDraft? = null,
 ) {
-    var title by rememberSaveable { mutableStateOf("") }
-    var details by rememberSaveable { mutableStateOf("") }
-    var icon by rememberSaveable { mutableStateOf("hike") }
-    var points by rememberSaveable { mutableIntStateOf(20) }
+    var title by rememberSaveable { mutableStateOf(draft?.title.orEmpty()) }
+    var details by rememberSaveable { mutableStateOf(draft?.details.orEmpty()) }
+    var icon by rememberSaveable { mutableStateOf(draft?.icon ?: "hike") }
+    var points by rememberSaveable { mutableIntStateOf(draft?.points ?: 20) }
     var peer by rememberSaveable { mutableStateOf(presetPeer ?: if (presetGroup == null) pals.firstOrNull()?.id else null) }
     var group by rememberSaveable { mutableStateOf(presetGroup) }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Isle.Card, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        LazyColumn(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding()) {
-            item {
-                Text("Neue Quest", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Isle.Ink)
-                Text("Etwas, das ihr wirklich gemeinsam macht.", color = Isle.Muted, fontSize = 13.sp)
-                Spacer(Modifier.height(10.dp))
+    val fixed = presetPeer != null && pals.size <= 1 && groups.isEmpty()
+    val p = Harbour.palette()
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = p.card,
+        title = {
+            Text(
+                pals.firstOrNull { it.id == presetPeer }?.takeIf { fixed }?.let { "Quest mit ${it.name}" } ?: "Neue Quest",
+                style = Harbour.Title.copy(fontSize = 20.sp), color = p.ink,
+            )
+        },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Etwas, das ihr wirklich gemeinsam macht. Erledigt lässt es eure Insel wachsen.", color = p.inkSoft, fontSize = 13.sp)
                 OutlinedTextField(title, { title = it.take(80) }, label = { Text("Was habt ihr vor?") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(details, { details = it.take(500) }, label = { Text("Details (optional)") }, modifier = Modifier.fillMaxWidth())
-                SectionTitle("Symbol")
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Isle.questIcons.entries.take(5).forEach { (k, e) -> IconChoice(e, icon == k) { icon = k } }
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Isle.questIcons.forEach { (k, e) -> IconChoice(e, icon == k) { icon = k } }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    Isle.questIcons.entries.drop(5).forEach { (k, e) -> IconChoice(e, icon == k) { icon = k } }
-                }
-                SectionTitle("Mit wem?")
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.weight(1f)) {
-                        pals.take(6).forEach { f ->
+                if (!fixed) {
+                    Text("Mit wem?", fontWeight = FontWeight.Bold, color = p.ink, fontSize = 14.sp)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        pals.take(8).forEach { f ->
                             FilterChip(peer == f.id, { peer = f.id; group = null }, label = { Text("${f.avatarEmoji} ${f.name}", maxLines = 1) })
                         }
-                    }
-                    if (groups.isNotEmpty()) Column(Modifier.weight(1f)) {
                         groups.take(6).forEach { g ->
                             FilterChip(group == g.id, { group = g.id; peer = null }, label = { Text("👥 ${g.name}", maxLines = 1) })
                         }
                     }
                 }
-                SectionTitle("Belohnung")
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(10 to "klein", 20 to "normal", 30 to "groß", 50 to "episch").forEach { (p, l) ->
-                        FilterChip(points == p, { points = p }, label = { Text("⭐$p $l") })
+                Text("Belohnung", fontWeight = FontWeight.Bold, color = p.ink, fontSize = 14.sp)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(10 to "klein", 20 to "normal", 30 to "groß", 50 to "episch").forEach { (pts, l) ->
+                        FilterChip(points == pts, { points = pts }, label = { Text("⭐$pts $l") })
                     }
                 }
-                Spacer(Modifier.height(14.dp))
-                IsleButton(
-                    "Quest ans Brett hängen",
-                    { onCreate(title, details, icon, points, peer, group) },
-                    Modifier.fillMaxWidth(), enabled = title.isNotBlank() && (peer != null || group != null),
-                )
-                Spacer(Modifier.height(20.dp))
             }
-        }
-    }
+        },
+        confirmButton = {
+            androidx.compose.material3.Button(
+                onClick = { onCreate(title.trim(), details.trim(), icon, points, peer, group) },
+                enabled = title.isNotBlank() && (peer != null || group != null),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = p.seaDeep, contentColor = Color.White),
+            ) { Text("Quest anlegen") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
+    )
 }
 
 @Composable
@@ -1106,11 +1121,13 @@ private fun Pill(modifier: Modifier = Modifier, content: @Composable () -> Unit)
 }
 
 @Composable
-private fun BarItem(icon: String, label: String, badge: Int = 0, selected: Boolean = false, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun BarItem(icon: String, label: String, badge: Int = 0, selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Column(
         Modifier.clip(RoundedCornerShape(22.dp))
             .background(if (selected) Color(0x33E6D3A3) else Color.Transparent)
-            .clickable(onClick = onClick).heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 4.dp)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = if (onLongClick != null) "Zum Hauptmenü" else null)
+            .heightIn(min = 52.dp).padding(horizontal = 12.dp, vertical = 4.dp)
             .semantics { if (selected) this.selected = true },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1133,6 +1150,7 @@ private fun barSprite(icon: String): Int? = when (icon) {
     "🗼" -> R.drawable.b_lighthouse
     "✉" -> R.drawable.b_post
     "🗺" -> R.drawable.p_porthole
+    "💬" -> R.drawable.ic_chat
     else -> null
 }
 

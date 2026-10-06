@@ -67,9 +67,9 @@ import kotlin.math.max
  * build ledger: it reads the same `Conversations` model the timeline reads.
  */
 
-private val ROOM_BG = Color(0xFF241D14)
-private val ROOM_PAPER = Color(0xFFEFE3C8)
-private val ROOM_INK = Color(0xFF3B3122)
+private val ROOM_BG = Color(0xFFF7F0E1)
+private val ROOM_PAPER = Color(0xFFEFE3CA)
+private val ROOM_INK = Color(0xFF22303F)
 private val ROOM_INK_SOFT = Color(0xFF6C5F49)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,9 +115,9 @@ internal fun LetterRoom(
                 Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onBack)
                     .semantics { contentDescription = "Zurück ins Gespräch mit $friendName"; role = Role.Button },
                 contentAlignment = Alignment.Center,
-            ) { Text("←", fontSize = 22.sp, color = ROOM_PAPER) }
+            ) { Text("←", fontSize = 22.sp, color = ROOM_INK) }
             Column(Modifier.weight(1f).padding(start = 6.dp)) {
-                Text("Briefe", fontWeight = FontWeight.Bold, fontSize = 19.sp, color = ROOM_PAPER)
+                Text("Briefe", fontWeight = FontWeight.Bold, fontSize = 19.sp, color = ROOM_INK)
                 Text(
                     if (letters.isEmpty()) friendName else "$friendName · ${letters.size} Briefe",
                     fontSize = 12.sp, color = ROOM_INK_SOFT,
@@ -244,7 +244,7 @@ private fun EnvelopeRow(
         }
         Column(Modifier.weight(1f).padding(start = 8.dp)) {
             Text(
-                title, color = ROOM_PAPER, maxLines = 1,
+                title, color = ROOM_INK, maxLines = 1,
                 fontWeight = if (state == LetterState.READY) FontWeight.Bold else FontWeight.SemiBold,
             )
             Text(direction, fontSize = 12.sp, color = ROOM_INK_SOFT)

@@ -238,20 +238,6 @@ class VillageVisualReview {
         }
     }
 
-    @Test fun buildingCard() = shot("04-card") {
-        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
-            androidx.compose.foundation.Image(
-                androidx.compose.ui.res.painterResource(R.drawable.village_plate), null,
-                androidx.compose.ui.Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            )
-            BuildingCard(
-                R.drawable.ic_chat, null, "Treffpunkt", ValleyDestination.CONVERSATIONS.detail, "3 × Neue Nachrichten",
-                "Betreten", {}, {}, androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(10.dp),
-                secondary = "Chat" to {},
-            )
-        }
-    }
-
         private fun quest(id: Long, title: String, icon: String, pts: Int, target: String, tid: Long, type: String = "friend", done: Boolean = false) =
         ApiClient.Quest(id, title, "", icon, pts, 1, "Gregor", type, target, tid, 0, if (done) 1 else null, if (done) "Anna" else null, true)
 
@@ -336,18 +322,18 @@ class VillageVisualReview {
     }) { Isles(start = "home") }
     @Test fun islandVisit() = shot("23-besuch") { Isles(start = "visit:2") }
     @Test fun buildPlace() = shot("25-bauen") {
-        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().padding(top = 260.dp).then(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color.White))) {
-            BuildPlaceContent(null, {}, null, {})
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(Isle.SeaBottom).padding(top = 260.dp).then(androidx.compose.ui.Modifier.background(Isle.Card))) {
+            VillageTheme(true) { BuildPlaceContent(null, {}, null, {}) }
         }
     }
     @Test fun placeSheet() = shot("26-ort") {
-        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().padding(top = 300.dp).then(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color.White))) {
-            PlaceSheetContent(ApiClient.LifePlace("desk", "Coden am Berg"), true, "am Coden", { _, _ -> }, {})
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(Isle.SeaBottom).padding(top = 300.dp).then(androidx.compose.ui.Modifier.background(Isle.Card))) {
+            VillageTheme(true) { PlaceSheetContent(ApiClient.LifePlace("desk", "Coden am Berg"), true, "am Coden", { _, _ -> }, {}) }
         }
     }
     @Test fun decorPicker() = shot("24-deko-wahl") {
-        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().padding(top = 300.dp).then(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color.White))) {
-            DecorPickerContent("palm", IsleDecor.labels.keys.mapIndexed { i, k -> ApiClient.DecorItem(k, i * 20, i < 6) }, 140, {}, {})
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(Isle.SeaBottom).padding(top = 300.dp).then(androidx.compose.ui.Modifier.background(Isle.Card))) {
+            VillageTheme(true) { DecorPickerContent("palm", IsleDecor.labels.keys.mapIndexed { i, k -> ApiClient.DecorItem(k, i * 20, i < 6) }, 140, {}, {}) }
         }
     }
 

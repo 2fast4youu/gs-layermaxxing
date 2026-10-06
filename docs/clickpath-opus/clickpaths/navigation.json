@@ -46,7 +46,11 @@
   },
   "info": {
    "screenshot": "40-thread-info-sheet",
-   "name": "Regeln & Info"
+   "name": "Info & Verschlüsselung"
+  },
+  "friendpage": {
+   "screenshot": "50-friend-page",
+   "name": "Freund-Seite (neutral, NEU)"
   },
   "rules": {
    "screenshot": null,
@@ -94,7 +98,7 @@
   },
   "groupnew": {
    "screenshot": null,
-   "name": "Gruppe erstellen (Leute)"
+   "name": "Gruppe erstellen"
   },
   "sparks": {
    "screenshot": "39-spark-room",
@@ -161,8 +165,8 @@
    "name": "Spitzname"
   },
   "newquest": {
-   "screenshot": null,
-   "name": "Neue Quest"
+   "screenshot": "44-new-quest-sheet",
+   "name": "Neue Quest (ein Formular)"
   },
   "visit": {
    "screenshot": "23-besuch",
@@ -237,16 +241,30 @@
   {
    "from": "chats",
    "to": "groups",
-   "tap": "Chip Gruppen (nur >0)",
+   "tap": "Chip Gruppen (immer)",
    "mode": "B",
-   "src": "ChatsList.kt:212"
+   "src": "ChatsList.kt Chip"
   },
   {
    "from": "chats",
    "to": "topicshub",
-   "tap": "Chip Themen (nur >0)",
+   "tap": "Chip Themen (immer)",
    "mode": "B",
-   "src": "ChatsList.kt:213"
+   "src": "ChatsList.kt Chip"
+  },
+  {
+   "from": "chats",
+   "to": "glossary",
+   "tap": "Chip Wörterbuch",
+   "mode": "B",
+   "src": "ChatsList.kt Chip"
+  },
+  {
+   "from": "chats",
+   "to": "map",
+   "tap": "Chip Inseln",
+   "mode": "I",
+   "src": "ChatsList.kt Chip"
   },
   {
    "from": "chats",
@@ -313,10 +331,66 @@
   },
   {
    "from": "thread",
-   "to": "info",
-   "tap": "Name / Menü → Info",
+   "to": "friendpage",
+   "tap": "Name antippen",
    "mode": "B",
-   "src": "ThreadScreen.kt:655/703"
+   "src": "ThreadScreen.kt onInfo → FriendPage"
+  },
+  {
+   "from": "thread",
+   "to": "info",
+   "tap": "Menü → Info",
+   "mode": "B",
+   "src": "ThreadScreen.kt Menü"
+  },
+  {
+   "from": "thread",
+   "to": "rules",
+   "tap": "Menü → Regeln",
+   "mode": "B",
+   "src": "ThreadScreen.kt Menü"
+  },
+  {
+   "from": "thread",
+   "to": "questdlg",
+   "tap": "Menü/Extras → Quest",
+   "mode": "B",
+   "src": "ThreadScreen.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "label",
+   "tap": "Namen ändern",
+   "mode": "B",
+   "src": "FriendPage.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "newquest",
+   "tap": "+ Neue Quest",
+   "mode": "B",
+   "src": "FriendPage.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "letterroom",
+   "tap": "Briefe",
+   "mode": "B",
+   "src": "FriendPage.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "topics",
+   "tap": "Themen",
+   "mode": "B",
+   "src": "FriendPage.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "rules",
+   "tap": "Regeln",
+   "mode": "B",
+   "src": "FriendPage.kt"
   },
   {
    "from": "thread",
@@ -411,10 +485,17 @@
   },
   {
    "from": "people",
-   "to": "groupnew",
-   "tap": "Gruppe erstellen",
+   "to": "groups",
+   "tap": "Gruppen",
    "mode": "B",
-   "src": "LayerHome.kt:1287"
+   "src": "LayerHome.kt PeopleScreen onGroups"
+  },
+  {
+   "from": "groups",
+   "to": "groupnew",
+   "tap": "+ Gruppe erstellen",
+   "mode": "B",
+   "src": "GregorScreens.kt GroupsHub"
   },
   {
    "from": "sparks",
@@ -441,22 +522,22 @@
    "from": "more",
    "to": "letters",
    "tap": "Briefe",
-   "mode": "M",
-   "src": "MoreScreens.kt:210 (im Inselmodus ausgeblendet)"
+   "mode": "B",
+   "src": "MoreScreens.kt (jetzt in beiden Modi)"
   },
   {
    "from": "more",
    "to": "ep",
    "tap": "Punkte",
-   "mode": "M",
-   "src": "MoreScreens.kt:211 (im Inselmodus ausgeblendet)"
+   "mode": "B",
+   "src": "MoreScreens.kt (jetzt in beiden Modi)"
   },
   {
    "from": "more",
    "to": "glossary",
    "tap": "Wörterbuch",
-   "mode": "M",
-   "src": "MoreScreens.kt:212 (im Inselmodus ausgeblendet)"
+   "mode": "B",
+   "src": "MoreScreens.kt (jetzt in beiden Modi)"
   },
   {
    "from": "more",
@@ -492,13 +573,6 @@
    "tap": "Konten wechseln",
    "mode": "I",
    "src": "MoreScreens.kt:169 / LayerHome.kt:493"
-  },
-  {
-   "from": "settings",
-   "to": "map",
-   "tap": "← Inseln",
-   "mode": "I",
-   "src": "MoreScreens.kt:168"
   },
   {
    "from": "settings",
@@ -580,16 +654,16 @@
   {
    "from": "map",
    "to": "ep",
-   "tap": "Punkte-Pille (nur >0)",
+   "tap": "Punkte-Pille (immer)",
    "mode": "I",
-   "src": "IslandWorld.kt:296"
+   "src": "IslandWorld.kt Pill"
   },
   {
    "from": "map",
    "to": "post",
-   "tap": "Brief-Pille (nur >0)",
+   "tap": "Brief-Pille (immer)",
    "mode": "I",
-   "src": "IslandWorld.kt:300"
+   "src": "IslandWorld.kt Pill"
   },
   {
    "from": "map",
@@ -608,9 +682,23 @@
   {
    "from": "map",
    "to": "chats",
-   "tap": "zurück",
+   "tap": "Leiste Chats / zurück",
    "mode": "I",
-   "src": "IslandWorld.kt:291 onBack"
+   "src": "IslandWorld.kt BarItem Chats"
+  },
+  {
+   "from": "home",
+   "to": "chats",
+   "tap": "Leiste Chats",
+   "mode": "I",
+   "src": "IslandWorld.kt BarItem Chats"
+  },
+  {
+   "from": "harbour",
+   "to": "chats",
+   "tap": "Leiste Chats",
+   "mode": "I",
+   "src": "IslandWorld.kt BarItem Chats"
   },
   {
    "from": "home",
@@ -839,11 +927,11 @@
   "sparknew": 1,
   "groups": 1,
   "topicshub": 1,
+  "glossary": 1,
   "request": 1,
   "accounts": 1,
   "letters": 1,
   "ep": 1,
-  "glossary": 1,
   "profile": 1,
   "appearance": 1,
   "account": 1,
@@ -851,11 +939,13 @@
   "letterroom": 2,
   "topics": 2,
   "search": 2,
+  "friendpage": 2,
   "info": 2,
+  "rules": 2,
+  "questdlg": 2,
   "confirm": 2,
   "extras": 2,
   "actions": 2,
-  "questdlg": 2,
   "glossdlg": 2,
   "compose": 2,
   "groupnew": 2,
@@ -863,7 +953,8 @@
   "proof": 2,
   "recovery": 2,
   "epprop": 3,
-  "rules": 3
+  "label": 3,
+  "newquest": 3
  },
  "taps_islands": {
   "chats": 0,
@@ -875,8 +966,11 @@
   "sparknew": 1,
   "groups": 1,
   "topicshub": 1,
+  "glossary": 1,
   "request": 1,
   "accounts": 1,
+  "letters": 1,
+  "ep": 1,
   "profile": 1,
   "appearance": 1,
   "account": 1,
@@ -884,17 +978,18 @@
   "friend": 1,
   "home": 1,
   "harbour": 1,
-  "ep": 1,
   "post": 1,
   "boat": 1,
   "letterroom": 2,
   "topics": 2,
   "search": 2,
+  "friendpage": 2,
   "info": 2,
+  "rules": 2,
+  "questdlg": 2,
   "confirm": 2,
   "extras": 2,
   "actions": 2,
-  "questdlg": 2,
   "glossdlg": 2,
   "compose": 2,
   "groupnew": 2,
@@ -912,20 +1007,18 @@
   "letteropen": 2,
   "proof": 3,
   "epprop": 3,
-  "rules": 3,
-  "glossary": 3,
   "settings": 3
  },
  "taps_inside_world": {
   "map": 0,
   "home": 0,
   "harbour": 0,
+  "chats": 0,
   "friend": 1,
   "ep": 1,
   "post": 1,
   "boat": 1,
   "people": 1,
-  "chats": 1,
   "lighthouse": 1,
   "hall": 1,
   "library": 1,
@@ -935,44 +1028,46 @@
   "decor": 1,
   "newquest": 1,
   "topicshub": 1,
-  "thread": 2,
+  "thread": 1,
+  "sparks": 1,
+  "sparknew": 1,
+  "groups": 1,
+  "glossary": 1,
+  "request": 1,
+  "more": 1,
+  "accounts": 1,
   "compose": 2,
   "label": 2,
   "visit": 2,
   "topics": 2,
   "letteropen": 2,
-  "groupnew": 2,
-  "sparks": 2,
-  "sparknew": 2,
-  "groups": 2,
-  "request": 2,
-  "more": 2,
-  "accounts": 2,
-  "glossary": 2,
   "settings": 2,
-  "letterroom": 3,
-  "search": 3,
-  "info": 3,
-  "confirm": 3,
-  "extras": 3,
-  "actions": 3,
-  "questdlg": 3,
-  "glossdlg": 3,
-  "profile": 3,
-  "appearance": 3,
-  "account": 3,
-  "about": 3,
-  "proof": 4,
-  "epprop": 4,
-  "rules": 4,
-  "recovery": 4
+  "letterroom": 2,
+  "search": 2,
+  "friendpage": 2,
+  "info": 2,
+  "rules": 2,
+  "questdlg": 2,
+  "confirm": 2,
+  "extras": 2,
+  "actions": 2,
+  "glossdlg": 2,
+  "groupnew": 2,
+  "letters": 2,
+  "profile": 2,
+  "appearance": 2,
+  "account": 2,
+  "about": 2,
+  "proof": 3,
+  "epprop": 3,
+  "recovery": 3
  },
  "features": [
   {
    "feature": "Chat öffnen",
    "messenger": 1,
    "islands": 1,
-   "world": 2
+   "world": 1
   },
   {
    "feature": "Brief schreiben",
@@ -1002,13 +1097,13 @@
    "feature": "Anfrage beantworten",
    "messenger": 1,
    "islands": 1,
-   "world": 2
+   "world": 1
   },
   {
    "feature": "Funke senden",
    "messenger": 1,
    "islands": 1,
-   "world": 2
+   "world": 1
   },
   {
    "feature": "Thema notieren",
@@ -1020,7 +1115,7 @@
    "feature": "Gruppen",
    "messenger": 1,
    "islands": 1,
-   "world": 2
+   "world": 1
   },
   {
    "feature": "Gruppe erstellen",
@@ -1038,7 +1133,7 @@
    "feature": "Quest aus Chat",
    "messenger": 2,
    "islands": 2,
-   "world": 3
+   "world": 2
   },
   {
    "feature": "Punkte",
@@ -1049,42 +1144,42 @@
   {
    "feature": "Wörterbuch",
    "messenger": 1,
-   "islands": 2,
+   "islands": 1,
    "world": 1
   },
   {
    "feature": "Freundschaftsregeln",
-   "messenger": 3,
-   "islands": 3,
-   "world": 4
+   "messenger": 2,
+   "islands": 2,
+   "world": 2
   },
   {
    "feature": "Darstellung / Modus / Debug",
    "messenger": 1,
    "islands": 1,
-   "world": 3
+   "world": 2
   },
   {
    "feature": "Konto & Sicherheit",
    "messenger": 1,
    "islands": 1,
-   "world": 3
+   "world": 2
   },
   {
    "feature": "Konto wechseln",
    "messenger": 1,
    "islands": 1,
-   "world": 2
+   "world": 1
   },
   {
    "feature": "Profil",
    "messenger": 1,
    "islands": 1,
-   "world": 3
+   "world": 2
   },
   {
    "feature": "Spitzname",
-   "messenger": null,
+   "messenger": 3,
    "islands": 2,
    "world": 2
   },

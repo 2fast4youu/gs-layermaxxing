@@ -236,8 +236,20 @@ fun TopicsHub(topics: List<ApiClient.Topic>, friends: List<ApiClient.UserSummary
 }
 
 @Composable
-fun GroupsHub(groups: List<ApiClient.Group>, friends: List<ApiClient.UserSummary>, topics: List<ApiClient.Topic>, settings: List<ApiClient.FriendshipSettings>, token: String, api: ApiClient, act: ((suspend () -> Unit) -> Unit), onTopics: (TopicScope, String) -> Unit) {
+fun GroupsHub(
+    groups: List<ApiClient.Group>, friends: List<ApiClient.UserSummary>, topics: List<ApiClient.Topic>, settings: List<ApiClient.FriendshipSettings>,
+    token: String, api: ApiClient, act: ((suspend () -> Unit) -> Unit), onTopics: (TopicScope, String) -> Unit,
+    quests: List<ApiClient.Quest> = emptyList(),
+) {
     var selectedId by remember { mutableStateOf<Long?>(null) }
+    var questFor by remember { mutableStateOf<Long?>(null) }
+    questFor?.let { gid ->
+        NewQuestSheet(
+            pals = emptyList(), groups = groups.filter { it.id == gid }, presetPeer = null, presetGroup = gid,
+            onDismiss = { questFor = null },
+            onCreate = { t, d, icon, pts, _, g -> questFor = null; act { api.createQuest(token, t, d, icon, pts, null, g) } },
+        )
+    }
     var creating by remember { mutableStateOf(false) }
     var savingGroup by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
@@ -253,6 +265,12 @@ fun GroupsHub(groups: List<ApiClient.Group>, friends: List<ApiClient.UserSummary
         if (group != null) {
             item { TextButton(onClick = { selectedId = null; letterOpen = false }) { Text("← Alle Gruppen") } }
             item { Text(group.name, style = MaterialTheme.typography.headlineSmall); Text(group.members.joinToString { it.name }) }
+            // Group quests also work without the island: list, tick off, add.
+            val groupQuests = quests.filter { it.targetType == "group" && it.targetId == group.id }.sortedBy { it.completedAt != null }
+            item { ExtensionEntry("⭐ Gruppen-Quests", if (groupQuests.isEmpty()) "Noch keine – ＋ neue anlegen" else "${groupQuests.count { it.completedAt == null }} offen · ＋ neue") { questFor = group.id } }
+            items(groupQuests.take(6), key = { "gq${it.id}" }) { q ->
+                QuestRow(q, { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } }, null)
+            }
             item { ExtensionEntry("📝 Gemeinsame Themen", "${TopicScope.group(group.id).filter(topics).count { it.completedAt == null }} offen") { onTopics(TopicScope.group(group.id), group.name) } }
             item { ExtensionEntry("✉ Gruppenbrief", "Ein versiegelter Brief an die Gruppe, kein Sofort-Gruppenchat") { letterOpen = !letterOpen } }
             if (letterOpen) item { Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

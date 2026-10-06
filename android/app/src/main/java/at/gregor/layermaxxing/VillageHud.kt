@@ -490,68 +490,6 @@ internal fun GameButton(text: String, onClick: () -> Unit, modifier: Modifier = 
     }
 }
 
-/**
- * Bottom card for the selected building: what it is, what is new there, one
- * clear way in. Ivory with a single fine gold line, like a printed game card.
- */
-@Composable
-internal fun BuildingCard(
-    icon: Int?,
-    emoji: String?,
-    title: String,
-    detail: String,
-    news: String?,
-    action: String,
-    onAction: () -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-    secondary: Pair<String, () -> Unit>? = null,
-) {
-    val shape = RoundedCornerShape(24.dp)
-    Box(modifier.fillMaxWidth()) {
-        Row(
-            Modifier.padding(top = 14.dp).fillMaxWidth()
-                .shadow(16.dp, shape, ambientColor = Kit.Navy, spotColor = Kit.Navy)
-                .background(Kit.parchmentBrush, shape)
-                .padding(3.dp).border(1.dp, Kit.Trim.copy(alpha = .7f), RoundedCornerShape(21.dp))
-                .padding(start = 76.dp, end = 12.dp, top = 14.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = TextStyle(color = Kit.Ink, fontSize = 20.sp, fontFamily = Kit.Display), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(detail, style = TextStyle(color = Kit.InkSoft, fontSize = 12.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp),
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (news != null) Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).background(Kit.Red, CircleShape))
-                    Text(" $news", style = TextStyle(color = Kit.Red, fontSize = 12.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                GameButton(action, onAction, Modifier.fillMaxWidth())
-                secondary?.let { (label, run) -> GameButton(label, run, Modifier.fillMaxWidth(), primary = false) }
-            }
-        }
-        Box(
-            Modifier.padding(start = 12.dp).size(64.dp)
-                .shadow(8.dp, CircleShape, ambientColor = Kit.Navy, spotColor = Kit.Navy)
-                .background(Color.White, CircleShape).padding(2.5.dp)
-                .background(Brush.radialGradient(listOf(Color.White, Kit.Ivory, Kit.IvoryDeep)), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (icon != null) Image(painterResource(icon), null, Modifier.size(50.dp))
-            else Text(emoji ?: "", fontSize = 30.sp)
-        }
-        Box(
-            Modifier.align(Alignment.TopEnd).padding(top = 22.dp, end = 10.dp).size(28.dp).clip(CircleShape)
-                .background(Kit.Navy.copy(alpha = .08f), CircleShape)
-                .semantics { contentDescription = "Schließen"; role = Role.Button }
-                .clickable(onClick = onDismiss),
-            contentAlignment = Alignment.Center,
-        ) { Text("✕", color = Kit.InkSoft, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-    }
-}
-
 /** Header for rooms inside the island world: breadcrumb back to the island, then a teal title bar. */
 @Composable
 internal fun RoomHeader(icon: Int, title: String, onBack: (() -> Unit)?, onClose: () -> Unit) {

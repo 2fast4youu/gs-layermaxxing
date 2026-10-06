@@ -164,9 +164,9 @@ internal fun MoreScreen(
             MoreDest.ABOUT -> AboutPage(status, serverProfile, onServerProfile)
         }
     } else Column(Modifier.fillMaxSize()) {
-        if (onExit != null) Row(Modifier.fillMaxWidth()) {
-            TextButton(onClick = onExit) { Text("← Inseln") }
-            if (onAccounts != null) TextButton(onClick = onAccounts) { Text("Konten wechseln") }
+        // From the island the room frame already has its close button: only the account switch stays here.
+        if (onExit != null && onAccounts != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onAccounts) { Text("Konten wechseln") }
         }
         Box(Modifier.weight(1f)) { MoreHub(status, ep, onLogout, onDest = { dest = it }, placesOnIsland = castleExperiment) }
     }
@@ -207,9 +207,9 @@ private fun MoreHub(
                     .background(MaterialTheme.colorScheme.errorContainer).clickable { onDest(MoreDest.PROFILE) }.padding(14.dp),
             ) { Text("⚠  Dein Konto hat noch kein Passwort – jetzt absichern", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold) }
         }
-        if (!placesOnIsland) item { MenuRow("✉", "Briefe", "Eingang, Ausgang und Nachweise") { onDest(MoreDest.LETTERS) } }
-        if (!placesOnIsland) item { MenuRow("★", "Punkte", if ((ep?.given ?: 0) + (ep?.received ?: 0) > 0) "Gegeben ${ep?.given ?: 0} · Erhalten ${ep?.received ?: 0}" else "Noch keine") { onDest(MoreDest.EP) } }
-        if (!placesOnIsland) item { MenuRow("📖", "Wörterbuch", "Begriffe der App, gemeinsam erklärt") { onDest(MoreDest.GLOSSARY) } }
+        item { MenuRow("✉", "Briefe", "Eingang, Ausgang und Nachweise") { onDest(MoreDest.LETTERS) } }
+        item { MenuRow("★", "Punkte", if ((ep?.given ?: 0) + (ep?.received ?: 0) > 0) "Gegeben ${ep?.given ?: 0} · Erhalten ${ep?.received ?: 0}" else "Noch keine") { onDest(MoreDest.EP) } }
+        item { MenuRow("📖", "Wörterbuch", "Begriffe der App, gemeinsam erklärt") { onDest(MoreDest.GLOSSARY) } }
         item { HorizontalDivider(Modifier.padding(vertical = 6.dp)) }
         item { MenuRow("🎨", "Darstellung", "Modus, Design, App-Sperre") { onDest(MoreDest.APPEARANCE) } }
         item { MenuRow("🔐", "Konto & Sicherheit", "Passwort, Geräte, Blockierungen") { onDest(MoreDest.ACCOUNT) } }
@@ -342,7 +342,7 @@ private fun AppearancePage(store: SessionStore, onTheme: (String) -> Unit, onCas
         item { Text("Nachrichten und Insel-Fortschritt bleiben beim Wechseln erhalten.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { SectionTitle("Design") }
         item { Card { Column(Modifier.padding(vertical = 6.dp)) {
-            listOf("system" to "Wie das Handy", "light" to "Hell", "dark" to "Dunkel", "antique" to "Altertümlich").forEach { (key, label) ->
+            listOf("system" to "Hafenpost – hell/dunkel wie das Handy", "light" to "Hafenpost hell", "dark" to "Hafenpost dunkel", "material" to "Material You (Handyfarben)", "antique" to "Altertümlich").forEach { (key, label) ->
                 Row(Modifier.fillMaxWidth().clickable { theme = key; onTheme(key) }.padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.RadioButton(selected = theme == key, onClick = { theme = key; onTheme(key) })
                     Text(label)

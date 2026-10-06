@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Navigations-Graph ("Linien-Spaghetti") + Erreichbarkeits-Check, aktueller Stand 7.7.1.
+"""Navigations-Graph ("Linien-Spaghetti") + Erreichbarkeits-Check, aktueller Stand 7.8.
 
 Jede Kante ist im Code belegt (src). Modus:
   B = in beiden Modi, M = nur Messenger-Modus (ohne Inseln), I = nur Modus "Messenger + Inseln".
@@ -26,7 +26,8 @@ N = {
  "actions": ("14-chat-actions", "Reaktionen"),
  "search": (None, "Im Chat suchen"),
  "confirm": (None, "Entfernen / Blockieren"),
- "info": ("40-thread-info-sheet", "Regeln & Info"),
+ "info": ("40-thread-info-sheet", "Info & Verschlüsselung"),
+ "friendpage": ("50-friend-page", "Freund-Seite (neutral, NEU)"),
  "rules": (None, "Freundschaftsregeln"),
  "letterroom": ("38-letter-room", "Briefe mit Freund"),
  "topics": ("36-topics-screen", "Themen (Liste)"),
@@ -38,7 +39,7 @@ N = {
  "letteropen": (None, "Brief lesen"),
  "proof": ("47-proof-dialog", "Nachweis"),
  "people": (None, "Leute / Freunde finden"),
- "groupnew": (None, "Gruppe erstellen (Leute)"),
+ "groupnew": (None, "Gruppe erstellen"),
  "sparks": ("39-spark-room", "Funken"),
  "sparknew": (None, "Funke senden"),
  "groups": ("09-groups-room", "Gruppen"),
@@ -56,7 +57,7 @@ N = {
  # Inseln
  "friend": ("43-friend-sheet", "Freundes-Sheet"),
  "label": ("45-label-dialog", "Spitzname"),
- "newquest": (None, "Neue Quest"),
+ "newquest": ("44-new-quest-sheet", "Neue Quest (ein Formular)"),
  "visit": ("23-besuch", "Insel besuchen"),
  "boat": ("25-schiff", "Boot"),
  "post": ("30-post", "Post"),
@@ -69,7 +70,7 @@ N = {
  "decor": ("24-deko-wahl", "Deko"),
 }
 ROOTS = {"M": ["chats", "more"], "I": ["chats", "more", "map"]}   # Hauptmenü pro Modus (Tab-Leiste)
-ISLAND_BAR = ["map", "home", "harbour"]                           # Leiste innerhalb der Inselwelt
+ISLAND_BAR = ["map", "home", "harbour", "chats"]                           # Leiste innerhalb der Inselwelt
 
 # ---------- Kanten (von, nach, Tap, Modus, Quelle) ----------
 E = [
@@ -77,8 +78,10 @@ E = [
  ("chats", "people", "Neuer Chat", "B", "ChatsList.kt:233/259 onGoPeople"),
  ("chats", "sparks", "Funken", "B", "ChatsList.kt:220"),
  ("chats", "sparknew", "Funke-Knopf", "B", "ChatsList.kt:253"),
- ("chats", "groups", "Chip Gruppen (nur >0)", "B", "ChatsList.kt:212"),
- ("chats", "topicshub", "Chip Themen (nur >0)", "B", "ChatsList.kt:213"),
+ ("chats", "groups", "Chip Gruppen (immer)", "B", "ChatsList.kt Chip"),
+ ("chats", "topicshub", "Chip Themen (immer)", "B", "ChatsList.kt Chip"),
+ ("chats", "glossary", "Chip Wörterbuch", "B", "ChatsList.kt Chip"),
+ ("chats", "map", "Chip Inseln", "I", "ChatsList.kt Chip"),
  ("chats", "request", "automatisch", "B", "LayerHome.kt:571"),
  ("chats", "map", "Tab Inseln", "I", "AppMode.kt:17"),
  ("chats", "more", "Tab Mehr", "B", "AppMode.kt:16"),
@@ -88,7 +91,15 @@ E = [
  ("thread", "letterroom", "Umschlag-Knopf", "B", "ThreadScreen.kt:683"),
  ("thread", "topics", "Menü → Themen", "B", "ThreadScreen.kt:697"),
  ("thread", "search", "Menü → Suchen", "B", "ThreadScreen.kt:698"),
- ("thread", "info", "Name / Menü → Info", "B", "ThreadScreen.kt:655/703"),
+ ("thread", "friendpage", "Name antippen", "B", "ThreadScreen.kt onInfo → FriendPage"),
+ ("thread", "info", "Menü → Info", "B", "ThreadScreen.kt Menü"),
+ ("thread", "rules", "Menü → Regeln", "B", "ThreadScreen.kt Menü"),
+ ("thread", "questdlg", "Menü/Extras → Quest", "B", "ThreadScreen.kt"),
+ ("friendpage", "label", "Namen ändern", "B", "FriendPage.kt"),
+ ("friendpage", "newquest", "+ Neue Quest", "B", "FriendPage.kt"),
+ ("friendpage", "letterroom", "Briefe", "B", "FriendPage.kt"),
+ ("friendpage", "topics", "Themen", "B", "FriendPage.kt"),
+ ("friendpage", "rules", "Regeln", "B", "FriendPage.kt"),
  ("thread", "confirm", "Menü → Entfernen", "B", "ThreadScreen.kt:704"),
  ("thread", "extras", "Extras", "B", "ThreadScreen.kt:454"),
  ("thread", "actions", "lange drücken", "B", "ThreadScreen.kt:842"),
@@ -102,19 +113,19 @@ E = [
  ("letterroom", "epprop", "Punkte vorschlagen", "B", "ThreadScreen.kt:578"),
  ("letterroom", "rules", "Regeln", "B", "ThreadScreen.kt:573"),
  ("people", "thread", "Freund", "B", "LayerHome.kt:536"),
- ("people", "groupnew", "Gruppe erstellen", "B", "LayerHome.kt:1287"),
+ ("people", "groups", "Gruppen", "B", "LayerHome.kt PeopleScreen onGroups"),
+ ("groups", "groupnew", "+ Gruppe erstellen", "B", "GregorScreens.kt GroupsHub"),
  ("sparks", "sparknew", "Funke senden", "B", "SparkScreens.kt:139"),
  ("groups", "topics", "Gemeinsame Themen", "B", "GregorScreens.kt:256"),
  ("topicshub", "topics", "Freund / Gruppe", "B", "GregorScreens.kt:226"),
- ("more", "letters", "Briefe", "M", "MoreScreens.kt:210 (im Inselmodus ausgeblendet)"),
- ("more", "ep", "Punkte", "M", "MoreScreens.kt:211 (im Inselmodus ausgeblendet)"),
- ("more", "glossary", "Wörterbuch", "M", "MoreScreens.kt:212 (im Inselmodus ausgeblendet)"),
+ ("more", "letters", "Briefe", "B", "MoreScreens.kt (jetzt in beiden Modi)"),
+ ("more", "ep", "Punkte", "B", "MoreScreens.kt (jetzt in beiden Modi)"),
+ ("more", "glossary", "Wörterbuch", "B", "MoreScreens.kt (jetzt in beiden Modi)"),
  ("more", "profile", "Profil", "B", "MoreScreens.kt:198"),
  ("more", "appearance", "Darstellung", "B", "MoreScreens.kt:214"),
  ("more", "account", "Konto & Sicherheit", "B", "MoreScreens.kt:215"),
  ("more", "about", "Über die App", "B", "MoreScreens.kt:216"),
  ("settings", "accounts", "Konten wechseln", "I", "MoreScreens.kt:169 / LayerHome.kt:493"),
- ("settings", "map", "← Inseln", "I", "MoreScreens.kt:168"),
  ("settings", "profile", "Profil", "I", "MoreScreens.kt:198"),
  ("settings", "appearance", "Darstellung", "I", "MoreScreens.kt:214"),
  ("settings", "account", "Konto & Sicherheit", "I", "MoreScreens.kt:215"),
@@ -127,11 +138,13 @@ E = [
  ("map", "friend", "Insel antippen", "I", "IslandWorld.kt:297"),
  ("map", "home", "Meine Insel", "I", "IslandWorld.kt:340"),
  ("map", "harbour", "Hafen", "I", "IslandWorld.kt:341"),
- ("map", "ep", "Punkte-Pille (nur >0)", "I", "IslandWorld.kt:296"),
- ("map", "post", "Brief-Pille (nur >0)", "I", "IslandWorld.kt:300"),
+ ("map", "ep", "Punkte-Pille (immer)", "I", "IslandWorld.kt Pill"),
+ ("map", "post", "Brief-Pille (immer)", "I", "IslandWorld.kt Pill"),
  ("map", "boat", "Boot", "I", "IslandWorld.kt:1187"),
  ("map", "people", "Freunde finden (leer)", "I", "IslandWorld.kt:313"),
- ("map", "chats", "zurück", "I", "IslandWorld.kt:291 onBack"),
+ ("map", "chats", "Leiste Chats / zurück", "I", "IslandWorld.kt BarItem Chats"),
+ ("home", "chats", "Leiste Chats", "I", "IslandWorld.kt BarItem Chats"),
+ ("harbour", "chats", "Leiste Chats", "I", "IslandWorld.kt BarItem Chats"),
  ("home", "map", "Karte", "I", "IslandWorld.kt:339"),
  ("home", "harbour", "Hafen", "I", "IslandWorld.kt:341"),
  ("harbour", "map", "Karte", "I", "IslandWorld.kt:339"),
@@ -290,7 +303,7 @@ def draw_graph():
         f = font(12); tw = d.textlength(lab, font=f)
         d.rounded_rectangle([lx - 3, ly - 1, lx + tw + 3, ly + 15], 4, fill=(250, 247, 240, 235))
         d.text((lx, ly), lab, fill=MCOL[m], font=f)
-    d.text((60, 28), "Navigation GS Layermaxxing 7.7.1 – alle Wege (aus dem Code)", fill=(30, 50, 55), font=font(44))
+    d.text((60, 28), "Navigation GS Layermaxxing 7.8 – alle Wege (aus dem Code)", fill=(30, 50, 55), font=font(44))
     d.text((60, 86), "Spalte = wie viele Taps vom Hauptmenü entfernt (0 = Tab/Leiste, dick umrandet). Rückwege (zurück/Leiste) weggelassen. Zahl neben Karte: Taps im Modus M / I. Tap-Text steht am Start der Linie.",
            fill=(100, 105, 105), font=font(22, False))
     x0 = 60
@@ -332,12 +345,11 @@ def draw_table():
             s, col = cell(v); d.rounded_rectangle([x, y - 2, x + 64, y + 30], 8, fill=col); d.text((x + 32 - d.textlength(s, font=font(20)) / 2, y + 2), s, fill="white", font=font(20))
     y = 220 + rh * len(rows)
     notes = [
-     "Im Inselmodus blendet „Mehr“ Briefe, Punkte und Wörterbuch aus – sie leben dann nur noch auf der Insel (Post, Punkte-Pille, Bibliothek).",
-     "Chatliste bekommt onGlossary/onValley, nutzt sie aber nicht (ChatsList.kt:148) → aus den Chats kein Weg zu Wörterbuch/Inseln.",
-     "Freundschaftsregeln sind am tiefsten (3–4 Taps: Chat → ⋮ → Regeln & Info → Freundschaftsregeln).",
-     "Punkte & Brief-Abkürzung auf der Karte erscheinen nur, wenn es etwas zu zeigen gibt (Punkte > 0, neue Briefe > 0).",
-     "Gruppen/Themen-Chips in den Chats nur, wenn schon welche existieren.",
-     "In der Inselwelt gibt es keinen direkten Weg zu Chats/Mehr außer ‹ zurück bzw. über das Haus.",
+     "7.8: In der Inselwelt ist „Chats“ fest in der Leiste (1 Tap raus zum Hauptmenü, lange auf „Karte“ = auch Chats).",
+     "7.8: Neue neutrale Freund-Seite (Chat-Kopf antippen): Spitzname, Quests, Briefe, Themen, Regeln ohne Insel.",
+     "7.8: „Mehr“ zeigt Briefe, Punkte, Wörterbuch in beiden Modi; Chips Gruppen/Themen/Wörterbuch/Inseln immer sichtbar.",
+     "7.8: Ein Quest-Formular für alle Wege; „Gruppe erstellen“ nur noch im Gruppen-Screen.",
+     "Bewusst nur auf der Insel: Status „Ich bin hier“, Bauen, Deko (Inselspiel).",
     ]
     for n_ in notes:
         d.text((40, y), "• " + n_, fill=(60, 70, 70), font=font(19, False)); y += 32

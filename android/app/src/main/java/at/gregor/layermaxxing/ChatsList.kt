@@ -209,8 +209,11 @@ internal fun ChatsScreen(
                         val count = if (f == ChatTools.ListFilter.UNREAD) conversations.count { it.hasNews } else 0
                         ListChip(if (count > 0) "${f.label} $count" else f.label, selected = filter == f, p = p) { filter = f }
                     }
-                    if (groupCount > 0) ListChip("Gruppen $groupCount", selected = false, p = p, onClick = onGroups)
-                    if (topicCount > 0) ListChip("Themen $topicCount", selected = false, p = p, onClick = onTopicsHub)
+                    // The shared places are always one tap from the main menu, even before the first one exists.
+                    ListChip(if (groupCount > 0) "Gruppen $groupCount" else "＋ Gruppe", selected = false, p = p, onClick = onGroups)
+                    ListChip(if (topicCount > 0) "Themen $topicCount" else "＋ Thema", selected = false, p = p, onClick = onTopicsHub)
+                    ListChip("Wörterbuch", selected = false, p = p, onClick = onGlossary)
+                    if (showValley) ListChip("🏝 Inseln", selected = false, p = p, onClick = onValley)
                 }
             }
             if (requests.isNotEmpty()) items(requests, key = { it.key }) { request ->

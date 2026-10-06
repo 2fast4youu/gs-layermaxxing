@@ -22,28 +22,27 @@ font = lambda s, b=True: ImageFont.truetype(FB if b else FR, s)
 
 # ---------- Theme-Bewertung (aktueller Stil: "Nordische Küste", 7.7) ----------
 # FITS = passt, PARTLY = teils (Farben ok, aber Standard-Material), OLD = passt nicht mehr
-THEME = {
-    "03-room": ("PARTLY", "Türkis/Creme ok, aber nackte Material-Liste"),
-    "04-card": ("OLD", "altes buntes Alpendorf; BuildingCard im App-Code nirgends mehr benutzt"),
+THEME = {  # Stand 7.8 – nach Umbau, neu gerendert und bildgeprüft
+    "03-room": ("FITS", "Hafenpapier + gedämpftes Teal"),
     "05-chats": ("FITS", "Hafenpapier, gedämpftes Teal"),
-    "06-thread": ("PARTLY", "Chat ok, Kopfleiste dunkelblau/Standard"),
+    "06-thread": ("PARTLY", "Kopf jetzt Teal; Sprechblasen sehr hell"),
     "07-glossary": ("FITS", "Creme + Teal, ruhig"),
-    "08-topics-room": ("PARTLY", "Farben ok, sonst Standard-Forum"),
-    "09-groups-room": ("PARTLY", "großes weißes Panel, schwere schwarze Schrift"),
+    "08-topics-room": ("FITS", "Teal-Rahmen, Creme-Panel"),
+    "09-groups-room": ("FITS", "Teal-Rahmen, Creme-Panel"),
     "12-empty-chats": ("FITS", "Hafen-Text + Boot-Illustration"),
     "13-chat-extras": ("PARTLY", "ok, aber unruhig: viele Emoji/Werkzeuge"),
-    "13-login": ("PARTLY", "Insel im Hintergrund, Formular lavendel/Material"),
-    "14-chat-actions": ("PARTLY", "loses Werkzeug-Palette, kein fertiger Look"),
-    "14-more": ("OLD", "flache lavendel Material-Liste – im Inselmodus 'Mein Haus'"),
+    "13-login": ("PARTLY", "Formular Hafenpost; bunte Szene dahinter"),
+    "14-chat-actions": ("PARTLY", "loses Werkzeug-Palette"),
+    "14-more": ("FITS", "Hafenpost statt Lavendel"),
     "20-inseln": ("FITS", "Kernstil"),
     "21-inseln-leer": ("FITS", "Kernstil"),
-    "22-meine-insel": ("FITS", "Kernstil"),
+    "22-meine-insel": ("FITS", "Kernstil, Leiste mit Chats"),
     "23-besuch": ("FITS", "Kernstil"),
-    "24-deko-wahl": ("PARTLY", "Deko-Bilder gut, Hintergrund reines Weiß"),
-    "25-bauen": ("PARTLY", "Bilder gut, Formular weiß/Standard"),
+    "24-deko-wahl": ("FITS", "Hafenpapier statt Weiß"),
+    "25-bauen": ("FITS", "Hafenpapier statt Weiß"),
     "25-schiff": ("FITS", "dunkles Glas-Sheet über Meer"),
     "26-inseln-debug": ("DEBUG", "nur Debug-Modus (Hitboxen) – kein Theme-Thema"),
-    "26-ort": ("PARTLY", "kleines Inselbild, Rest weißes Material-Formular"),
+    "26-ort": ("FITS", "Hafenpapier statt Weiß"),
     "27-insel-zoom": ("FITS", "Kernstil"),
     "28-insel-doppeltipp": ("FITS", "Kernstil"),
     "29-insel-einzeltipp": ("FITS", "Postamt, Holz + Siegel"),
@@ -53,19 +52,21 @@ THEME = {
     "33-bibliothek": ("FITS", "Holz + Papier"),
     "34-gemeindehaus": ("FITS", "warmes Holz"),
     "35-haus": ("FITS", "gemaltes Portrait, Holz"),
-    "36-topics-screen": ("OLD", "weißes Material-Layout, graue Rahmen"),
-    "37-ep-screen": ("OLD", "blau/grau Formular, kein Inselbezug"),
-    "38-letter-room": ("OLD", "dunkelbraun/schwarz – bricht mit ruhigem Creme/Teal"),
-    "39-spark-room": ("PARTLY", "Sand-Karten ok, Knopf blau, keine Welt"),
-    "40-thread-info-sheet": ("OLD", "weiße Einstellungsseite, Standard-Schalter"),
-    "41-quest-dialog": ("PARTLY", "Spielschrift ok, Dialog lavendel"),
-    "42-glossary-term-dialog": ("PARTLY", "Mini-Dialog, lavendel"),
+    "36-topics-screen": ("FITS", "Hafenpost statt Weiß"),
+    "37-ep-screen": ("FITS", "Creme + Teal statt Blaugrau"),
+    "38-letter-room": ("FITS", "hell statt dunkelbraun"),
+    "39-spark-room": ("FITS", "Sand + Teal-Knopf"),
+    "40-thread-info-sheet": ("FITS", "Hafenpost statt Weiß"),
+    "41-quest-dialog": ("FITS", "das eine Quest-Formular"),
+    "42-glossary-term-dialog": ("FITS", "Creme-Dialog"),
     "43-friend-sheet": ("FITS", "Inselbild, Teal/Creme"),
-    "45-label-dialog": ("PARTLY", "lavendel Formular, blaue Chips"),
-    "46-recovery-dialog": ("PARTLY", "generischer Dialog"),
-    "47-proof-dialog": ("PARTLY", "technischer Dialog, lavendel"),
-    "48-ep-proposal-dialog": ("PARTLY", "Formular lavendel/blau"),
-    "49-request-dialog": ("PARTLY", "grau-lavendel Material"),
+    "44-new-quest-sheet": ("FITS", "dasselbe Quest-Formular"),
+    "45-label-dialog": ("FITS", "Creme-Dialog"),
+    "46-recovery-dialog": ("FITS", "Creme-Dialog"),
+    "47-proof-dialog": ("FITS", "Creme-Dialog"),
+    "48-ep-proposal-dialog": ("FITS", "Creme-Dialog"),
+    "49-request-dialog": ("FITS", "Creme-Dialog"),
+    "50-friend-page": ("FITS", "NEU: neutrale Freund-Seite"),
 }
 TCOL = {"FITS": (46, 140, 90), "PARTLY": (222, 150, 30), "OLD": (200, 40, 40), "DEBUG": (110, 110, 110)}
 TTXT = {"FITS": "passt", "PARTLY": "teils", "OLD": "passt NICHT mehr", "DEBUG": "Debug"}
@@ -77,7 +78,7 @@ J = [
    ("20-inseln", "Inselkarte", (50, 13), "Insel von Gerfried", "IslandWorld.kt:297 onFriend"),
    ("43-friend-sheet", "Freundes-Sheet", (30, 28), "Chat", "IslandWorld.kt:919 onChat"),
    ("06-thread", "Chat offen", None, "", "LayerHome.kt:509 ThreadScreen"),
- ], ["Alternative im Chat-Tab: 1 Tap (Zeile antippen) – aber der Chat-Tab ist im Inselmodus versteckt."]),
+ ], ["NEU 7.8: Leiste „Chats“ in der Inselwelt → Zeile = auch 2 Taps."]),
  ("Brief an einen Freund schreiben", "Inselkarte", [
    ("20-inseln", "Inselkarte", (50, 13), "Insel von Gerfried", "IslandWorld.kt:297"),
    ("43-friend-sheet", "Freundes-Sheet", (70, 28), "Brief schreiben", "IslandWorld.kt:920-923 onLetter"),
@@ -85,17 +86,16 @@ J = [
  ], ["Alternativ über Post: Meine Insel → Post → „Brief schreiben“ → Empfänger wählen = 4 Taps.",
      "Im Chat: ✦ neben dem Eingabefeld."]),
  ("Neuen Brief lesen", "Inselkarte", [
-   ("20-inseln", "Inselkarte", (50, 95), "Meine Insel", "IslandWorld.kt:340"),
+   ("20-inseln", "Inselkarte", (42, 94), "Meine Insel", "IslandWorld.kt:340"),
    ("22-meine-insel", "Meine Insel", (12, 47), "Post", "IslandWorld.kt:265 onBuilding"),
    ("30-post", "Postamt", (20, 18), "Umschlag", "PlaceScenes.kt:239 PostOffice onOpen"),
    (None, "Brief offen", None, "", "openLetter – kein Screenshot"),
- ], ["Abkürzung existiert schon: „✉ n“-Pille oben (nur wenn ein Brief bereit ist) → direkt Post = 2 Taps."]),
+ ], ["NEU 7.8: „✉“-Pille oben ist immer da → direkt Post = 2 Taps."]),
  ("Quest mit Freund anlegen", "Inselkarte", [
    ("20-inseln", "Inselkarte", (50, 13), "Insel von Gerfried", "IslandWorld.kt:297"),
    ("43-friend-sheet", "Freundes-Sheet", (85, 35), "+ Neue", "IslandWorld.kt:399 newQuestFor"),
-   (None, "Neue Quest (Sheet)", None, "", "NewQuestSheet – nicht renderbar"),
- ], ["Zweiter Weg: Hafen → „Quest anpinnen“ (2 Taps).",
-     "Dritter Weg im Chat → ChatQuestDialog (41) – ANDERES Formular für dieselbe Sache → Stilbruch."]),
+   ("44-new-quest-sheet", "Neue Quest", None, "", "IslandWorld.kt NewQuestSheet"),
+ ], ["NEU 7.8: Insel, Hafen, Lagerfeuer, Freund-Seite und Chat öffnen dasselbe Formular."]),
  ("Freund einen Spitznamen geben", "Inselkarte", [
    ("20-inseln", "Inselkarte", (50, 13), "Insel von Gerfried", "IslandWorld.kt:297"),
    ("43-friend-sheet", "Freundes-Sheet", (39, 10), "Wie nennst du …?", "IslandWorld.kt:898"),
@@ -119,13 +119,13 @@ J = [
    ("22-meine-insel", "Meine Insel", (25, 53), "Gemeindehaus / Lagerfeuer", "IslandWorld.kt:265 onBuilding"),
    ("34-gemeindehaus", "Gemeindehaus", (50, 96), "Gruppen verwalten", "PlaceScenes.kt:587"),
    ("09-groups-room", "Gruppen", (50, 30), "+ Gruppe erstellen", "GregorScreens.kt:279"),
- ], ["Zweiter „Gruppe erstellen“ existiert separat (LayerHome.kt:1287) → doppelt."]),
+ ], ["NEU 7.8: nur noch hier; aus den Chats „＋ Gruppe“-Chip = 2 Taps."]),
  ("Thema fürs nächste Gespräch notieren", "Inselkarte", [
-   ("20-inseln", "Inselkarte", (70, 95), "Hafen", "IslandWorld.kt:341"),
+   ("20-inseln", "Inselkarte", (61, 94), "Hafen", "IslandWorld.kt:341"),
    ("31-hafen", "Hafen", (81, 73), "Themen", "PlaceScenes.kt:380 onAllTopics"),
    ("08-topics-room", "Themen", (50, 35), "Gerfried", "GregorScreens.kt:226 TopicsHub"),
    ("36-topics-screen", "Themen mit Gerfried", (85, 96), "Merken", "TopicsScreen.kt:59"),
- ], ["4 Taps + Text. Kandidat: „Thema“ direkt im Freundes-Sheet."]),
+ ], ["Neutral jetzt kürzer: siehe „Thema notieren (Messenger)“."]),
  ("Freunde finden", "Meine Insel", [
    ("22-meine-insel", "Meine Insel", (87, 47), "Leuchtturm", "IslandWorld.kt:265"),
    ("32-leuchtturm", "Leuchtturm", (50, 95), "Freunde finden", "PlaceScenes.kt:455 onFind"),
@@ -134,13 +134,33 @@ J = [
  ("Einstellungen / Debug-Modus", "Meine Insel", [
    ("22-meine-insel", "Meine Insel", (36, 53), "Figur (= Mein Haus)", "IslandWorld.kt:270 onFigure"),
    ("35-haus", "Mein Haus", (50, 96), "Profil & Einstellungen", "PlaceScenes.kt:656"),
-   ("14-more", "Mehr (lavendel!)", (50, 39), "Darstellung", "MoreScreens.kt:214"),
+   ("14-more", "Mehr", (50, 39), "Darstellung", "MoreScreens.kt:214"),
    (None, "Darstellung → Debug-Modus", None, "", "MoreScreens.kt:371 – kein Screenshot"),
- ], ["Stilbruch: aus dem gemalten Haus direkt in die alte Material-Liste."]),
+ ], ["NEU 7.8: Mehr im Hafenpost-Look; im Messenger: Tab Mehr = 1 Tap."]),
  ("Punkte ansehen", "Inselkarte", [
    ("20-inseln", "Inselkarte", (89, 5), "⭐ Punkte", "IslandWorld.kt:296 onPoints"),
    ("37-ep-screen", "Punkte", None, "", "SocialScreens.kt:34 EpScreen"),
- ], ["Schnell (1 Tap), landet aber im alten Formular-Look."]),
+ ], ["NEU 7.8: Pille immer sichtbar, Punkte im Creme/Teal-Look."]),
+ ("Raus aus der Insel → Hauptmenü (NEU)", "Inselkarte", [
+   ("20-inseln", "Inselkarte", (76, 94), "Chats", "IslandWorld.kt BarItem Chats → onBack"),
+   ("05-chats", "Chats = Hauptmenü", None, "", "ChatsList.kt"),
+ ], ["Aus jedem Inselort und Meine Insel/Hafen: 1 Tap. Vorher: ‹ zurück, ggf. mehrfach.", "Lange auf „Karte“ drücken = ebenfalls Chats."]),
+ ("Thema notieren (Messenger, NEU)", "Chats", [
+   ("05-chats", "Chats", (50, 27), "Gerfried", "ChatsList.kt onOpen"),
+   ("06-thread", "Chat", (29, 4), "Name antippen", "ThreadScreen.kt onInfo → FriendPage"),
+   ("50-friend-page", "Freund-Seite", (50, 63), "Themen", "FriendPage.kt"),
+   ("36-topics-screen", "Themen mit Gerfried", (85, 96), "Merken", "TopicsScreen.kt"),
+ ], ["Vorher 4 Taps über Hafen. Im Chat-Menü ⋮ → Themen geht auch."]),
+ ("Spitzname im Messenger (NEU)", "Chat", [
+   ("06-thread", "Chat", (29, 4), "Name antippen", "ThreadScreen.kt → FriendPage"),
+   ("50-friend-page", "Freund-Seite", (50, 20), "Namen ändern", "FriendPage.kt"),
+   ("45-label-dialog", "Namen wählen", (50, 85), "Speichern", "LabelDialog"),
+ ], ["Vorher nur auf der Insel möglich. Name gilt in Insel und Chat gleich."]),
+ ("Freundschaftsregeln (NEU kürzer)", "Chat", [
+   ("06-thread", "Chat", (93, 4), "⋮", "ThreadScreen.kt Menü"),
+   (None, "Menü", None, "Freundschaftsregeln", "ThreadScreen.kt DropdownMenuItem – kein Screenshot"),
+   (None, "Regeln", None, "", "FriendshipRules"),
+ ], ["Vorher 3 Taps (⋮ → Regeln & Info → Regeln). Auch über Freund-Seite."]),
 ]
 
 # ---------- Zeichnen ----------
@@ -241,9 +261,9 @@ if __name__ == "__main__":
     tc = theme_sheet()
     counts = {k: sum(1 for v in THEME.values() if v[0] == k) for k in TCOL}
     rows = "".join(f'<h2>{html.escape(J[i][0])} <small>{t} Taps</small></h2><img src="{p.name}">' for i, (p, t) in enumerate(made))
-    (OUT / "index.html").write_text(f"""<!doctype html><meta charset=utf-8><title>Klickpfade GS Layermaxxing 7.7.1</title>
+    (OUT / "index.html").write_text(f"""<!doctype html><meta charset=utf-8><title>Klickpfade GS Layermaxxing 7.8</title>
 <style>body{{font-family:sans-serif;background:#f5f1e8;color:#1e3237;max-width:2200px;margin:auto;padding:20px}}img{{max-width:100%;border-radius:10px;box-shadow:0 2px 10px #0002;margin-bottom:30px}}small{{color:#c43}}</style>
-<h1>Klickpfade – GS Layermaxxing 7.7.1</h1><p>Echte Renders (Testdaten). Roter Kreis = hier tippen, Zahl = Reihenfolge. Rot/orange umrandet = passt nicht/teils zum aktuellen Theme.</p>
+<h1>Klickpfade – GS Layermaxxing 7.8</h1><p>Echte Renders (Testdaten). Roter Kreis = hier tippen, Zahl = Reihenfolge. Rot/orange umrandet = passt nicht/teils zum aktuellen Theme.</p>
 <p>Theme: {counts['FITS']} passen · {counts['PARTLY']} teils · {counts['OLD']} passen nicht mehr · {counts['DEBUG']} Debug</p>
 <h2>Theme-Check</h2><img src="theme-check.png">{rows}""", encoding="utf-8")
     json.dump({"journeys": [{"title": j[0], "taps": t, "file": p.name} for j, (p, t) in zip(J, made)], "theme": THEME, "counts": counts},

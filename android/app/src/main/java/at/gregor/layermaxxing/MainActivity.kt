@@ -426,10 +426,31 @@ fun LayermaxxingTheme(mode: String, content: @Composable () -> Unit) {
             primary = Color(0xFF5A3A1E), primaryContainer = Color(0xFFE8D4AD), secondary = Color(0xFF7A5B35),
             background = Color(0xFFF4E8C9), surface = Color(0xFFFFF5DC), surfaceVariant = Color(0xFFE6D6B5),
         )
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(context)
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(context)
-        dark -> darkColorScheme(primary = Color(0xFF9FD5B5), primaryContainer = Color(0xFF174F35), background = Color(0xFF0D1712), surface = Color(0xFF142019), surfaceVariant = Color(0xFF24352B))
-        else -> lightColorScheme(primary = Color(0xFF195C3A), primaryContainer = Color(0xFFD6F3E1), secondary = Color(0xFF8A671B), background = Color(0xFFF6F9F6), surface = Color.White, surfaceVariant = Color(0xFFE7EEE9))
+        // Optional: the phone's own Material You colours.
+        mode == "material" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+            if (systemDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        // Default: the neutral "Hafenpost" look of the chat list for every screen
+        // outside the island world – harbour paper, sea teal, navy ink, gold trim.
+        dark -> darkColorScheme(
+            primary = Color(0xFF6FB9C9), onPrimary = Color(0xFF08222B), primaryContainer = Color(0xFF1E4A50), onPrimaryContainer = Color(0xFFE4F4EF),
+            secondary = Color(0xFFE2B457), onSecondary = Color(0xFF2A1E05), secondaryContainer = Color(0xFF3A3220), onSecondaryContainer = Color(0xFFF6E6C2),
+            tertiary = Color(0xFF8ED3E0),
+            background = Color(0xFF111B26), onBackground = Color(0xFFEDE6D6), surface = Color(0xFF111B26), onSurface = Color(0xFFEDE6D6),
+            surfaceVariant = Color(0xFF1E2B39), onSurfaceVariant = Color(0xFFA9A08E), outline = Color(0xFF4A5666), outlineVariant = Color(0xFF2A3644),
+            surfaceContainerLowest = Color(0xFF0C141D), surfaceContainerLow = Color(0xFF16212D), surfaceContainer = Color(0xFF1A2633),
+            surfaceContainerHigh = Color(0xFF1E2B39), surfaceContainerHighest = Color(0xFF243243),
+            error = Color(0xFFD06A5C),
+        )
+        else -> lightColorScheme(
+            primary = Color(0xFF1C4E66), onPrimary = Color.White, primaryContainer = Color(0xFFD5ECE6), onPrimaryContainer = Color(0xFF173A40),
+            secondary = Color(0xFF2F7F95), onSecondary = Color.White, secondaryContainer = Color(0xFFEFE3CA), onSecondaryContainer = Color(0xFF3B3122),
+            tertiary = Color(0xFFC8962F),
+            background = Color(0xFFF7F0E1), onBackground = Color(0xFF22303F), surface = Color(0xFFF7F0E1), onSurface = Color(0xFF22303F),
+            surfaceVariant = Color(0xFFEFE3CA), onSurfaceVariant = Color(0xFF6E6555), outline = Color(0xFFB5A688), outlineVariant = Color(0xFFE0D2B4),
+            surfaceContainerLowest = Color(0xFFFFFDF8), surfaceContainerLow = Color(0xFFFFFBF2), surfaceContainer = Color(0xFFFBF5E8),
+            surfaceContainerHigh = Color(0xFFF5EDDC), surfaceContainerHighest = Color(0xFFEFE6D2),
+            error = Color(0xFFB3473C),
+        )
     }
     MaterialTheme(colorScheme = scheme, shapes = Shapes(
         small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(28.dp),

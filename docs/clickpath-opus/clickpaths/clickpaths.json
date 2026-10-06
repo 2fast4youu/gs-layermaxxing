@@ -64,16 +64,32 @@
    "title": "Punkte ansehen",
    "taps": 1,
    "file": "13-punkte-ansehen.png"
+  },
+  {
+   "title": "Raus aus der Insel → Hauptmenü (NEU)",
+   "taps": 1,
+   "file": "14-raus-aus-der-insel-hauptmenu-neu.png"
+  },
+  {
+   "title": "Thema notieren (Messenger, NEU)",
+   "taps": 4,
+   "file": "15-thema-notieren-messenger-neu.png"
+  },
+  {
+   "title": "Spitzname im Messenger (NEU)",
+   "taps": 3,
+   "file": "16-spitzname-im-messenger-neu.png"
+  },
+  {
+   "title": "Freundschaftsregeln (NEU kürzer)",
+   "taps": 2,
+   "file": "17-freundschaftsregeln-neu-kurzer.png"
   }
  ],
  "theme": {
   "03-room": [
-   "PARTLY",
-   "Türkis/Creme ok, aber nackte Material-Liste"
-  ],
-  "04-card": [
-   "OLD",
-   "altes buntes Alpendorf; BuildingCard im App-Code nirgends mehr benutzt"
+   "FITS",
+   "Hafenpapier + gedämpftes Teal"
   ],
   "05-chats": [
    "FITS",
@@ -81,19 +97,19 @@
   ],
   "06-thread": [
    "PARTLY",
-   "Chat ok, Kopfleiste dunkelblau/Standard"
+   "Kopf jetzt Teal; Sprechblasen sehr hell"
   ],
   "07-glossary": [
    "FITS",
    "Creme + Teal, ruhig"
   ],
   "08-topics-room": [
-   "PARTLY",
-   "Farben ok, sonst Standard-Forum"
+   "FITS",
+   "Teal-Rahmen, Creme-Panel"
   ],
   "09-groups-room": [
-   "PARTLY",
-   "großes weißes Panel, schwere schwarze Schrift"
+   "FITS",
+   "Teal-Rahmen, Creme-Panel"
   ],
   "12-empty-chats": [
    "FITS",
@@ -105,15 +121,15 @@
   ],
   "13-login": [
    "PARTLY",
-   "Insel im Hintergrund, Formular lavendel/Material"
+   "Formular Hafenpost; bunte Szene dahinter"
   ],
   "14-chat-actions": [
    "PARTLY",
-   "loses Werkzeug-Palette, kein fertiger Look"
+   "loses Werkzeug-Palette"
   ],
   "14-more": [
-   "OLD",
-   "flache lavendel Material-Liste – im Inselmodus 'Mein Haus'"
+   "FITS",
+   "Hafenpost statt Lavendel"
   ],
   "20-inseln": [
    "FITS",
@@ -125,19 +141,19 @@
   ],
   "22-meine-insel": [
    "FITS",
-   "Kernstil"
+   "Kernstil, Leiste mit Chats"
   ],
   "23-besuch": [
    "FITS",
    "Kernstil"
   ],
   "24-deko-wahl": [
-   "PARTLY",
-   "Deko-Bilder gut, Hintergrund reines Weiß"
+   "FITS",
+   "Hafenpapier statt Weiß"
   ],
   "25-bauen": [
-   "PARTLY",
-   "Bilder gut, Formular weiß/Standard"
+   "FITS",
+   "Hafenpapier statt Weiß"
   ],
   "25-schiff": [
    "FITS",
@@ -148,8 +164,8 @@
    "nur Debug-Modus (Hitboxen) – kein Theme-Thema"
   ],
   "26-ort": [
-   "PARTLY",
-   "kleines Inselbild, Rest weißes Material-Formular"
+   "FITS",
+   "Hafenpapier statt Weiß"
   ],
   "27-insel-zoom": [
    "FITS",
@@ -188,62 +204,70 @@
    "gemaltes Portrait, Holz"
   ],
   "36-topics-screen": [
-   "OLD",
-   "weißes Material-Layout, graue Rahmen"
+   "FITS",
+   "Hafenpost statt Weiß"
   ],
   "37-ep-screen": [
-   "OLD",
-   "blau/grau Formular, kein Inselbezug"
+   "FITS",
+   "Creme + Teal statt Blaugrau"
   ],
   "38-letter-room": [
-   "OLD",
-   "dunkelbraun/schwarz – bricht mit ruhigem Creme/Teal"
+   "FITS",
+   "hell statt dunkelbraun"
   ],
   "39-spark-room": [
-   "PARTLY",
-   "Sand-Karten ok, Knopf blau, keine Welt"
+   "FITS",
+   "Sand + Teal-Knopf"
   ],
   "40-thread-info-sheet": [
-   "OLD",
-   "weiße Einstellungsseite, Standard-Schalter"
+   "FITS",
+   "Hafenpost statt Weiß"
   ],
   "41-quest-dialog": [
-   "PARTLY",
-   "Spielschrift ok, Dialog lavendel"
+   "FITS",
+   "das eine Quest-Formular"
   ],
   "42-glossary-term-dialog": [
-   "PARTLY",
-   "Mini-Dialog, lavendel"
+   "FITS",
+   "Creme-Dialog"
   ],
   "43-friend-sheet": [
    "FITS",
    "Inselbild, Teal/Creme"
   ],
+  "44-new-quest-sheet": [
+   "FITS",
+   "dasselbe Quest-Formular"
+  ],
   "45-label-dialog": [
-   "PARTLY",
-   "lavendel Formular, blaue Chips"
+   "FITS",
+   "Creme-Dialog"
   ],
   "46-recovery-dialog": [
-   "PARTLY",
-   "generischer Dialog"
+   "FITS",
+   "Creme-Dialog"
   ],
   "47-proof-dialog": [
-   "PARTLY",
-   "technischer Dialog, lavendel"
+   "FITS",
+   "Creme-Dialog"
   ],
   "48-ep-proposal-dialog": [
-   "PARTLY",
-   "Formular lavendel/blau"
+   "FITS",
+   "Creme-Dialog"
   ],
   "49-request-dialog": [
-   "PARTLY",
-   "grau-lavendel Material"
+   "FITS",
+   "Creme-Dialog"
+  ],
+  "50-friend-page": [
+   "FITS",
+   "NEU: neutrale Freund-Seite"
   ]
  },
  "counts": {
-  "FITS": 18,
-  "PARTLY": 18,
-  "OLD": 6,
+  "FITS": 39,
+  "PARTLY": 4,
+  "OLD": 0,
   "DEBUG": 1
  }
 }

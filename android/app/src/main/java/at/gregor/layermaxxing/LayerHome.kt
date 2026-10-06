@@ -344,6 +344,13 @@ fun LayerHome(
             if (added.isNotEmpty()) { villageFresh = villageFresh + added; store.setVillageFresh(villageFresh) }
         }
     }
+    // Personal friend names live on the device, shared by the island and the neutral friend page.
+    val labelAccount = "${store.serverProfile.key}_${store.name}"
+    var friendLabels by remember(labelAccount) { mutableStateOf(FriendLabels.load(context, labelAccount)) }
+    fun saveFriendLabel(id: Long, label: String?) {
+        friendLabels = friendLabels.toMutableMap().apply { if (label == null) remove(id) else put(id, label) }
+        FriendLabels.save(context, labelAccount, friendLabels)
+    }
     val fullScreenPlace = tab == MainTab.CASTLES || openThreadFriend != null || peopleOpen || sparksOpen || hub != null || topicScope != null
     // The valley is a painted world, so it runs under the system bars instead of
     // sitting in a window of app background: a letterboxed plate inside inset
@@ -394,14 +401,9 @@ fun LayerHome(
             else Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
         ) {
             if (tab == MainTab.CASTLES) { villageStateHolder.SaveableStateProvider("isles_${store.serverProfile.key}_${store.name}") {
-                val labelAccount = "${store.serverProfile.key}_${store.name}"
-                var friendLabels by remember(labelAccount) { mutableStateOf(FriendLabels.load(context, labelAccount)) }
                 IslandWorld(
                     labels = friendLabels,
-                    onLabel = { id, label ->
-                        friendLabels = friendLabels.toMutableMap().apply { if (label == null) remove(id) else put(id, label) }
-                        FriendLabels.save(context, labelAccount, friendLabels)
-                    },
+                    onLabel = { id, label -> saveFriendLabel(id, label) },
                     ownName = status?.name ?: store.name, ownEmoji = status?.avatarEmoji ?: "🙂",
                     friends = friends, groups = groups, islands = islands, quests = quests,
                     letters = messages + outbox, topics = topics, opened = opened,
@@ -428,6 +430,7 @@ fun LayerHome(
                     saveDecor = { decor -> api.setDecor(token, decor) },
                     savePlaces = { places -> api.setPlaces(token, places) },
                     saveHere = { plot, status -> api.setHere(token, plot, status) },
+                    chatsBadge = requestInbox.size + conversations.count { it.hasNews } + Sparks.unopenedCount(sparkInbox),
                     onError = { error = it },
                     onPlace = { place ->
                         when (place) {
@@ -504,7 +507,7 @@ fun LayerHome(
                     TopicsHub(topics, friends, groups) { s, name -> topicScope = s; topicName = name }
                 }
                 hub == "groups" -> SubScreen("Gruppen", onBack = { hub = null }, backLabel = "Zurück") {
-                    GroupsHub(groups, friends, topics, friendshipSettings, token, api, ::act) { s, name -> topicScope = s; topicName = name }
+                    GroupsHub(groups, friends, topics, friendshipSettings, token, api, ::act, { s, name -> topicScope = s; topicName = name }, quests = quests)
                 }
                 threadFriend != null -> ThreadScreen(
                     friend = threadFriend,
@@ -526,6 +529,9 @@ fun LayerHome(
                     topics = topics,
                     epLine = epLineFor(ep, status?.userId, threadFriend),
                     creativeActive = creativeActive,
+                    quests = quests, label = friendLabels[threadFriend.id],
+                    onLabel = { label -> saveFriendLabel(threadFriend.id, label) },
+                    onQuestDone = { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } },
                 )
                 sparksOpen -> SparkRoom(
                     inbox = sparkInbox, sent = sparkSent, token = token, api = api, act = ::act,
@@ -533,7 +539,8 @@ fun LayerHome(
                 )
                 peopleOpen -> SubScreen("Leute", onBack = { peopleOpen = false }, backLabel = "Chats") {
                     FriendsScreen(token, api, users, friends, incoming, outgoing, groups,
-                        friendshipSettings, onOpenThread = { peopleOpen = false; openThreadFriend = it }, act = ::act)
+                        friendshipSettings, onOpenThread = { peopleOpen = false; openThreadFriend = it }, act = ::act,
+                        onGroups = { peopleOpen = false; hub = "groups" })
                 }
                 tab == MainTab.CHATS -> ChatsScreen(
                     conversations = conversations, requests = requestInbox,
@@ -1192,11 +1199,9 @@ private fun FriendsScreen(
     token: String, api: ApiClient, users: List<ApiClient.UserSummary>, friends: List<ApiClient.UserSummary>,
     incoming: List<ApiClient.IncomingRequest>, outgoing: List<ApiClient.OutgoingRequest>, groups: List<ApiClient.Group>,
     settings: List<ApiClient.FriendshipSettings>, onOpenThread: (Long) -> Unit,
-    act: ((suspend () -> Unit) -> Unit),
+    act: ((suspend () -> Unit) -> Unit), onGroups: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope(); var search by remember { mutableStateOf("") }; var result by remember { mutableStateOf<List<ApiClient.UserSummary>>(emptyList()) }
-    var groupName by remember { mutableStateOf("") }; var groupMembers by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    var creatingGroup by remember { mutableStateOf(false) }
     var rulesFriend by remember { mutableStateOf<ApiClient.UserSummary?>(null) }
     var confirmRemove by remember { mutableStateOf<ApiClient.UserSummary?>(null) }
     var confirmBlock by remember { mutableStateOf<ApiClient.UserSummary?>(null) }
@@ -1269,24 +1274,14 @@ private fun FriendsScreen(
         if (outgoing.isNotEmpty()) { item { SectionTitle("Angefragt") }; items(outgoing, key = { "outreq-${it.id}" }) { request ->
             ActionCard("${request.recipientName}") { TextButton(onClick = { act { api.withdrawFriendRequest(token, request.id) } }) { Text("Zurückziehen") } }
         } }
+        // Groups are created in exactly one place – the groups hub; here they are only listed.
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             SectionTitle("Gruppen")
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = { creatingGroup = !creatingGroup }) { Text(if (creatingGroup) "Schließen" else "+ Neue Gruppe") }
+            TextButton(onClick = onGroups) { Text(if (groups.isEmpty()) "＋ Gruppe" else "Alle Gruppen ›") }
         } }
-        if (groups.isEmpty()) item { EmptyHint("👥", "Noch keine Gruppe", "Mit „+ Neue Gruppe“ holst du mehrere Freunde an einen Tisch.") }
+        if (groups.isEmpty()) item { EmptyHint("👥", "Noch keine Gruppe", "Mit „＋ Gruppe“ holst du mehrere Freunde an einen Tisch.") }
         else items(groups, key = { "group-${it.id}" }) { group -> InfoCard("👥 ${group.name}: ${group.members.joinToString { it.name }}") }
-        if (friends.isNotEmpty() && creatingGroup) item {
-            Card { Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Neue Gruppe", fontWeight = FontWeight.Bold)
-                OutlinedTextField(groupName, { groupName = it }, Modifier.fillMaxWidth(), label = { Text("Gruppenname") })
-                friends.forEach { friend -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(friend.id in groupMembers, { checked -> groupMembers = if (checked) groupMembers + friend.id else groupMembers - friend.id }); Text(friend.name)
-                } }
-                Button(onClick = { act { api.createGroup(token, groupName.trim(), groupMembers.toList()); groupName = ""; groupMembers = emptySet() } },
-                    enabled = groupName.isNotBlank() && groupMembers.isNotEmpty()) { Text("Gruppe erstellen") }
-            } }
-        }
         item { Spacer(Modifier.height(16.dp)) }
     }
 }

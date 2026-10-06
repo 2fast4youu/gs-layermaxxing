@@ -267,44 +267,16 @@ internal fun PinnedStrip(pinned: List<ApiClient.ChatMessage>, p: HarbourPalette,
 // Chat → Quest
 // ---------------------------------------------------------------------------
 
+/** A chat message as a quest: the same single quest form, prefilled from the message. */
 @Composable
 internal fun ChatQuestDialog(
     friendName: String, draft: ChatExtras.QuestDraft,
     onCreate: (ChatExtras.QuestDraft) -> Unit, onDismiss: () -> Unit,
 ) {
-    var title by remember(draft) { mutableStateOf(draft.title) }
-    var details by remember(draft) { mutableStateOf(draft.details) }
-    var icon by remember(draft) { mutableStateOf(draft.icon) }
-    val p = Harbour.palette()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Quest mit $friendName", style = Harbour.Title.copy(fontSize = 20.sp)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Aus der Nachricht wird eine gemeinsame Quest. Erledigt lässt sie eure Insel wachsen.", fontSize = 13.sp, color = p.inkSoft)
-                OutlinedTextField(title, { title = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("Titel") }, singleLine = true)
-                OutlinedTextField(details, { details = it.take(500) }, Modifier.fillMaxWidth(), label = { Text("Details – optional") }, minLines = 2)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    QUEST_ICON_GLYPHS.forEach { (key, glyph) ->
-                        Box(
-                            Modifier.size(40.dp).clip(CircleShape).background(if (key == icon) p.sea.copy(alpha = .25f) else p.card)
-                                .border(1.dp, if (key == icon) p.sea else p.line, CircleShape).clickable { icon = key }
-                                .semantics { role = Role.Button; contentDescription = "Symbol $key" },
-                            contentAlignment = Alignment.Center,
-                        ) { Text(glyph, fontSize = 18.sp) }
-                    }
-                }
-                Text("+${draft.points} Questpunkte für eure Insel", fontSize = 12.sp, color = p.gold, fontWeight = FontWeight.Bold)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onCreate(draft.copy(title = title.trim(), details = details.trim(), icon = icon)) },
-                enabled = title.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = p.seaDeep, contentColor = Color.White),
-            ) { Text("Quest anlegen") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
+    NewQuestSheet(
+        pals = listOf(ApiClient.UserSummary(0, friendName, "friends", "", "")), groups = emptyList(),
+        presetPeer = 0, presetGroup = null, draft = draft, onDismiss = onDismiss,
+        onCreate = { t, d, icon, pts, _, _ -> onCreate(ChatExtras.QuestDraft(t, d, icon, pts)) },
     )
 }
 
