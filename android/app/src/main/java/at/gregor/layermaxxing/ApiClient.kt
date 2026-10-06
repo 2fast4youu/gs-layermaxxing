@@ -114,7 +114,17 @@ class ApiClient(
     data class IslandInfo(val friendId: Long, val qp: Int, val ep: Int, val score: Int, val level: Int, val nextAt: Int?)
     data class Islands(val qp: Int, val friends: List<IslandInfo>, val score: Int = qp)
     data class DecorItem(val key: String, val unlockAt: Int, val unlocked: Boolean)
-    data class HomeIsland(val userId: Long, val decor: Map<Int, String>, val score: Int, val items: List<DecorItem>)
+    data class HomeIsland(
+        val userId: Long, val decor: Map<Int, String>, val score: Int, val items: List<DecorItem>,
+        /** "Mein Leben als Insel": real places on building plots. */
+        val places: Map<Int, LifePlace> = emptyMap(),
+        val plots: Int = 0,
+        val plotUnlocks: List<Int> = emptyList(),
+        /** Only on the own island: where my figure stands (null = on the plaza). */
+        val here: Here? = null,
+    )
+    data class LifePlace(val kind: String, val name: String)
+    data class Here(val plot: Int?, val status: String)
     data class Topic(
         val id: Long, val title: String, val details: String, val creatorName: String,
         val targetType: String, val targetName: String, val targetId: Long?, val createdAt: Long, val completedAt: Long?,
@@ -479,8 +489,26 @@ class ApiClient(
         HomeIsland(
             j.getLong("user_id"), d.keys().asSequence().associate { it.toInt() to d.getString(it) }, j.getInt("score"),
             (0 until items.length()).map { i -> items.getJSONObject(i).let { DecorItem(it.getString("key"), it.getInt("unlock_at"), it.getBoolean("unlocked")) } },
+            places = j.optJSONObject("places")?.let { p ->
+                p.keys().asSequence().associate { k -> k.toInt() to p.getJSONObject(k).let { LifePlace(it.getString("kind"), it.optString("name")) } }
+            }.orEmpty(),
+            plots = j.optInt("plots", 0),
+            plotUnlocks = j.optJSONArray("plot_unlocks")?.let { a -> (0 until a.length()).map { a.getInt(it) } }.orEmpty(),
+            here = j.optJSONObject("here")?.let { h -> Here(if (h.isNull("plot")) null else h.getInt("plot"), h.optString("status")) },
         )
     }
+    suspend fun setPlaces(token: String, places: Map<Int, LifePlace>) = unitCall(
+        authorized(token, "api/island/places").put(
+            JSONObject().put("places", JSONObject().apply {
+                places.forEach { (k, v) -> put(k.toString(), JSONObject().put("kind", v.kind).put("name", v.name)) }
+            }).body()
+        ).build()
+    )
+    suspend fun setHere(token: String, plot: Int?, status: String) = unitCall(
+        authorized(token, "api/island/here").put(
+            JSONObject().put("plot", plot ?: JSONObject.NULL).put("status", status).body()
+        ).build()
+    )
     suspend fun setDecor(token: String, decor: Map<Int, String>) = unitCall(
         authorized(token, "api/island/decor").put(
             JSONObject().put("slots", JSONObject().apply { decor.forEach { (k, v) -> put(k.toString(), v) } }).body()

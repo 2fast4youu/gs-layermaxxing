@@ -82,27 +82,25 @@ internal object IslandPlans {
     }
 
     /** Home: the menu buildings around a plaza. Anchors were picked so paths and lawns never cross. */
+    /** The app's own places sit at the coast; the inland plots belong to the player's real life (LifePlaces). */
     val homeBuildings = linkedMapOf(
-        IsleBuilding.HOUSE to IslandPiece(R.drawable.b_house, .48f, .30f, .21f, name = "Mein Haus"),
-        IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.b_lighthouse, .76f, .37f, .18f, name = "Freunde"),
-        IsleBuilding.POST to IslandPiece(R.drawable.b_post, .26f, .43f, .17f, name = "Post"),
-        IsleBuilding.LIBRARY to IslandPiece(R.drawable.b_library, .75f, .65f, .17f, name = "Wörterbuch"),
-        IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.b_hall, .24f, .70f, .17f, name = "Gruppen"),
-        IsleBuilding.HARBOUR to IslandPiece(R.drawable.b_board, .51f, .74f, .11f, name = "Hafen"),
+        IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.lm_lighthouse, .88f, .44f, .105f, name = "Freunde"),
+        IsleBuilding.POST to IslandPiece(R.drawable.lm_post, .12f, .47f, .105f, name = "Post"),
+        IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.lm_campfire, .28f, .80f, .10f, name = "Gruppen"),
+        IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library, .74f, .79f, .10f, name = "Wörterbuch"),
+        IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty, .51f, .85f, .115f, name = "Hafen"),
     )
     val plaza = Offset(.5f, .55f)
-    val homeSlots = listOf(.36f to .36f, .62f to .36f, .34f to .56f, .66f to .53f, .39f to .70f, .63f to .72f)
+    /** Small decoration lawns ringing the plaza, clear of the building plots. */
+    val homeSlots = listOf(.41f to .45f, .59f to .45f, .36f to .53f, .64f to .53f, .43f to .61f, .57f to .61f)
 
     fun home(seed: Long): IslandPlan {
-        // The painted base already carries coast, rocks and bushes; only a few swaying trees are added.
+        // The painted base already carries coast, rocks and bushes; a few calm trees frame the plots.
         val nature = listOf(
-            IslandPiece(R.drawable.n_pine, .35f, .25f, .08f, sway = true),
-            IslandPiece(R.drawable.n_pine, .63f, .24f, .075f, sway = true),
-            IslandPiece(R.drawable.n_tree, .86f, .52f, .08f, sway = true),
-            // A small tree and flowers soften the big sandy plaza.
-            IslandPiece(R.drawable.n_tree, .50f, .53f, .085f, sway = true),
-            IslandPiece(R.drawable.n_flowerbush, .44f, .58f, .05f),
-            IslandPiece(R.drawable.n_flowerbush, .57f, .58f, .05f),
+            IslandPiece(R.drawable.n_pine, .17f, .30f, .07f, sway = true),
+            IslandPiece(R.drawable.n_pine, .83f, .29f, .065f, sway = true),
+            IslandPiece(R.drawable.n_tree, .14f, .66f, .07f, sway = true),
+            IslandPiece(R.drawable.n_cypress, .88f, .66f, .06f, sway = true),
         )
         return IslandPlan(seed, 1f, homeBuildings.values + nature, emptyList())
     }

@@ -117,6 +117,10 @@ internal fun HubIsland(
     animate: Boolean = true,
     onBuilding: ((IsleBuilding) -> Unit)? = null,
     onSlot: ((Int) -> Unit)? = null,
+    life: ApiClient.HomeIsland? = null,
+    showFigure: Boolean = false,
+    onPlot: ((Int) -> Unit)? = null,
+    onFigure: (() -> Unit)? = null,
 ) {
     val plan = androidx.compose.runtime.remember(seed, decor) {
         val base = IslandPlans.home(seed)
@@ -133,6 +137,10 @@ internal fun HubIsland(
             val tip = androidx.compose.ui.geometry.Offset(size.width * .51f, size.height * .93f)
             drawIslandJetty(tip, inland, size.width * .035f)
         }
+        if (life != null) LifeLayer(
+            places = life.places, plots = life.plots, unlocks = life.plotUnlocks, here = life.here?.plot,
+            showFigure = showFigure && onSlot == null, onPlot = if (onSlot == null) onPlot else null, onFigure = onFigure,
+        )
         if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (x, y) ->
             val item = decor[i]
             val s = 44.dp
@@ -155,7 +163,7 @@ internal fun HubIsland(
             )
             val zoom = LocalIslandZoom.current
             Row(
-                Modifier.offset(x = w * piece.x - 50.dp, y = h * piece.y + 1.dp).width(100.dp)
+                Modifier.offset(x = w * piece.x - 50.dp, y = h * piece.y - 2.dp).width(100.dp)
                     // Counter-scale: when the island is zoomed, the sign keeps its on-screen size.
                     .graphicsLayer { val k = 1f / zoom().coerceAtLeast(1f); scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f) }
                     .then(if (onBuilding != null) Modifier.worldTap("${b.label} öffnen") { gate { onBuilding(b) } } else Modifier)
@@ -163,7 +171,7 @@ internal fun HubIsland(
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Box {
-                    IslandSign(b.label)
+                    PlaceTag(b.label)
                     if (count > 0) Box(
                         Modifier.align(Alignment.TopEnd).offset(x = 7.dp, y = (-7).dp).size(16.dp)
                             .background(Color(0xFFC8442F), CircleShape).border(1.dp, Color(0xFFFFF3DC), CircleShape),

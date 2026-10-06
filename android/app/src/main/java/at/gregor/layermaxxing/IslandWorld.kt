@@ -209,6 +209,8 @@ internal fun IslandWorld(
     labels: Map<Long, String> = emptyMap(),
     onLabel: (Long, String?) -> Unit = { _, _ -> },
     onPoints: () -> Unit = {},
+    savePlaces: suspend (Map<Int, ApiClient.LifePlace>) -> Unit = {},
+    saveHere: suspend (Int?, String) -> Unit = { _, _ -> },
 ) {
     val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
@@ -223,6 +225,8 @@ internal fun IslandWorld(
     var home by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
     var visited by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
     var slotPick by remember { mutableStateOf<Int?>(null) }
+    var plotPick by remember { mutableStateOf<Int?>(null) }
+    var buildPick by remember { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(ownId, islands?.score) { ownId?.let { id -> home = runCatching { loadIsland(id) }.getOrNull() ?: home } }
     val visitId = view.removePrefix("visit:").toLongOrNull()
@@ -242,19 +246,26 @@ internal fun IslandWorld(
         when {
             view == "home" -> CloseIsland(
                 title = if (editing) "Insel bearbeiten" else "Meine Insel",
-                subtitle = if (editing) "Tippe auf einen freien Platz" else "Gebäude antippen zum Öffnen",
+                subtitle = when {
+                        editing -> "Tippe auf einen freien Platz"
+                        else -> home?.let { LifePlaces.nextLand(it.plots, it.plotUnlocks) }
+                            ?.let { (_, price) -> "Neues Land ab ⭐ $price · Gebäude antippen" } ?: "Gebäude antippen zum Öffnen"
+                    },
             ) {
                 HubIsland(
                     decor = home?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), seed = ownId ?: 1L,
                     badges = homeBadges,
                     onBuilding = { b -> place = b.name },
                     onSlot = if (editing) ({ slotPick = it }) else null,
+                    life = home, showFigure = true,
+                    onPlot = { i -> if (home?.places?.containsKey(i) == true) plotPick = i else buildPick = i },
+                    onFigure = { place = IsleBuilding.HOUSE.name },
                 )
             }
             visitId != null -> {
                 val friend = pals.firstOrNull { it.id == visitId }
                 CloseIsland(title = "Insel von ${friend?.name ?: "…"}", subtitle = "Du bist zu Besuch") {
-                    HubIsland(decor = visited?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), labels = false, seed = visitId)
+                    HubIsland(decor = visited?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), labels = false, seed = visitId, life = visited)
                 }
             }
             else -> IslandMap(
@@ -403,6 +414,48 @@ internal fun IslandWorld(
             },
             onDismiss = { slotPick = null },
         )
+    }
+    fun commitPlaces(next: Map<Int, ApiClient.LifePlace>) {
+        val before = home ?: return
+        val here = before.here?.takeIf { it.plot == null || next.containsKey(it.plot) } ?: before.here?.let { ApiClient.Here(null, "") }
+        home = before.copy(places = next, here = here)
+        scope.launch { runCatching { savePlaces(next) }.onFailure { home = before; onError(ApiErrors.friendly(it.message)) } }
+    }
+    buildPick?.let { plot ->
+        val island = home
+        if (island == null) buildPick = null else androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { buildPick = null }, containerColor = Isle.Card,
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            val current = island.places[plot]
+            BuildPlaceContent(
+                current = current,
+                onBuild = { p -> buildPick = null; commitPlaces(island.places + (plot to p)) },
+                onDemolish = if (current != null) ({ buildPick = null; commitPlaces(island.places - plot) }) else null,
+                onDismiss = { buildPick = null },
+            )
+        }
+    }
+    plotPick?.let { plot ->
+        val island = home
+        val p = island?.places?.get(plot)
+        if (island == null || p == null) plotPick = null else androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { plotPick = null }, containerColor = Isle.Card,
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            val imHere = island.here?.plot == plot
+            PlaceSheetContent(
+                place = p, imHere = imHere, status = island.here?.status.orEmpty(),
+                onHere = { stay, status ->
+                    plotPick = null
+                    val before = island
+                    val target = if (stay) plot else null
+                    home = island.copy(here = ApiClient.Here(target, if (stay) status else ""))
+                    scope.launch { runCatching { saveHere(target, if (stay) status else "") }.onFailure { home = before; onError(ApiErrors.friendly(it.message)) } }
+                },
+                onRebuild = { plotPick = null; buildPick = plot },
+            )
+        }
     }
     newQuestFor?.let { (peer, group) ->
         NewQuestSheet(

@@ -295,8 +295,17 @@ class VillageVisualReview {
             glossary = { GlossaryScreen() },
             loadIsland = { id ->
                 val items = IsleDecor.labels.keys.mapIndexed { i, k -> ApiClient.DecorItem(k, i * 20, i < 6) }
-                if (id == 1L) ApiClient.HomeIsland(1, mapOf(0 to "flowers", 1 to "palm", 3 to "bench", 5 to "lantern"), 140, items)
-                else ApiClient.HomeIsland(id, mapOf(0 to "windmill", 2 to "fountain", 4 to "maibaum", 1 to "hammock", 5 to "campfire"), 400, items)
+                val unlocks = listOf(0, 0, 0, 40, 80, 120, 200, 300, 450)
+                if (id == 1L) ApiClient.HomeIsland(1, mapOf(0 to "flowers", 3 to "bench"), 140, items,
+                    places = mapOf(
+                        0 to ApiClient.LifePlace("bude", "Meine Bude"), 1 to ApiClient.LifePlace("hut", "Brennerhaus"),
+                        2 to ApiClient.LifePlace("uni", "JKU"), 3 to ApiClient.LifePlace("desk", "Coden am Berg"),
+                    ),
+                    plots = 5, plotUnlocks = unlocks, here = ApiClient.Here(3, "am Coden"))
+                else ApiClient.HomeIsland(id, mapOf(0 to "windmill", 2 to "fountain"), 400, items,
+                    places = mapOf(0 to ApiClient.LifePlace("home", ""), 1 to ApiClient.LifePlace("club", "Turnverein"),
+                        2 to ApiClient.LifePlace("station", ""), 4 to ApiClient.LifePlace("city", "Linz")),
+                    plots = 7, plotUnlocks = unlocks)
             },
         )
     }
@@ -326,6 +335,16 @@ class VillageVisualReview {
         repeat(30) { rule.mainClock.advanceTimeByFrame() }
     }) { Isles(start = "home") }
     @Test fun islandVisit() = shot("23-besuch") { Isles(start = "visit:2") }
+    @Test fun buildPlace() = shot("25-bauen") {
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().padding(top = 260.dp).then(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color.White))) {
+            BuildPlaceContent(null, {}, null, {})
+        }
+    }
+    @Test fun placeSheet() = shot("26-ort") {
+        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().padding(top = 300.dp).then(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color.White))) {
+            PlaceSheetContent(ApiClient.LifePlace("desk", "Coden am Berg"), true, "am Coden", { _, _ -> }, {})
+        }
+    }
     @Test fun decorPicker() = shot("24-deko-wahl") {
         androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().padding(top = 300.dp).then(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color.White))) {
             DecorPickerContent("palm", IsleDecor.labels.keys.mapIndexed { i, k -> ApiClient.DecorItem(k, i * 20, i < 6) }, 140, {}, {})

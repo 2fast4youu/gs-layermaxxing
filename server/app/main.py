@@ -26,7 +26,7 @@ APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
-SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras"]
+SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places"]
 # One-time creative entitlement for the accounts that already exist on the test
 # server when this version first starts. The marker row makes the migration
 # idempotent: later restarts and newly registered accounts stay unentitled.
@@ -241,6 +241,21 @@ def initialize_database() -> None:
             slot INTEGER NOT NULL CHECK(slot BETWEEN 0 AND 5),
             item TEXT NOT NULL,
             PRIMARY KEY(user_id,slot),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS island_places (
+            user_id INTEGER NOT NULL,
+            plot INTEGER NOT NULL CHECK(plot BETWEEN 0 AND 15),
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY(user_id,plot),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS island_here (
+            user_id INTEGER PRIMARY KEY,
+            plot INTEGER,
+            status TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_quests_peer ON quests(peer_user_id,completed_at);
@@ -586,6 +601,21 @@ class QuestCreate(BaseModel):
 
 class QuestUpdate(BaseModel):
     completed: bool
+
+
+class PlaceIn(BaseModel):
+    kind: str = Field(min_length=1, max_length=24)
+    name: str = Field(default="", max_length=40)
+
+
+class PlacesUpdate(BaseModel):
+    # plot index ("0".."8") -> building; missing plots stay empty
+    places: dict[str, PlaceIn] = Field(default_factory=dict)
+
+
+class HereUpdate(BaseModel):
+    plot: int | None = None
+    status: str = Field(default="", max_length=60)
 
 
 class DecorUpdate(BaseModel):
@@ -1561,6 +1591,36 @@ def decor_of(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
         "SELECT slot,item FROM island_decor WHERE user_id=? ORDER BY slot", (user_id,))}
 
 
+# "Mein Leben als Insel": building plots for real places (home, uni, the hut,
+# the club ...). Building land grows with the player's score; nothing is spent.
+# The catalogue is a whitelist so new kinds only need a sprite and one line.
+PLACE_KINDS = ("home", "bude", "uni", "hut", "club", "station", "city", "desk", "work", "cafe")
+# Plot n becomes buildable at PLOT_UNLOCKS[n] points (plot 0 = the home island's house).
+PLOT_UNLOCKS = (0, 0, 0, 40, 80, 120, 200, 300, 450)
+DEFAULT_PLACES = {0: ("home", "Zuhause")}
+
+
+def places_of(conn: sqlite3.Connection, user_id: int) -> dict[str, dict]:
+    rows = {r["plot"]: {"kind": r["kind"], "name": r["name"]} for r in conn.execute(
+        "SELECT plot,kind,name FROM island_places WHERE user_id=? ORDER BY plot", (user_id,))}
+    if not rows and not conn.execute("SELECT 1 FROM island_here WHERE user_id=?", (user_id,)).fetchone():
+        rows = {p: {"kind": k, "name": n} for p, (k, n) in DEFAULT_PLACES.items()}
+    return {str(p): v for p, v in sorted(rows.items())}
+
+
+def life_island(conn: sqlite3.Connection, user_id: int, score: int, own: bool) -> dict:
+    out = {
+        "places": places_of(conn, user_id),
+        "plots": sum(1 for at in PLOT_UNLOCKS if score >= at),
+        "plot_unlocks": list(PLOT_UNLOCKS),
+        "place_kinds": list(PLACE_KINDS),
+    }
+    if own:
+        here = conn.execute("SELECT plot,status,updated_at FROM island_here WHERE user_id=?", (user_id,)).fetchone()
+        out["here"] = {"plot": here["plot"], "status": here["status"], "updated_at": here["updated_at"]} if here else None
+    return out
+
+
 @app.get("/api/island/{user_id}")
 def island_of(user_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
     with db() as conn:
@@ -1571,7 +1631,51 @@ def island_of(user_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
         return {
             "user_id": user_id, "decor": decor_of(conn, user_id), "score": score,
             "items": [{"key": k, "unlock_at": v, "unlocked": score >= v} for k, v in DECOR_ITEMS.items()],
+            # Where the owner's figure stands is private: only the owner gets "here".
+            **life_island(conn, user_id, score, own=user_id == user["id"]),
         }
+
+
+@app.put("/api/island/places")
+def set_places(payload: PlacesUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        qp, ep = own_score(conn, user["id"])
+        score = qp + EP_WEIGHT * ep
+        clean: dict[int, tuple[str, str]] = {}
+        for plot, place in payload.places.items():
+            if not plot.isdigit() or not 0 <= int(plot) < len(PLOT_UNLOCKS):
+                raise HTTPException(422, "Unbekannter Bauplatz")
+            if PLOT_UNLOCKS[int(plot)] > score:
+                raise HTTPException(403, "Dieses Bauland ist noch nicht frei")
+            if place.kind not in PLACE_KINDS:
+                raise HTTPException(422, "Unbekanntes Gebäude")
+            clean[int(plot)] = (place.kind, " ".join(place.name.split()))
+        conn.execute("DELETE FROM island_places WHERE user_id=?", (user["id"],))
+        conn.executemany("INSERT INTO island_places(user_id,plot,kind,name) VALUES (?,?,?,?)",
+                         [(user["id"], p, k, n) for p, (k, n) in clean.items()])
+        # Remember that the player has decided (an emptied island stays empty);
+        # the figure leaves a place that no longer exists.
+        conn.execute("INSERT OR IGNORE INTO island_here(user_id,plot,status,updated_at) VALUES (?,NULL,'',?)", (user["id"], now_ts()))
+        here = conn.execute("SELECT plot FROM island_here WHERE user_id=?", (user["id"],)).fetchone()["plot"]
+        if here is not None and here not in clean:
+            conn.execute("UPDATE island_here SET plot=NULL,status='' WHERE user_id=?", (user["id"],))
+        return {"ok": True, **life_island(conn, user["id"], score, own=True)}
+
+
+@app.put("/api/island/here")
+def set_here(payload: HereUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        if not conn.execute("SELECT 1 FROM island_here WHERE user_id=?", (user["id"],)).fetchone():
+            # First touch turns the default home into a real row.
+            conn.executemany("INSERT OR IGNORE INTO island_places(user_id,plot,kind,name) VALUES (?,?,?,?)",
+                             [(user["id"], p, k, n) for p, (k, n) in DEFAULT_PLACES.items()])
+        if payload.plot is not None and not conn.execute(
+                "SELECT 1 FROM island_places WHERE user_id=? AND plot=?", (user["id"], payload.plot)).fetchone():
+            raise HTTPException(422, "Dort steht noch kein Gebäude")
+        conn.execute("""INSERT INTO island_here(user_id,plot,status,updated_at) VALUES (?,?,?,?)
+                        ON CONFLICT(user_id) DO UPDATE SET plot=excluded.plot,status=excluded.status,updated_at=excluded.updated_at""",
+                     (user["id"], payload.plot, " ".join(payload.status.split()) if payload.plot is not None else "", now_ts()))
+        return {"ok": True}
 
 
 @app.put("/api/island/decor")

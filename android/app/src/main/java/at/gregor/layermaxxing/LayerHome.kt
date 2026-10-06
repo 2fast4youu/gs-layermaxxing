@@ -426,6 +426,8 @@ fun LayerHome(
                     glossary = { GlossaryScreen(api, token) },
                     loadIsland = { id -> api.island(token, id) },
                     saveDecor = { decor -> api.setDecor(token, decor) },
+                    savePlaces = { places -> api.setPlaces(token, places) },
+                    saveHere = { plot, status -> api.setHere(token, plot, status) },
                     onError = { error = it },
                     onPlace = { place ->
                         when (place) {
