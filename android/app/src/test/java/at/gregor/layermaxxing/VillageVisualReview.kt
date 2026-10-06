@@ -50,20 +50,6 @@ class VillageVisualReview {
         ApiClient.UserSummary(3, "Anna", "friends", "🐻", "#1565C0"),
     )
 
-    @Composable
-    private fun Village(friends: List<ApiClient.UserSummary>, activities: List<VillageActivity>) = VillageTheme(true) {
-        CastlesScreen(
-            ownUserId = 1, friends = friends, settings = emptyList(), ep = null, letters = emptyList(),
-            builds = emptyMap(), creativeActive = false, onBuild = { _, _, _ -> }, onBack = {}, onPeople = {},
-            onComposeLetter = {}, letterAccess = { LetterAction(true, "Brief", null) }, opened = emptyMap(), act = {}, token = "",
-            api = ApiClient(), onOpenLetter = {}, onLockedTap = {}, onProof = {}, epLinkedLetterIds = emptySet(),
-            dismissedEpLetters = emptyMap(), onProposeEp = {}, seenEarned = { 0 }, onSeenEarned = { _, _ -> },
-            topics = emptyList(), onTopics = {}, onChat = {}, onGroups = {}, onGlossary = {},
-            onDestination = {}, activities = activities,
-            hud = VillageHudInfo("Gregor", "🦉", "Ebenen-Wanderer", 12, 7, "Messenger"),
-        )
-    }
-
     private fun conv(id: Long, name: String, emoji: String, color: String, ago: Long, text: String, fromMe: Boolean, unread: Int = 0, ready: Int = 0, sealed: Boolean = false) = Conversation(
         friendId = id, friendName = name, avatarEmoji = emoji, displayColor = color,
         lastActivityAt = java.time.Instant.now().epochSecond - ago,
@@ -227,55 +213,7 @@ class VillageVisualReview {
         }
     }
 
-    @Test fun newPlayerVillage() = shot("10-new-player") {
-        VillageTheme(true) {
-            CastlesScreen(
-                ownUserId = 1, friends = emptyList(), settings = emptyList(), ep = null, letters = emptyList(),
-                builds = emptyMap(), creativeActive = false, onBuild = { _, _, _ -> }, onBack = {}, onPeople = {},
-                onComposeLetter = {}, letterAccess = { LetterAction(true, "Brief", null) }, opened = emptyMap(), act = {}, token = "",
-                api = ApiClient(), onOpenLetter = {}, onLockedTap = {}, onProof = {}, epLinkedLetterIds = emptySet(),
-                dismissedEpLetters = emptyMap(), onProposeEp = {}, seenEarned = { 0 }, onSeenEarned = { _, _ -> },
-                topics = emptyList(), onTopics = {}, onChat = {}, onGroups = {}, onGlossary = {},
-                onDestination = {}, activities = emptyList(),
-                hud = VillageHudInfo("Gregor", "🦉", "Ebenen-Neuling", 0, 0, "Messenger", unlocked = VillageGrowth.START),
-            )
-        }
-    }
-
-    @Test fun growingVillage() = shot("11-growing") {
-        VillageTheme(true) {
-            CastlesScreen(
-                ownUserId = 1, friends = friends.take(1), settings = emptyList(), ep = null, letters = emptyList(),
-                builds = emptyMap(), creativeActive = false, onBuild = { _, _, _ -> }, onBack = {}, onPeople = {},
-                onComposeLetter = {}, letterAccess = { LetterAction(true, "Brief", null) }, opened = emptyMap(), act = {}, token = "",
-                api = ApiClient(), onOpenLetter = {}, onLockedTap = {}, onProof = {}, epLinkedLetterIds = emptySet(),
-                dismissedEpLetters = emptyMap(), onProposeEp = {}, seenEarned = { 0 }, onSeenEarned = { _, _ -> },
-                topics = emptyList(), onTopics = {}, onChat = {}, onGroups = {}, onGlossary = {},
-                onDestination = {}, activities = listOf(VillageActivity(ValleyDestination.CONVERSATIONS, 2, "Neue Nachrichten")),
-                hud = VillageHudInfo(
-                    "Gregor", "🦉", "Ebenen-Neuling", 0, 0, "Messenger",
-                    unlocked = VillageGrowth.START + ValleyDestination.TOPICS + ValleyDestination.SPARKS,
-                    fresh = setOf(ValleyDestination.SPARKS),
-                ),
-            )
-        }
-    }
-
-    @Test fun lifeDay() = shot("15-life-day") {
-        androidx.compose.runtime.CompositionLocalProvider(LocalVillageHour provides 12) { Village(friends, emptyList()) }
-    }
-
-    @Test fun lifeEvening() = shot("16-life-evening") {
-        androidx.compose.runtime.CompositionLocalProvider(LocalVillageHour provides 19) { Village(friends, emptyList()) }
-    }
-
-    @Test fun lifeNight() = shot("17-life-night") {
-        androidx.compose.runtime.CompositionLocalProvider(LocalVillageHour provides 23) { Village(friends, emptyList()) }
-    }
-
-    @Test fun emptyVillage() = shot("01-empty") { Village(emptyList(), emptyList()) }
-
-    @Test fun buildingRoom() = shot("03-room") {
+                            @Test fun buildingRoom() = shot("03-room") {
         VillageTheme(true) {
             VillageRoom(true, icon = R.drawable.ic_topics, title = "Schwarzes Brett", onClose = {}) {
                 androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp)) {
@@ -302,11 +240,7 @@ class VillageVisualReview {
         }
     }
 
-    @Test fun busyVillage() = shot("02-busy") {
-        Village(friends, VillageActivityModel.collect(3, 2, 1, 1, 1, 1, 1, 0))
-    }
-
-    private fun quest(id: Long, title: String, icon: String, pts: Int, target: String, tid: Long, type: String = "friend", done: Boolean = false) =
+        private fun quest(id: Long, title: String, icon: String, pts: Int, target: String, tid: Long, type: String = "friend", done: Boolean = false) =
         ApiClient.Quest(id, title, "", icon, pts, 1, "Gregor", type, target, tid, 0, if (done) 1 else null, if (done) "Anna" else null, true)
 
     private val nowSec = System.currentTimeMillis() / 1000

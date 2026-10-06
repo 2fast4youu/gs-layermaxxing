@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -206,6 +207,7 @@ internal fun IslandWorld(
     glossary: @Composable () -> Unit = {},
     labels: Map<Long, String> = emptyMap(),
     onLabel: (Long, String?) -> Unit = { _, _ -> },
+    onPoints: () -> Unit = {},
 ) {
     val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
@@ -230,6 +232,7 @@ internal fun IslandWorld(
     val homeBadges = mapOf(
         IsleBuilding.HARBOUR to openQuests,
         IsleBuilding.POST to letters.count { it.incoming && it.unlocked && it.readAt == null && opened[it.id] == null },
+        IsleBuilding.LIGHTHOUSE to incoming.size,
     )
 
     IsleTypography {
@@ -238,7 +241,7 @@ internal fun IslandWorld(
         when {
             view == "home" -> CloseIsland(
                 title = if (editing) "Insel bearbeiten" else "Meine Insel",
-                subtitle = if (editing) "Tippe auf einen freien Platz" else "Tippe auf ein Gebäude",
+                subtitle = if (editing) "Tippe auf einen freien Platz" else "Gebäude antippen zum Öffnen",
             ) {
                 HubIsland(
                     decor = home?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), seed = ownId ?: 1L,
@@ -258,21 +261,32 @@ internal fun IslandWorld(
                 onHome = { view = "home" }, onFriend = { selectedFriend = it }, ownSeed = ownId ?: 1L,
             )
         }
-        // Calm HUD: who I am, my quest points, letters waiting, nothing else.
+        // Calm HUD: back, where I am, and counters only when they mean something. Each counter is a shortcut.
+        val ready = letters.count { it.incoming && it.unlocked && it.readAt == null && opened[it.id] == null }
+        val qp = islands?.qp ?: 0
+        val step = if (editing || place != null || view != "map") null
+            else IsleGuide.nextStep(incoming = incoming.size, readyLetters = ready, openQuests = openQuests, friends = pals.size)
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Pill(Modifier.clickable { if (editing) editing = false else if (view != "map") view = "map" else onBack() }) { Text("‹", fontSize = 20.sp, color = Color(0xFFFFF8E6)) }
+            Pill(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Zurück") { if (editing) editing = false else if (view != "map") view = "map" else onBack() }) { Text("‹", fontSize = 20.sp, color = Color(0xFFFFF8E6)) }
             Spacer(Modifier.width(8.dp))
-            Pill { Text("$ownEmoji  $ownName", color = Color(0xFFFFF8E6), maxLines = 1) }
-            Spacer(Modifier.weight(1f))
-            Pill(Modifier.semantics { contentDescription = "Quest-Punkte" }) {
-                Text("⭐ ${islands?.qp ?: 0}", color = Color(0xFFFFF8E6))
+            // On the map the HUD's middle is the "what now?" hint; without one, it says who I am.
+            if (step != null) NextStepCard(step, Modifier.weight(1f)) { place = step.building.name }
+            else {
+                if (view == "map") Pill { Text("$ownEmoji  $ownName", color = Color(0xFFFFF8E6), maxLines = 1) }
+                Spacer(Modifier.weight(1f))
             }
-            Spacer(Modifier.width(6.dp))
-            val ready = letters.count { it.incoming && it.unlocked && it.readAt == null && opened[it.id] == null }
-            Pill { Text("✉ $ready", color = Color(0xFFFFF8E6)) }
+            if (qp > 0) Pill(Modifier.padding(start = 6.dp).then(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Punkte ansehen") { onPoints() }.semantics { contentDescription = "$qp Punkte" })) {
+                Text("⭐ $qp", color = Color(0xFFFFF8E6))
+            }
+            if (ready > 0) {
+                Spacer(Modifier.width(6.dp))
+                Pill(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Briefe öffnen") { place = IsleBuilding.POST.name }.semantics { contentDescription = "$ready neue Briefe" }) {
+                    Text("✉ $ready", color = Color(0xFFFFF8E6))
+                }
+            }
         }
         if (pals.isEmpty() && view == "map") {
             Column(
@@ -286,29 +300,32 @@ internal fun IslandWorld(
                 IsleButton("Freunde finden", onPeople)
             }
         }
-        // Floating bar: harbour (quests + topics), glossary, people.
-        Row(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp)
-                .background(Color(0xD9123E4A), RoundedCornerShape(30.dp))
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        // One fixed bar everywhere: map · my island · harbour. Context actions float above it.
+        Column(
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            when {
-                editing -> BarItem("✓", "Fertig") { editing = false }
-                view == "home" -> {
-                    BarItem("🗺", "Karte") { view = "map" }
-                    BarItem("✎", "Bearbeiten") { editing = true }
-                    BarItem("⚓", "Hafen", badge = openQuests) { place = IsleBuilding.HARBOUR.name }
+            if (visitId != null) {
+                var writeMenu by remember(visitId) { mutableStateOf(false) }
+                Box {
+                    GoldAction("✎  Schreiben") { writeMenu = true }
+                    androidx.compose.material3.DropdownMenu(writeMenu, { writeMenu = false }) {
+                        androidx.compose.material3.DropdownMenuItem({ Text("💬  Chat – sofort") }, { writeMenu = false; onChat(visitId) })
+                        androidx.compose.material3.DropdownMenuItem({ Text("✉  Brief – kommt per Boot") }, { writeMenu = false; onComposeLetter(visitId) })
+                    }
                 }
-                visitId != null -> {
-                    BarItem("🗺", "Karte") { view = "map" }
-                    BarItem("💬", "Chat") { onChat(visitId) }
-                    BarItem("✉", "Brief") { onComposeLetter(visitId) }
-                }
-                else -> {
-                    BarItem("🏝", "Meine Insel") { view = "home" }
-                    BarItem("⚓", "Hafen", badge = openQuests) { place = IsleBuilding.HARBOUR.name }
-                    BarItem("🗼", "Freunde", badge = incoming.size) { place = IsleBuilding.LIGHTHOUSE.name }
+            }
+            if (view == "home" && !editing && place == null) GoldAction("✎  Insel bearbeiten") { editing = true }
+            Row(
+                Modifier.background(Color(0xD9123E4A), RoundedCornerShape(30.dp)).padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (editing) BarItem("✓", "Fertig") { editing = false }
+                else {
+                    BarItem("🗺", "Karte", selected = view == "map" && place == null) { place = null; view = "map" }
+                    BarItem("🏝", "Meine Insel", selected = view == "home" && place == null, badge = incoming.size) { place = null; view = "home" }
+                    BarItem("⚓", "Hafen", selected = place == IsleBuilding.HARBOUR.name, badge = openQuests) { place = IsleBuilding.HARBOUR.name }
                 }
             }
         }
@@ -972,7 +989,7 @@ private fun IsleButton(text: String, onClick: () -> Unit, modifier: Modifier = M
 @Composable
 private fun Pill(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(
-        modifier.heightIn(min = 40.dp).background(Color(0xD9123E4A), RoundedCornerShape(50))
+        modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).background(Color(0xD9123E4A), RoundedCornerShape(50))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         Alignment.Center,
     ) {
@@ -985,9 +1002,12 @@ private fun Pill(modifier: Modifier = Modifier, content: @Composable () -> Unit)
 }
 
 @Composable
-private fun BarItem(icon: String, label: String, badge: Int = 0, onClick: () -> Unit) {
+private fun BarItem(icon: String, label: String, badge: Int = 0, selected: Boolean = false, onClick: () -> Unit) {
     Column(
-        Modifier.clip(RoundedCornerShape(22.dp)).clickable(onClick = onClick).heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 4.dp),
+        Modifier.clip(RoundedCornerShape(22.dp))
+            .background(if (selected) Color(0x33FFE08A) else Color.Transparent)
+            .clickable(onClick = onClick).heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 4.dp)
+            .semantics { if (selected) this.selected = true },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box {
@@ -1118,4 +1138,47 @@ private fun InfoLine(label: String, value: String) {
         Text(label, color = Color(0xB3FFF8E6), fontSize = 14.sp, modifier = Modifier.width(84.dp))
         Text(value, color = Color(0xFFFFF8E6), fontSize = 14.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold)
     }
+}
+
+
+/** "What now?" for the island: one calm suggestion, highest priority first. Pure and testable. */
+internal object IsleGuide {
+    data class Step(val icon: String, val text: String, val building: IsleBuilding)
+
+    fun nextStep(incoming: Int, readyLetters: Int, openQuests: Int, friends: Int): Step? = when {
+        incoming == 1 -> Step("🗼", "Neue Freundschaftsanfrage", IsleBuilding.LIGHTHOUSE)
+        incoming > 1 -> Step("🗼", "$incoming Freundschaftsanfragen", IsleBuilding.LIGHTHOUSE)
+        readyLetters == 1 -> Step("✉", "Ein Brief ist angekommen", IsleBuilding.POST)
+        readyLetters > 1 -> Step("✉", "$readyLetters Briefe sind angekommen", IsleBuilding.POST)
+        openQuests == 1 -> Step("⭐", "Eine Quest ist offen", IsleBuilding.HARBOUR)
+        openQuests > 1 -> Step("⭐", "$openQuests Quests sind offen", IsleBuilding.HARBOUR)
+        friends == 0 -> null // the empty-sea card already says what to do
+        else -> null
+    }
+}
+
+@Composable
+private fun NextStepCard(step: IsleGuide.Step, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Row(
+        modifier.clip(RoundedCornerShape(24.dp))
+            .background(Color(0xE6FFF8E6)).border(1.dp, Color(0x66B9852E), RoundedCornerShape(18.dp))
+            .clickable(onClickLabel = "Öffnen", onClick = onClick).heightIn(min = 48.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(step.icon, fontSize = 18.sp)
+        Spacer(Modifier.width(8.dp))
+        Text(step.text, Modifier.weight(1f, fill = false), color = Isle.Ink, fontSize = 13.sp, fontFamily = Kit.Body, fontWeight = FontWeight.SemiBold, maxLines = 2, lineHeight = 16.sp)
+        Spacer(Modifier.width(6.dp))
+        Text("›", color = Isle.TealDark, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun GoldAction(text: String, onClick: () -> Unit) {
+    Box(
+        Modifier.clip(RoundedCornerShape(50)).background(Color(0xFFE9B949)).border(1.dp, Color(0xFF9A6A1A), RoundedCornerShape(50))
+            .clickable(onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 20.dp, vertical = 10.dp),
+        Alignment.Center,
+    ) { Text(text, color = Color(0xFF3B2410), fontFamily = Kit.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
 }

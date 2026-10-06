@@ -413,6 +413,7 @@ fun LayerHome(
                     onAllTopics = { hub = "topics" },
                     onGlossary = { hub = "glossary" },
                     onPeople = { peopleOpen = true },
+                    onPoints = { hub = "ep" },
                     onCreateQuest = { title, details, icon, points, peer, group ->
                         act { api.createQuest(token, title, details, icon, points, peer, group) }
                     },
@@ -580,7 +581,7 @@ fun LayerHome(
             ) }
             error?.let { message ->
                 LaunchedEffect(message) { delay(6_000); if (error == message) error = null }
-                NoticeToast(message, onDismiss = { error = null }, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 96.dp))
+                NoticeToast(ApiErrors.friendly(message), onDismiss = { error = null }, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 96.dp))
             }
             } }
         }
@@ -721,7 +722,7 @@ internal fun InboxScreen(
                 }.onFailure { exportError = it.message ?: "Export fehlgeschlagen" }
             } }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { Text("Öffentliche Prüfdateien exportieren") }
         }
-        exportError?.let { item { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) } }
+        exportError?.let { item { Text(ApiErrors.friendly(it), color = MaterialTheme.colorScheme.error, fontSize = 12.sp) } }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!showSent) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text("Empfangen (${messages.size})") }
@@ -1237,7 +1238,7 @@ private fun FriendsScreen(
             } }
         } }
         item { SectionTitle("Freunde") }
-        if (friends.isEmpty()) item { EmptyHint("🤝", "Noch keine Freunde", "Suche oben nach einem Benutzernamen und schick eine Anfrage – sobald sie annimmt, wächst dein Dorf.") }
+        if (friends.isEmpty()) item { EmptyHint("🤝", "Noch keine Freunde", "Suche oben nach einem Benutzernamen und schick eine Anfrage – sobald sie annimmt, taucht ihre Insel auf.") }
         else items(friends, key = { "friend-${it.id}" }) { friend ->
             val rules = settings.firstOrNull { it.friendId == friend.id }
             FriendRow(

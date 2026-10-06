@@ -133,7 +133,7 @@ internal fun HubIsland(
         }
         if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (x, y) ->
             val item = decor[i]
-            val s = 34.dp
+            val s = 44.dp
             Box(
                 Modifier.offset(x = w * x - s / 2, y = h * y - s / 2).size(s).clip(CircleShape)
                     .background(Color.White.copy(alpha = if (item == null) .85f else .55f))

@@ -195,25 +195,22 @@ internal fun ChatsScreen(
                 }
             }
             if (!firstRun) item {
-                val fadeTo = p.paper
-                androidx.compose.foundation.lazy.LazyRow(
-                    contentPadding = PaddingValues(start = 14.dp, end = 28.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp).drawWithContent {
-                        drawContent()
-                        val w = 28.dp.toPx()
-                        drawRect(
-                            androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Transparent, fadeTo), startX = size.width - w, endX = size.width),
-                            topLeft = androidx.compose.ui.geometry.Offset(size.width - w, 0f), size = androidx.compose.ui.geometry.Size(w, size.height),
-                        )
-                    },
+                // Chips wrap instead of scrolling: nothing hides behind the right edge.
+                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    items(ChatTools.ListFilter.entries) { f ->
+                    val useful = ChatTools.ListFilter.entries.filter { f ->
+                        f == ChatTools.ListFilter.ALL || f == filter || ChatTools.filterConversations(conversations, "", f).isNotEmpty()
+                    }
+                    useful.forEach { f ->
                         val count = if (f == ChatTools.ListFilter.UNREAD) conversations.count { it.hasNews } else 0
                         ListChip(if (count > 0) "${f.label} $count" else f.label, selected = filter == f, p = p) { filter = f }
                     }
-                    item { ListChip("Gruppen" + if (groupCount > 0) " $groupCount" else "", selected = false, p = p, onClick = onGroups) }
-                    if (topicCount > 0) item { ListChip("Themen $topicCount", selected = false, p = p, onClick = onTopicsHub) }
+                    if (groupCount > 0) ListChip("Gruppen $groupCount", selected = false, p = p, onClick = onGroups)
+                    if (topicCount > 0) ListChip("Themen $topicCount", selected = false, p = p, onClick = onTopicsHub)
                 }
             }
             if (requests.isNotEmpty()) items(requests, key = { it.key }) { request ->
@@ -277,12 +274,12 @@ internal fun ChatsScreen(
 @Composable
 private fun ListChip(text: String, selected: Boolean, p: HarbourPalette, onClick: () -> Unit) {
     Box(
-        Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(12.dp))
+        Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
             .background(if (selected) p.seaDeep else p.card.copy(alpha = .75f))
             .border(1.dp, if (selected) Color.Transparent else p.line, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .semantics { role = Role.Button }
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1,

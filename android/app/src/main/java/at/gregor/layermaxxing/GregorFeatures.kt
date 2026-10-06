@@ -36,8 +36,8 @@ object Dictionary {
 
 object AppGlossary {
     val entries = listOf(
-        GlossaryEntry("Dorf / Lehen", "Die grafische Ansicht einer Freundschaft. Jeder Freund hat sein eigenes Dorf.", "Wegweiser: Freund wechseln. Haus: eigener Hof. Gegenüber: Freund besuchen."),
-        GlossaryEntry("Briefe", "Hier findest du eure versiegelten, freigegebenen und gelesenen Briefe.", "Im Chat auf den Umschlag oder im Dorf auf Post tippen."),
+        GlossaryEntry("Insel", "Die grafische Ansicht einer Freundschaft. Jeder Freund hat seine eigene Insel.", "Wegweiser: Freund wechseln. Haus: eigener Hof. Gegenüber: Freund besuchen."),
+        GlossaryEntry("Briefe", "Hier findest du eure versiegelten, freigegebenen und gelesenen Briefe.", "Im Chat auf den Umschlag oder auf deiner Insel auf die Post tippen."),
         GlossaryEntry("Themen", "Was ihr beim nächsten Gespräch besprechen wollt: privat, mit einem Freund oder in einer Gruppe.", "Anlegen, Notiz ergänzen, besprochen markieren und bei Bedarf wieder öffnen."),
         GlossaryEntry("Punkte", "Ein Dankeschön, das die andere Person erst annehmen muss. Nur angenommene Vorschläge zählen.", "In den Freundschaftsregeln gemeinsam aktivieren. Ein Vorschlag gibt einen Punkt."),
         GlossaryEntry("Schatzkammer / Ausbau", "Angenommene Punkte ermöglichen kosmetischen Ausbau auf diesem Gerät. Dein Chat wird dadurch nicht freigeschaltet oder gesperrt.", "Hof öffnen, Schatzkammer oder Baustelle wählen."),
@@ -48,10 +48,10 @@ object AppGlossary {
         GlossaryEntry("Gruppe", "Mehrere Freunde für gemeinsame Themen und Gruppenbriefe. Ein separater Sofort-Gruppenchat ist noch nicht vorhanden.", "Gruppen öffnen, Freunde auswählen, dann Themen sammeln oder einen Gruppenbrief schreiben."),
         GlossaryEntry("Kreativmodus / Testserver", "Nur für berechtigte Testkonten: freier Ausbau und Vorspulen zeitgesteuerter Testbriefe. Keine echten Produktionsdaten.", "Unter Mehr aktivieren. Ein Testkonto gehört nur zum ausgewählten Server."),
     )
-    /** Old names still find the new entries ("EP" → Punkte, "Briefraum" → Briefe, "Tal" → Dorf). */
+    /** Old names still find the new entries ("EP" → Punkte, "Briefraum" → Briefe, "Dorf" → Insel). */
     private val aliases = mapOf(
         "Punkte" to "EP Ebenen-Punkte", "Briefe" to "Briefraum Postarchiv Poststelle",
-        "Themen" to "Stichworte Notizen", "Dorf / Lehen" to "Tal",
+        "Themen" to "Stichworte Notizen", "Insel" to "Tal Dorf Lehen",
     )
     fun search(query: String): List<GlossaryEntry> = query.trim().let { q ->
         entries.filter { q.isEmpty() || (it.term + " " + it.meaning + " " + it.action + " " + aliases[it.term].orEmpty()).contains(q, ignoreCase = true) }

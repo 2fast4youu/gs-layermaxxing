@@ -402,7 +402,7 @@ internal fun ThreadScreen(
         }
         }
         threadError?.let {
-            Text(it, Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            Text(ApiErrors.friendly(it), Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
         quote?.let { quoted ->
             Row(
@@ -723,8 +723,8 @@ private fun ThreadRequestCard(request: PendingRequest, onRespond: (PendingReques
             Text(request.headline, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             if (request.detail.isNotBlank()) Text(request.detail, fontSize = 12.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onRespond(request, true) }, modifier = Modifier.height(36.dp)) { Text("Annehmen") }
-                OutlinedButton(onClick = { onRespond(request, false) }, modifier = Modifier.height(36.dp)) { Text("Ablehnen") }
+                Button(onClick = { onRespond(request, true) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Annehmen") }
+                OutlinedButton(onClick = { onRespond(request, false) }, modifier = Modifier.heightIn(min = 44.dp)) { Text("Ablehnen") }
             }
         }
     }

@@ -168,7 +168,7 @@ internal fun MoreScreen(
             TextButton(onClick = onExit) { Text("← Inseln") }
             if (onAccounts != null) TextButton(onClick = onAccounts) { Text("Konten wechseln") }
         }
-        Box(Modifier.weight(1f)) { MoreHub(status, ep, onLogout, onDest = { dest = it }) }
+        Box(Modifier.weight(1f)) { MoreHub(status, ep, onLogout, onDest = { dest = it }, placesOnIsland = castleExperiment) }
     }
 }
 
@@ -179,6 +179,7 @@ internal fun MoreScreen(
 @Composable
 private fun MoreHub(
     status: ApiClient.Status?, ep: ApiClient.EpOverview?, onLogout: () -> Unit, onDest: (MoreDest) -> Unit,
+    placesOnIsland: Boolean = false,
 ) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         item {
@@ -206,9 +207,9 @@ private fun MoreHub(
                     .background(MaterialTheme.colorScheme.errorContainer).clickable { onDest(MoreDest.PROFILE) }.padding(14.dp),
             ) { Text("⚠  Dein Konto hat noch kein Passwort – jetzt absichern", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold) }
         }
-        item { MenuRow("✉", "Briefe", "Eingang, Ausgang und Nachweise") { onDest(MoreDest.LETTERS) } }
-        item { MenuRow("★", "Punkte", if ((ep?.given ?: 0) + (ep?.received ?: 0) > 0) "Gegeben ${ep?.given ?: 0} · Erhalten ${ep?.received ?: 0}" else "Noch keine") { onDest(MoreDest.EP) } }
-        item { MenuRow("📖", "Wörterbuch", "Begriffe der App, gemeinsam erklärt") { onDest(MoreDest.GLOSSARY) } }
+        if (!placesOnIsland) item { MenuRow("✉", "Briefe", "Eingang, Ausgang und Nachweise") { onDest(MoreDest.LETTERS) } }
+        if (!placesOnIsland) item { MenuRow("★", "Punkte", if ((ep?.given ?: 0) + (ep?.received ?: 0) > 0) "Gegeben ${ep?.given ?: 0} · Erhalten ${ep?.received ?: 0}" else "Noch keine") { onDest(MoreDest.EP) } }
+        if (!placesOnIsland) item { MenuRow("📖", "Wörterbuch", "Begriffe der App, gemeinsam erklärt") { onDest(MoreDest.GLOSSARY) } }
         item { HorizontalDivider(Modifier.padding(vertical = 6.dp)) }
         item { MenuRow("🎨", "Darstellung", "Modus, Design, App-Sperre") { onDest(MoreDest.APPEARANCE) } }
         item { MenuRow("🔐", "Konto & Sicherheit", "Passwort, Geräte, Blockierungen") { onDest(MoreDest.ACCOUNT) } }
