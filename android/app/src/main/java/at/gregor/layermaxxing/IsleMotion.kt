@@ -171,7 +171,7 @@ internal fun WorldText(
         style = TextStyle(shadow = null),
         modifier = modifier.then(
             if (plaque) androidx.compose.ui.Modifier
-                .background(androidx.compose.ui.graphics.Color(0xD9123E4A), shape)
+                .background(androidx.compose.ui.graphics.Color(0xD9243A3F), shape)
                 .padding(horizontal = 8.dp, vertical = 1.dp)
             else androidx.compose.ui.Modifier,
         ),

@@ -101,15 +101,16 @@ import kotlin.math.sin
  * Everything here is purely visual – no island level unlocks rights or features.
  */
 internal object Isle {
-    val SeaTop = Color(0xFF8FE3E0)
-    val SeaBottom = Color(0xFF4FC3C7)
-    val Teal = Color(0xFF17A2A6)
-    val TealDark = Color(0xFF0E7F84)
+    // Muted "Nordic coast": slate-teal sea, spruce accents.
+    val SeaTop = Color(0xFF7FA2A3)
+    val SeaBottom = Color(0xFF5C8487)
+    val Teal = Color(0xFF3F7C78)
+    val TealDark = Color(0xFF2F5D5A)
     val Ink = Color(0xFF1F3B4D)
     val Muted = Color(0xFF6B8592)
     val Card = Color(0xFFFFFFFF)
     val Sand = Color(0xFFFFF6E5)
-    val Star = Color(0xFFF2B33D)
+    val Star = Color(0xFFC9A55C)
 
     val levelNames = listOf("Neu", "Freunde", "Vertraut", "Beste Freunde")
     fun levelName(level: Int) = levelNames[(level - 1).coerceIn(0, 3)]
@@ -330,7 +331,7 @@ internal fun IslandWorld(
             }
             if (view == "home" && !editing && place == null) GoldAction("✎  Insel bearbeiten") { editing = true }
             Row(
-                Modifier.background(Color(0xD9123E4A), RoundedCornerShape(30.dp)).padding(horizontal = 8.dp, vertical = 4.dp),
+                Modifier.background(Color(0xD9243A3F), RoundedCornerShape(30.dp)).padding(horizontal = 8.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (editing) BarItem("✓", "Fertig") { editing = false }
@@ -644,10 +645,10 @@ private fun IslandMap(
                 val dots = PathEffect.dashPathEffect(floatArrayOf(4f, 14f), 0f)
                 drawPath(v.path(v.t, 1f), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
                 if (v.share != null) {
-                    drawPath(v.path(0f, v.t), Color(0x66123E4A), style = Stroke(11f, cap = StrokeCap.Round))
-                    drawPath(v.path(0f, v.t), Color(0xFFFFE08A), style = Stroke(6f, cap = StrokeCap.Round))
+                    drawPath(v.path(0f, v.t), Color(0x66243A3F), style = Stroke(11f, cap = StrokeCap.Round))
+                    drawPath(v.path(0f, v.t), Color(0xFFE6D3A3), style = Stroke(6f, cap = StrokeCap.Round))
                 } else drawPath(v.path(0f, v.t), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
-                drawCircle(Color(0xFFFFE08A), 6f, v.to)
+                drawCircle(Color(0xFFE6D3A3), 6f, v.to)
             }
         }
         // Home island.
@@ -668,11 +669,11 @@ private fun IslandMap(
         ) {
             HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false, seed = ownSeed)
             Row(
-                Modifier.offset(y = (-8).dp).background(Color(0xD9123E4A), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 2.dp),
+                Modifier.offset(y = (-8).dp).background(Color(0xD9243A3F), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 WorldText(ownName, 14.sp, plaque = false)
-                WorldText("  Meine Insel", 10.sp, fill = Color(0xFFFFE08A), display = false, plaque = false)
+                WorldText("  Meine Insel", 10.sp, fill = Color(0xFFE6D3A3), display = false, plaque = false)
             }
         }
         Canvas(Modifier.fillMaxSize()) {
@@ -694,8 +695,8 @@ private fun IslandMap(
                         modifier = Modifier.align(Alignment.TopEnd).background(Color(0x8816424F), CircleShape).padding(horizontal = 3.dp),
                     )
                     if (v.more > 0) Text(
-                        "+${v.more}", fontSize = 10.sp, color = Color(0xFF123E4A), fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.BottomStart).background(Color(0xFFFFE08A), CircleShape).padding(horizontal = 4.dp),
+                        "+${v.more}", fontSize = 10.sp, color = Color(0xFF243A3F), fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.BottomStart).background(Color(0xFFE6D3A3), CircleShape).padding(horizontal = 4.dp),
                     )
                 }
             }
@@ -770,7 +771,7 @@ private fun CloseIsland(title: String, subtitle: String, content: @Composable ()
     ) {
         WorldText(title, 20.sp, modifier = Modifier.padding(top = 2.dp))
         Spacer(Modifier.height(3.dp))
-        WorldText(subtitle, 11.sp, fill = Color(0xFFFFE08A), display = false)
+        WorldText(subtitle, 11.sp, fill = Color(0xFFE6D3A3), display = false)
         Spacer(Modifier.height(8.dp))
         Box(
             Modifier.fillMaxWidth().weight(1f).clipToBounds()
@@ -842,7 +843,7 @@ private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name
         // Name painted on the sea right under the island, nickname as a small line beneath.
         Column(
             Modifier.offset(y = 2.dp).widthIn(max = 152.dp)
-                .background(Color(0xD9123E4A), RoundedCornerShape(9.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
+                .background(Color(0xD9243A3F), RoundedCornerShape(9.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -850,7 +851,7 @@ private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name
                 Spacer(Modifier.width(5.dp))
                 WorldText(name, 12.sp, plaque = false)
             }
-            if (sub.isNotBlank()) Text(sub, fontFamily = Kit.Body, fontSize = 10.sp, color = Color(0xFFFFE08A),
+            if (sub.isNotBlank()) Text(sub, fontFamily = Kit.Body, fontSize = 10.sp, color = Color(0xFFE6D3A3),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
         }
     }
@@ -1090,7 +1091,7 @@ private fun IsleButton(text: String, onClick: () -> Unit, modifier: Modifier = M
 @Composable
 private fun Pill(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(
-        modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).background(Color(0xD9123E4A), RoundedCornerShape(50))
+        modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).background(Color(0xD9243A3F), RoundedCornerShape(50))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         Alignment.Center,
     ) {
@@ -1106,7 +1107,7 @@ private fun Pill(modifier: Modifier = Modifier, content: @Composable () -> Unit)
 private fun BarItem(icon: String, label: String, badge: Int = 0, selected: Boolean = false, onClick: () -> Unit) {
     Column(
         Modifier.clip(RoundedCornerShape(22.dp))
-            .background(if (selected) Color(0x33FFE08A) else Color.Transparent)
+            .background(if (selected) Color(0x33E6D3A3) else Color.Transparent)
             .clickable(onClick = onClick).heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 4.dp)
             .semantics { if (selected) this.selected = true },
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1182,7 +1183,7 @@ private fun LabelDialog(name: String, current: String?, onDismiss: () -> Unit, o
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BoatSheet(letter: ApiClient.Message, friendName: String, nowSec: Long, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF123E4A), sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF243A3F), sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         BoatSheetContent(letter, friendName, nowSec)
     }
 }
@@ -1201,14 +1202,14 @@ internal fun BoatSheetContent(letter: ApiClient.Message, friendName: String, now
                 Spacer(Modifier.width(12.dp))
                 Column {
                     WorldText(boat.label.substringBefore(" ·"), 22.sp, plaque = false)
-                    WorldText(if (letter.incoming) "Brief von $friendName" else "Brief an $friendName", 13.sp, fill = Color(0xFFFFE08A), display = false, plaque = false)
+                    WorldText(if (letter.incoming) "Brief von $friendName" else "Brief an $friendName", 13.sp, fill = Color(0xFFE6D3A3), display = false, plaque = false)
                 }
             }
             Spacer(Modifier.height(18.dp))
             // Route: home harbour → friend, with the boat where it really is.
             Box(Modifier.fillMaxWidth().height(28.dp)) {
                 Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(4.dp).background(Color(0x33FFFFFF), RoundedCornerShape(50)))
-                Box(Modifier.align(Alignment.CenterStart).fillMaxWidth(share ?: .5f).height(4.dp).background(Color(0xFFFFE08A), RoundedCornerShape(50)))
+                Box(Modifier.align(Alignment.CenterStart).fillMaxWidth(share ?: .5f).height(4.dp).background(Color(0xFFE6D3A3), RoundedCornerShape(50)))
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     Text("⛵", fontSize = 18.sp, modifier = Modifier.offset(x = maxWidth * (share ?: .5f) - 10.dp))
                 }
@@ -1278,7 +1279,7 @@ private fun NextStepCard(step: IsleGuide.Step, modifier: Modifier = Modifier, on
 @Composable
 private fun GoldAction(text: String, onClick: () -> Unit) {
     Box(
-        Modifier.clip(RoundedCornerShape(50)).background(Color(0xFFE9B949)).border(1.dp, Color(0xFF9A6A1A), RoundedCornerShape(50))
+        Modifier.clip(RoundedCornerShape(50)).background(Color(0xFFC9A55C)).border(1.dp, Color(0xFF7E6236), RoundedCornerShape(50))
             .clickable(onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 20.dp, vertical = 10.dp),
         Alignment.Center,
     ) { Text(text, color = Color(0xFF3B2410), fontFamily = Kit.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp) }

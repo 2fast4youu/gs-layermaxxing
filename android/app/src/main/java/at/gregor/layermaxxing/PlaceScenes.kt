@@ -196,8 +196,8 @@ internal fun IsleBuilding.background(): Int = when (this) {
 internal fun GoldButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         modifier.shadow(10.dp, RoundedCornerShape(30.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xFFFFE18C), Color(0xFFF2B33D), Color(0xFFD48A12))), RoundedCornerShape(30.dp))
-            .border(2.dp, Color(0xFF9C6410), RoundedCornerShape(30.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xFFE2CB93), Color(0xFFC9A55C), Color(0xFFA9843F))), RoundedCornerShape(30.dp))
+            .border(2.dp, Color(0xFF7E6236), RoundedCornerShape(30.dp))
             .clip(RoundedCornerShape(30.dp)).clickable(onClick = onClick)
             .padding(horizontal = 26.dp, vertical = 13.dp)
             .semantics { role = Role.Button },
@@ -291,11 +291,11 @@ private fun Cubby(friend: ApiClient.UserSummary, total: Int, ready: Int, travell
                 Modifier.align(Alignment.Center).offset(x = ((i - (n - 1) / 2f) * 6).dp, y = (10 - i * 7).dp).fillMaxWidth(.56f).rotate((i - 1) * 6f),
             )
             if (ready > 0) Box(
-                Modifier.align(Alignment.TopEnd).size(24.dp).shadow(3.dp, CircleShape).background(Color(0xFFD32F2F), CircleShape).border(2.dp, Color.White, CircleShape),
+                Modifier.align(Alignment.TopEnd).size(24.dp).shadow(3.dp, CircleShape).background(Color(0xFFA4533F), CircleShape).border(2.dp, Color.White, CircleShape),
                 Alignment.Center,
             ) { Text("$ready", color = Color.White, fontSize = 12.sp, fontFamily = Display) }
             if (travelling > 0) Row(
-                Modifier.align(Alignment.TopStart).shadow(2.dp, RoundedCornerShape(50)).background(Color(0xFF17A2A6), RoundedCornerShape(50)).padding(horizontal = 5.dp, vertical = 1.dp),
+                Modifier.align(Alignment.TopStart).shadow(2.dp, RoundedCornerShape(50)).background(Color(0xFF3F7C78), RoundedCornerShape(50)).padding(horizontal = 5.dp, vertical = 1.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Sprite(R.drawable.boat_sail, Modifier.size(14.dp))
@@ -333,7 +333,7 @@ private fun Envelope(m: ApiClient.Message, state: LetterState, onClick: () -> Un
                     else -> "Zugestellt"
                 },
                 fontSize = 12.sp, fontFamily = Body, fontWeight = FontWeight.Bold,
-                color = if (state == LetterState.READY) Color(0xFFD32F2F) else Color(0xFF0E7F84),
+                color = if (state == LetterState.READY) Color(0xFFA4533F) else Color(0xFF2F5D5A),
             )
         }
         Sprite(boat.res, Modifier.size(44.dp))
@@ -420,7 +420,7 @@ private fun QuestNote(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> 
                 Text(
                     if (done) "✓" else "Abhaken", fontFamily = Display, fontSize = 11.sp,
                     color = Color.White,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background(if (done) Color(0xFF4CAF50) else Color(0xFF17A2A6))
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(if (done) Color(0xFF5E7F5A) else Color(0xFF3F7C78))
                         .clickable { onDone(q, !done) }.padding(horizontal = 9.dp, vertical = 3.dp),
                 )
                 Spacer(Modifier.weight(1f))
@@ -533,7 +533,7 @@ private fun Bottle(name: String, bob: Float, onYes: () -> Unit, onNo: () -> Unit
         Text("Nein", fontFamily = Body, fontWeight = FontWeight.Bold, color = Color(0xFF8A6A3A), modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onNo).padding(horizontal = 8.dp, vertical = 8.dp))
         Text(
             "Annehmen", fontFamily = Display, color = Color.White, fontSize = 14.sp,
-            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF17A2A6)).clickable(onClick = onYes).padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF3F7C78)).clickable(onClick = onYes).padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
 }
@@ -550,14 +550,14 @@ internal fun LibraryBook(onClose: () -> Unit, glossary: @Composable () -> Unit) 
             // Leather cover peeking out behind the page.
             Box(
                 Modifier.fillMaxSize().shadow(14.dp, RoundedCornerShape(18.dp))
-                    .background(Brush.verticalGradient(listOf(Color(0xFF7B4FB0), Color(0xFF4E2F80))), RoundedCornerShape(18.dp))
-                    .border(2.dp, Color(0xFFE9C46A), RoundedCornerShape(18.dp)).padding(7.dp)
+                    .background(Brush.verticalGradient(listOf(Color(0xFF4F5D63), Color(0xFF34414A))), RoundedCornerShape(18.dp))
+                    .border(2.dp, Color(0xFFC9A55C), RoundedCornerShape(18.dp)).padding(7.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Brush.horizontalGradient(listOf(Color(0xFFE6D6B4), Color(0xFFFFF9EC), Color(0xFFFFF9EC), Color(0xFFF3E6CA)))),
             ) {
                 MaterialTheme(
                     colorScheme = lightColorScheme(
-                        primary = Color(0xFF5B3A8C), onPrimary = Color.White,
+                        primary = Color(0xFF3F5A63), onPrimary = Color.White,
                         primaryContainer = Color(0xFFE6DAF5), onPrimaryContainer = Color(0xFF2E2150),
                         secondaryContainer = Color(0xFFF1E3C4), onSecondaryContainer = Color(0xFF3B2410),
                         surface = Color.Transparent, onSurface = Color(0xFF2E2150),
@@ -693,10 +693,10 @@ internal fun MyHouse(
 private fun GoldButtonSmall(label: String, modifier: Modifier, onClick: () -> Unit) {
     Box(
         modifier.shadow(6.dp, RoundedCornerShape(24.dp)).background(Color(0xFFFFFBF1), RoundedCornerShape(24.dp))
-            .border(2.dp, Color(0xFF17A2A6), RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp))
+            .border(2.dp, Color(0xFF3F7C78), RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp))
             .clickable(onClick = onClick).padding(vertical = 10.dp),
         Alignment.Center,
-    ) { Text(label, fontFamily = Display, fontSize = 15.sp, color = Color(0xFF0E7F84)) }
+    ) { Text(label, fontFamily = Display, fontSize = 15.sp, color = Color(0xFF2F5D5A)) }
 }
 
 /** Cream parchment card for empty states inside a place. */

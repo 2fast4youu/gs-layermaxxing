@@ -174,7 +174,7 @@ internal fun HubIsland(
                     PlaceTag(b.label)
                     if (count > 0) Box(
                         Modifier.align(Alignment.TopEnd).offset(x = 7.dp, y = (-7).dp).size(16.dp)
-                            .background(Color(0xFFC8442F), CircleShape).border(1.dp, Color(0xFFFFF3DC), CircleShape),
+                            .background(Color(0xFFA4533F), CircleShape).border(1.dp, Color(0xFFFFF3DC), CircleShape),
                         Alignment.Center,
                     ) { Text(if (count > 9) "9+" else "$count", fontSize = 9.sp, lineHeight = 9.sp, color = Color.White, fontWeight = FontWeight.Bold) }
                 }
