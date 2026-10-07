@@ -227,7 +227,7 @@ private fun TopicRow(topic: ApiClient.Topic, completed: Boolean, onToggle: () ->
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text("›", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            AppIcon(R.drawable.ico_chevron, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 22.dp)
         }
     }
 }
@@ -235,7 +235,7 @@ private fun TopicRow(topic: ApiClient.Topic, completed: Boolean, onToggle: () ->
 @Composable
 private fun TopicEmptyCard() = Card(Modifier.fillMaxWidth()) {
     Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("✓", fontSize = 28.sp, color = MaterialTheme.colorScheme.primary)
+        AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 26.dp)
         Text("Keine offenen Themen", fontWeight = FontWeight.Bold)
     }
 }

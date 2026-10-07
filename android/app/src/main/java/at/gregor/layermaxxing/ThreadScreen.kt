@@ -319,7 +319,7 @@ internal fun ThreadScreen(
         if (searchOpen) Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             androidx.compose.material3.TextField(
                 query, { query = it }, Modifier.weight(1f), singleLine = true,
-                placeholder = { Text("Im Chat suchen") }, leadingIcon = { Text("🔍", fontSize = 15.sp) },
+                placeholder = { Text("Im Chat suchen") }, leadingIcon = { AppIcon(R.drawable.ico_search, null, size = 16.dp) },
                 shape = RoundedCornerShape(24.dp),
                 colors = androidx.compose.material3.TextFieldDefaults.colors(
                     focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
@@ -428,7 +428,7 @@ internal fun ThreadScreen(
                     Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { quote = null }
                         .semantics { contentDescription = "Antwort verwerfen"; role = Role.Button },
                     contentAlignment = Alignment.Center,
-                ) { Text("✕", fontSize = 16.sp) }
+                ) { AppIcon(R.drawable.ico_close, null, size = 18.dp) }
             }
         }
         if (stickersOpen && plan.inputEnabled) StickerTray(Harbour.palette()) { key ->
@@ -444,7 +444,7 @@ internal fun ThreadScreen(
                     .background(Harbour.palette().card, RoundedCornerShape(12.dp)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("✎", Modifier.padding(start = 12.dp), color = Harbour.palette().gold, fontSize = 16.sp)
+                AppIcon(R.drawable.ico_edit, null, modifier = Modifier.padding(start = 12.dp), tint = Harbour.palette().gold, size = 18.dp)
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 6.dp)) {
                     Text("Nachricht bearbeiten", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Harbour.palette().gold)
                     Text(ChatTools.parseReply(e.text).second, maxLines = 1, fontSize = 13.sp, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -453,7 +453,7 @@ internal fun ThreadScreen(
                     Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { editing = null; text = "" }
                         .semantics { contentDescription = "Bearbeiten abbrechen"; role = Role.Button },
                     contentAlignment = Alignment.Center,
-                ) { Text("✕", fontSize = 16.sp) }
+                ) { AppIcon(R.drawable.ico_close, null, size = 18.dp) }
             }
         }
         Composer(
@@ -521,20 +521,20 @@ internal fun ThreadScreen(
                     ChatExtras.previewText(message).take(300), Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     maxLines = 4, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                SheetAction("↩", "Antworten", enabled = chatsEnabled) { quote = ChatExtras.previewText(message); selectedChat = null }
-                if (message.kind == "text") SheetAction("⧉", "Kopieren") { clipboard.setText(AnnotatedString(ChatTools.parseReply(message.text).second)); selectedChat = null }
-                if (ChatExtras.canEdit(message, ownUserId, now)) SheetAction("✎", "Bearbeiten") {
+                SheetAction(R.drawable.ico_reply, "Antworten", enabled = chatsEnabled) { quote = ChatExtras.previewText(message); selectedChat = null }
+                if (message.kind == "text") SheetAction(R.drawable.ico_copy, "Kopieren") { clipboard.setText(AnnotatedString(ChatTools.parseReply(message.text).second)); selectedChat = null }
+                if (ChatExtras.canEdit(message, ownUserId, now)) SheetAction(R.drawable.ico_edit, "Bearbeiten") {
                     editing = message; quote = null; text = ChatTools.parseReply(message.text).second; selectedChat = null
                 }
-                SheetAction("📌", if (message.pinnedAt != null) "Loslösen" else "Anpinnen – als Erinnerung") {
+                SheetAction(R.drawable.ico_pin, if (message.pinnedAt != null) "Loslösen" else "Anpinnen – als Erinnerung") {
                     selectedChat = null
                     scope.launch { runCatching { api.pinChat(token, friend.id, message.id, message.pinnedAt == null) }.onSuccess { reloadChat() }.onFailure { threadError = it.message } }
                 }
-                if (message.kind == "text") SheetAction("⭐", "Als gemeinsame Quest") { questDraft = ChatExtras.questDraft(message.text); selectedChat = null }
-                if (message.kind == "text" && onLetterFromChat != null) SheetAction("✉", "Als Brief verschicken", enabled = letterAction.enabled) {
+                if (message.kind == "text") SheetAction(R.drawable.ico_points, "Als gemeinsame Quest") { questDraft = ChatExtras.questDraft(message.text); selectedChat = null }
+                if (message.kind == "text" && onLetterFromChat != null) SheetAction(R.drawable.ico_letter, "Als Brief verschicken", enabled = letterAction.enabled) {
                     onLetterFromChat(friend.id, ChatTools.parseReply(message.text).second); selectedChat = null
                 }
-                if (ChatExtras.canDelete(message, ownUserId)) SheetAction("🗑", "Löschen") { confirmDeleteChat = message; selectedChat = null }
+                if (ChatExtras.canDelete(message, ownUserId)) SheetAction(R.drawable.ico_delete, "Löschen") { confirmDeleteChat = message; selectedChat = null }
                 Text(
                     "Gesendet ${socialDate(message.createdAt)}" + (message.readAt?.let { " · gelesen ${socialDate(it)}" } ?: ""),
                     Modifier.padding(horizontal = 12.dp, vertical = 10.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -548,7 +548,7 @@ internal fun ThreadScreen(
             questDraft = null
             scope.launch {
                 runCatching { api.createQuest(token, q.title, q.details, q.icon, q.points, friend.id, null) }
-                    .onSuccess { notice = "⭐ Quest „${q.title}“ ist angelegt"; act {} }
+                    .onSuccess { notice = "Quest „${q.title}“ ist angelegt"; act {} }
                     .onFailure { threadError = it.message }
             }
         }, onDismiss = { questDraft = null })
@@ -669,7 +669,7 @@ internal fun ThreadHeader(
             Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onBack)
                 .semantics { contentDescription = "Zurück zu Chats"; role = Role.Button },
             contentAlignment = Alignment.Center,
-        ) { Text("‹", fontSize = 30.sp, color = p.onHead) }
+        ) { AppIcon(R.drawable.ico_back, null, tint = p.onHead, size = 26.dp) }
         Row(
             Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable(onClick = onInfo)
                 .semantics { contentDescription = "Infos zu ${friend.name}"; role = Role.Button }
@@ -703,7 +703,7 @@ internal fun ThreadHeader(
                 .semantics { contentDescription = "Briefe – einer wartet auf dich"; role = Role.Button },
             contentAlignment = Alignment.Center,
         ) {
-            Text("✉", fontSize = 21.sp, color = p.gold)
+            AppIcon(R.drawable.ico_letter, null, tint = p.gold, size = 23.dp)
             Box(Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 10.dp).size(8.dp).clip(CircleShape).background(p.wax))
         }
         Box {
@@ -711,17 +711,17 @@ internal fun ThreadHeader(
                 Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable { onMenu(true) }
                     .semantics { contentDescription = "Weitere Aktionen"; role = Role.Button },
                 contentAlignment = Alignment.Center,
-            ) { Text("⋮", fontSize = 22.sp, color = p.onHead) }
+            ) { AppIcon(R.drawable.ico_menu, null, tint = p.onHead, size = 24.dp) }
             DropdownMenu(menu, { onMenu(false) }) {
-                DropdownMenuItem(text = { Text(if (lettersBadge > 0) "✉  Briefe ($lettersBadge)" else "✉  Briefe") }, onClick = { onMenu(false); onLetterRoom() })
-                DropdownMenuItem(text = { Text(if (topicsBadge > 0) "#  Themen ($topicsBadge offen)" else "#  Themen") }, onClick = { onMenu(false); onTopics() })
-                DropdownMenuItem(text = { Text("⌕  Im Chat suchen") }, onClick = { onMenu(false); onSearch() })
+                DropdownMenuItem(text = { Text(if (lettersBadge > 0) "Briefe ($lettersBadge)" else "Briefe") }, leadingIcon = { AppIcon(R.drawable.ico_letter, null, size = 20.dp) }, onClick = { onMenu(false); onLetterRoom() })
+                DropdownMenuItem(text = { Text(if (topicsBadge > 0) "Themen ($topicsBadge offen)" else "Themen") }, leadingIcon = { AppIcon(R.drawable.ico_topics, null, size = 20.dp) }, onClick = { onMenu(false); onTopics() })
+                DropdownMenuItem(text = { Text("Im Chat suchen") }, leadingIcon = { AppIcon(R.drawable.ico_search, null, size = 20.dp) }, onClick = { onMenu(false); onSearch() })
                 if (chatDays > 0) DropdownMenuItem(
-                    text = { Text("🌱  $chatDays gemeinsame Chat-Tage", color = p.inkSoft) }, onClick = { onMenu(false); onRulesInfo() },
+                    text = { Text("$chatDays gemeinsame Chat-Tage", color = p.inkSoft) }, leadingIcon = { AppIcon(R.drawable.ico_growth, null, size = 20.dp) }, onClick = { onMenu(false); onRulesInfo() },
                 )
                 HorizontalDivider()
-                DropdownMenuItem(text = { Text("⚖  Freundschaftsregeln") }, onClick = { onMenu(false); onRules() })
-                DropdownMenuItem(text = { Text("ⓘ  Info & Verschlüsselung") }, onClick = { onMenu(false); onRulesInfo() })
+                DropdownMenuItem(text = { Text("Freundschaftsregeln") }, leadingIcon = { AppIcon(R.drawable.ico_rules, null, size = 20.dp) }, onClick = { onMenu(false); onRules() })
+                DropdownMenuItem(text = { Text("Info & Verschlüsselung") }, leadingIcon = { AppIcon(R.drawable.ico_info, null, size = 20.dp) }, onClick = { onMenu(false); onRulesInfo() })
                 DropdownMenuItem(text = { Text("Freund entfernen") }, onClick = { onMenu(false); onRemove() })
                 DropdownMenuItem(
                     text = { Text("Blockieren", color = MaterialTheme.colorScheme.error) },
@@ -780,18 +780,21 @@ private fun SealBandRow(band: List<SealBadge>, onJump: (Long) -> Unit) {
                 contentColor = color,
             ) {
                 Box(Modifier.padding(horizontal = 13.dp), contentAlignment = Alignment.Center) {
-                    Text("${sealGlyph(badge.bucket)} ${badge.count}", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AppIcon(sealIcon(badge.bucket), null, size = 15.dp, modifier = Modifier.padding(end = 4.dp))
+                        Text("${badge.count}", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
     }
 }
 
-private fun sealGlyph(bucket: LetterBucket): String = when (bucket) {
-    LetterBucket.WAITING_ON_YOU -> "✓"
-    LetterBucket.READY -> "✦"
-    LetterBucket.IN_TRANSIT -> "🕊"
-    LetterBucket.OPENED_HISTORY -> "✉"
+private fun sealIcon(bucket: LetterBucket): Int = when (bucket) {
+    LetterBucket.WAITING_ON_YOU -> R.drawable.ico_check
+    LetterBucket.READY -> R.drawable.ico_letter_ready
+    LetterBucket.IN_TRANSIT -> R.drawable.ico_transit
+    LetterBucket.OPENED_HISTORY -> R.drawable.ico_letter_open
 }
 
 /**
@@ -840,9 +843,9 @@ internal fun Composer(
                         Modifier.size(44.dp).clip(CircleShape).clickable { extras.onStopRecord(false) }
                             .semantics { contentDescription = "Aufnahme verwerfen"; role = Role.Button },
                         contentAlignment = Alignment.Center,
-                    ) { Text("🗑", fontSize = 18.sp) }
+                    ) { AppIcon(R.drawable.ico_delete, null, tint = p.inkSoft, size = 20.dp) }
                     Box(Modifier.size(10.dp).clip(CircleShape).background(p.wax))
-                    Text("  🍾 Flaschenpost · ${extras.recordLabel}", Modifier.weight(1f), color = p.ink, fontSize = 14.sp)
+                    Text("  Flaschenpost · ${extras.recordLabel}", Modifier.weight(1f), color = p.ink, fontSize = 14.sp)
                 }
                 Box(
                     Modifier.size(48.dp).background(Brush.verticalGradient(listOf(p.sea, p.seaDeep)), CircleShape).clip(CircleShape)
@@ -863,7 +866,7 @@ internal fun Composer(
                     Modifier.size(40.dp).clip(CircleShape).clickable(onClick = extras.onStickers)
                         .semantics { contentDescription = if (extras.stickersOpen) "Sticker schließen" else "Sticker"; role = Role.Button },
                     contentAlignment = Alignment.Center,
-                ) { Text(if (extras.stickersOpen) "⌨" else "☺", fontSize = 21.sp, color = if (extras.stickersOpen) p.sea else p.inkSoft) }
+                ) { AppIcon(if (extras.stickersOpen) R.drawable.ico_keyboard else R.drawable.ico_emoji, null, tint = if (extras.stickersOpen) p.sea else p.inkSoft, size = 22.dp) }
                 androidx.compose.material3.TextField(
                     value = text,
                     onValueChange = onText,
@@ -886,12 +889,12 @@ internal fun Composer(
                     Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable(onClick = onCompose)
                         .semantics { contentDescription = LetterAccess.LABEL_LONG; role = Role.Button },
                     contentAlignment = Alignment.Center,
-                ) { Text("✉", fontSize = 20.sp, color = p.wax, fontWeight = FontWeight.Bold) }
+                ) { AppIcon(R.drawable.ico_letter, null, tint = p.wax, size = 22.dp) }
                 if (extras != null && plan.inputEnabled && text.isBlank()) Box(
                     Modifier.size(40.dp).clip(CircleShape).clickable(onClick = extras.onPhoto)
                         .semantics { contentDescription = "Foto senden"; role = Role.Button },
                     contentAlignment = Alignment.Center,
-                ) { Text("📷", fontSize = 18.sp) }
+                ) { AppIcon(R.drawable.ico_camera, null, tint = p.inkSoft, size = 22.dp) }
             }
             if (plan.inputEnabled && extras != null && text.isBlank()) {
                 // Empty field: the round button records a bottle post instead of sending.
@@ -899,7 +902,7 @@ internal fun Composer(
                     Modifier.size(48.dp).background(Brush.verticalGradient(listOf(p.sea, p.seaDeep)), CircleShape).clip(CircleShape)
                         .clickable(onClick = extras.onRecord).semantics { contentDescription = "Flaschenpost aufnehmen"; role = Role.Button },
                     contentAlignment = Alignment.Center,
-                ) { Text("🎙", fontSize = 20.sp) }
+                ) { AppIcon(R.drawable.ico_mic, "Aufnehmen", tint = Color.White, size = 22.dp) }
             } else if (plan.inputEnabled) {
                 val ready = text.isNotBlank()
                 Box(
@@ -1082,7 +1085,7 @@ internal fun LetterCard(
             onClick = { act { api.advanceTestLetter(token, message.id) } },
             modifier = Modifier.heightIn(min = 48.dp)
                 .semantics { contentDescription = "Testmodus: Freigabe dieses Briefs vorspulen" },
-        ) { Text("⏩ Vorspulen (Test)", fontSize = 13.sp) }
+        ) { Text("Vorspulen (Test)", fontSize = 13.sp) }
     }
 }
 
@@ -1109,20 +1112,18 @@ internal fun SealMark(message: ApiClient.Message, opened: Boolean, modifier: Mod
         shadowElevation = 2.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(
-                if (ready) "✦" else sealGlyphFor(message.mode),
-                fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            )
+            AppIcon(if (ready) R.drawable.ico_letter_ready else sealIconFor(message.mode), null, size = 15.dp)
         }
     }
 }
 
-private fun sealGlyphFor(mode: String): String = when (mode) {
-    "manual" -> "☝"
-    "mutual" -> "✓✓"
-    "presence" -> "●"
-    "random" -> "?"
-    else -> "◷"
+private fun sealIconFor(mode: String): Int = when (mode) {
+    "manual" -> R.drawable.ico_manual
+    "mutual" -> R.drawable.ico_check_double
+    "presence" -> R.drawable.ico_presence
+    "random" -> R.drawable.ico_random
+    "datetime", "date_time" -> R.drawable.ico_date
+    else -> R.drawable.ico_timer
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1270,13 +1271,13 @@ internal fun DayMark(label: String) {
 
 /** One full-width action row in a message's action sheet. */
 @Composable
-private fun SheetAction(glyph: String, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun SheetAction(icon: Int, label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp).semantics { role = Role.Button },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(glyph, fontSize = 19.sp, modifier = Modifier.width(36.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else .4f))
+        AppIcon(icon, null, modifier = Modifier.padding(end = 14.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else .4f), size = 22.dp)
         Text(label, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .4f))
     }
 }

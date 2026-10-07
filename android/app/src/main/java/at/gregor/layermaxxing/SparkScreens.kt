@@ -84,13 +84,13 @@ internal fun SparkRoom(
                 Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onBack)
                     .semantics { contentDescription = "Zurück zu Chats"; role = Role.Button },
                 contentAlignment = Alignment.Center,
-            ) { Text("←", fontSize = 22.sp) }
+            ) { AppIcon(R.drawable.ico_back, null, size = 24.dp) }
             Text("Funken", Modifier.weight(1f).padding(start = 6.dp), fontWeight = FontWeight.Bold, fontSize = 19.sp)
             Box(
                 Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable { infoOpen = !infoOpen }
                     .semantics { contentDescription = "Was ein Funke ist"; role = Role.Button },
                 contentAlignment = Alignment.Center,
-            ) { Text("ⓘ", fontSize = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            ) { AppIcon(R.drawable.ico_info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 22.dp) }
         }
         // Technical and abuse details live on this quiet surface, never in the flow.
         if (infoOpen) Surface(
@@ -136,7 +136,7 @@ internal fun SparkRoom(
         Button(
             onClick = onCompose,
             modifier = Modifier.fillMaxWidth().padding(16.dp).height(52.dp),
-        ) { Text("✨ Funke senden", fontWeight = FontWeight.Bold) }
+        ) { AppIcon(R.drawable.ico_spark, null, size = 18.dp, modifier = Modifier.padding(end = 8.dp)); Text("Funke senden", fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -170,7 +170,7 @@ private fun ReceivedSpark(
                         Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable { menu = true }
                             .semantics { contentDescription = "Funke verwalten"; role = Role.Button },
                         contentAlignment = Alignment.Center,
-                    ) { Text("⋮", fontSize = 20.sp, color = INK_SOFT) }
+                    ) { AppIcon(R.drawable.ico_menu, null, tint = INK_SOFT, size = 22.dp) }
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem(
                             text = { Text("Von dieser Person keine Funken mehr") },
@@ -211,7 +211,7 @@ private fun SentSpark(spark: SparkSent) {
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("✨", fontSize = 18.sp, modifier = Modifier.width(32.dp))
+        AppIcon(R.drawable.ico_spark, null, modifier = Modifier.width(32.dp), size = 20.dp)
         Text(spark.recipientName, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
         Text(
             Sparks.statusLabel(spark.opened), fontSize = 13.sp,
@@ -247,7 +247,7 @@ internal fun SparkComposer(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("✨ Freundesfunke", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+        Text("Freundesfunke", fontSize = 21.sp, fontWeight = FontWeight.Bold)
         if (eligible.isEmpty()) {
             Text(
                 "Funken brauchen eine bestätigte Freundschaft.",
@@ -272,7 +272,7 @@ internal fun SparkComposer(
             ) {
                 Text(friend.avatarEmoji, fontSize = 20.sp, modifier = Modifier.width(34.dp))
                 Text(friend.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                if (chosen) Text("✓", fontWeight = FontWeight.Bold)
+                if (chosen) AppIcon(R.drawable.ico_check, null, size = 20.dp)
             }
         }
         HorizontalDivider()

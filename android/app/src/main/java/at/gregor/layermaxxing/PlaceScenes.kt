@@ -166,7 +166,7 @@ internal fun PlaceStage(
                     .border(2.dp, Color(0xFF8A5A2B), CircleShape).clip(CircleShape)
                     .clickable(onClickLabel = "Zurück zur Insel", onClick = onClose),
                 Alignment.Center,
-            ) { Text("‹", fontSize = 28.sp, color = Color(0xFF5A3A12), fontFamily = Display) }
+            ) { AppIcon(R.drawable.ico_back, null, tint = Color(0xFF5A3A12), size = 26.dp) }
             Spacer(Modifier.width(10.dp))
             // The wooden sign.
             Box(Modifier.height(58.dp).width(230.dp), Alignment.Center) {
@@ -408,7 +408,7 @@ private fun QuestNote(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> 
         Sprite(R.drawable.p_note, Modifier.fillMaxSize().padding(top = 6.dp))
         Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 12.dp, top = 22.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(Isle.questEmoji(q.icon), fontSize = 18.sp)
+                AppIcon(AppIcons.questIcon(q.icon), AppIcons.questLabels[q.icon], tint = Color(0xFF5A3A12), size = 20.dp)
                 Spacer(Modifier.weight(1f))
                 Sprite(R.drawable.p_star, Modifier.size(15.dp))
                 Text("${q.points}", fontFamily = Display, color = Color(0xFF9A6B00), fontSize = 13.sp)
@@ -424,7 +424,7 @@ private fun QuestNote(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> 
                         .clickable { onDone(q, !done) }.padding(horizontal = 9.dp, vertical = 3.dp),
                 )
                 Spacer(Modifier.weight(1f))
-                if (onDelete != null) Text("✕", color = Color(0xFF8A6A3A), fontSize = 12.sp, modifier = Modifier.clip(CircleShape).clickable { onDelete(q) }.padding(4.dp))
+                if (onDelete != null) AppIcon(R.drawable.ico_close, null, modifier = Modifier.clip(CircleShape).clickable { onDelete(q) }.padding(4.dp), tint = Color(0xFF8A6A3A), size = 13.dp)
             }
         }
         Sprite(R.drawable.p_pin, Modifier.align(Alignment.TopCenter).size(22.dp))

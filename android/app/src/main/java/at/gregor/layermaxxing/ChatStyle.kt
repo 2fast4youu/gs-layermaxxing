@@ -157,6 +157,17 @@ internal fun WaxSeal(text: String, color: Color, modifier: Modifier = Modifier) 
     }
 }
 
+/** A wax seal carrying a line icon instead of a glyph. */
+@Composable
+internal fun WaxSealIcon(icon: Int, color: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier.sizeIn(minWidth = 22.dp, minHeight = 22.dp)
+            .background(Brush.radialGradient(listOf(color.copy(alpha = .85f), color)), CircleShape)
+            .border(1.dp, Color.White.copy(alpha = .22f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { AppIcon(icon, null, tint = Color.White, size = 17.dp) }
+}
+
 /** A folded paper boat – the send glyph of the harbour. Drawn, not an emoji. */
 @Composable
 internal fun PaperBoat(color: Color, modifier: Modifier = Modifier) {

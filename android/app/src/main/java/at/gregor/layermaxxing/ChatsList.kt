@@ -177,7 +177,7 @@ internal fun ChatsScreen(
                         .padding(start = 14.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("⌕", fontSize = 18.sp, color = p.inkSoft)
+                    AppIcon(R.drawable.ico_search, null, tint = p.inkSoft, size = 20.dp)
                     androidx.compose.foundation.text.BasicTextField(
                         search, { search = it }, Modifier.weight(1f).padding(start = 10.dp, top = 12.dp, bottom = 12.dp),
                         singleLine = true,
@@ -191,7 +191,7 @@ internal fun ChatsScreen(
                         Modifier.size(40.dp).clip(CircleShape).clickable { search = "" }
                             .semantics { contentDescription = "Suche leeren"; role = Role.Button },
                         contentAlignment = Alignment.Center,
-                    ) { Text("✕", color = p.inkSoft) }
+                    ) { AppIcon(R.drawable.ico_close, null, tint = p.inkSoft, size = 20.dp) }
                 }
             }
             if (!firstRun) item {
@@ -210,10 +210,10 @@ internal fun ChatsScreen(
                         ListChip(if (count > 0) "${f.label} $count" else f.label, selected = filter == f, p = p) { filter = f }
                     }
                     // The shared places are always one tap from the main menu, even before the first one exists.
-                    ListChip(if (groupCount > 0) "Gruppen $groupCount" else "＋ Gruppe", selected = false, p = p, onClick = onGroups)
-                    ListChip(if (topicCount > 0) "Themen $topicCount" else "＋ Thema", selected = false, p = p, onClick = onTopicsHub)
+                    ListChip(if (groupCount > 0) "Gruppen $groupCount" else "+ Gruppe", selected = false, p = p, onClick = onGroups)
+                    ListChip(if (topicCount > 0) "Themen $topicCount" else "+ Thema", selected = false, p = p, onClick = onTopicsHub)
                     ListChip("Wörterbuch", selected = false, p = p, onClick = onGlossary)
-                    if (showValley) ListChip("🏝 Inseln", selected = false, p = p, onClick = onValley)
+                    if (showValley) ListChip("Inseln", selected = false, p = p, onClick = onValley)
                 }
             }
             if (requests.isNotEmpty()) items(requests, key = { it.key }) { request ->
@@ -235,7 +235,7 @@ internal fun ChatsScreen(
                     Button(
                         onClick = onGoPeople, modifier = Modifier.height(50.dp),
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = p.seaDeep, contentColor = Color.White),
-                    ) { Text("＋  Person hinzufügen", fontWeight = FontWeight.Bold) }
+                    ) { Text("+  Person hinzufügen", fontWeight = FontWeight.Bold) }
                 }
             } else if (matches.isEmpty()) item {
                 Text(
@@ -254,7 +254,7 @@ internal fun ChatsScreen(
             if (sparkEnabled) RoundAction(
                 description = "Freundesfunke senden",
                 container = p.card, content = p.gold, onClick = onSendSpark, size = 46, border = p.line,
-            ) { Text("✦", fontSize = 20.sp, color = p.gold, fontWeight = FontWeight.Bold) }
+            ) { AppIcon(R.drawable.ico_spark, null, tint = p.gold, size = 22.dp) }
             if (conversations.isNotEmpty() || requests.isNotEmpty()) Row(
                 Modifier.heightIn(min = 56.dp)
                     .shadow(6.dp, RoundedCornerShape(28.dp))
@@ -264,7 +264,7 @@ internal fun ChatsScreen(
                     .padding(start = 18.dp, end = 22.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("＋", fontSize = 20.sp, color = Color.White)
+                AppIcon(R.drawable.ico_add, null, tint = Color.White, size = 22.dp)
                 Spacer(Modifier.width(8.dp))
                 Text("Neuer Chat", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
@@ -336,7 +336,7 @@ private fun SparkEntryRow(inbox: List<SparkItem>, sent: List<SparkSent>, onOpen:
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("✦", fontSize = 22.sp, color = p.gold, modifier = Modifier.padding(end = 12.dp))
+        AppIcon(R.drawable.ico_spark, null, modifier = Modifier.padding(end = 12.dp), tint = p.gold, size = 24.dp)
         Column(Modifier.weight(1f)) {
             Text("Funken", fontWeight = FontWeight.Bold, color = p.ink)
             Text(line, fontSize = 13.sp, color = p.inkSoft)
@@ -415,7 +415,9 @@ private fun ConversationRow(conversation: Conversation, now: Long, onOpen: (Long
                     },
                 )
                 Row(Modifier.padding(start = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (conversation.lockedLetters > 0) Text("🔒${conversation.lockedLetters}", fontSize = 11.sp, color = p.inkSoft)
+                    if (conversation.lockedLetters > 0) Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(R.drawable.ico_lock, null, tint = p.inkSoft, size = 12.dp); Text("${conversation.lockedLetters}", fontSize = 11.sp, color = p.inkSoft)
+                }
                     if (conversation.readyLetters > 0) WaxSeal("${conversation.readyLetters}", p.wax,
                         Modifier.semantics { contentDescription = "${conversation.readyLetters} Briefe bereit" })
                     if (conversation.awaitingMe > 0) WaxSeal("${conversation.awaitingMe}", p.gold,

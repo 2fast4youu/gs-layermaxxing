@@ -76,7 +76,7 @@ internal fun FriendPage(
                 Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onBack)
                     .semantics { contentDescription = "Zurück zum Chat"; role = Role.Button },
                 contentAlignment = Alignment.Center,
-            ) { Text("‹", fontSize = 30.sp, color = p.onHead) }
+            ) { AppIcon(R.drawable.ico_back, null, tint = p.onHead, size = 26.dp) }
             Text(friend.name, style = Harbour.Title.copy(fontSize = 19.sp), color = p.onHead, maxLines = 1)
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -91,19 +91,18 @@ internal fun FriendPage(
                 }
             }
             item {
-                PageRow("✎", if (label == null) "Wie nennst du ${friend.name}?" else "Namen ändern", "Nur du siehst diesen Namen", p) { naming = true }
+                PageRow(R.drawable.ico_edit, if (label == null) "Wie nennst du ${friend.name}?" else "Namen ändern", "Nur du siehst diesen Namen", p) { naming = true }
             }
-            item { PageHead("Quests", p, action = "＋ Neue Quest" to onNewQuest) }
+            item { PageHead("Quests", p, action = "+ Neue Quest" to onNewQuest) }
             if (quests.isEmpty()) item {
                 Text("Noch keine gemeinsame Quest – plant etwas Echtes zusammen.", color = p.inkSoft, fontSize = 13.sp)
             }
             items(quests.sortedBy { it.completedAt != null }.take(8), key = { "fq${it.id}" }) { q -> PageQuest(q, p, onQuestDone) }
             item { PageHead("Gemeinsam", p) }
-            item { PageRow("✉", "Briefe", if (lettersCount > 0) "$lettersCount Briefe" else "Noch keine Briefe", p, onLetters) }
-            item { PageRow("#", "Themen", if (openTopics > 0) "$openTopics offen" else "Für das nächste Gespräch", p, onTopics) }
+            item { PageRow(R.drawable.ico_letter, "Briefe", if (lettersCount > 0) "$lettersCount Briefe" else "Noch keine Briefe", p, onLetters) }
+            item { PageRow(R.drawable.ico_topics, "Themen", if (openTopics > 0) "$openTopics offen" else "Für das nächste Gespräch", p, onTopics) }
             item {
-                PageRow(
-                    "⚖", "Freundschaftsregeln",
+                PageRow(R.drawable.ico_rules, "Freundschaftsregeln",
                     settings?.let {
                         listOfNotNull("Briefe".takeIf { _ -> it.lettersEnabled }, "Chats".takeIf { _ -> it.chatsEnabled }, "Punkte".takeIf { _ -> it.epEnabled })
                             .joinToString(" · ").ifBlank { "Alles aus" }
@@ -130,19 +129,19 @@ private fun PageHead(text: String, p: HarbourPalette, action: Pair<String, () ->
 }
 
 @Composable
-private fun PageRow(glyph: String, title: String, subtitle: String, p: HarbourPalette, onClick: () -> Unit) {
+private fun PageRow(icon: Int, title: String, subtitle: String, p: HarbourPalette, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 60.dp).clip(RoundedCornerShape(16.dp)).background(p.card)
             .border(1.dp, p.line, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(38.dp).clip(CircleShape).background(p.mine), contentAlignment = Alignment.Center) { Text(glyph, fontSize = 17.sp, color = p.onMine) }
+        Box(Modifier.size(38.dp).clip(CircleShape).background(p.mine), contentAlignment = Alignment.Center) { AppIcon(icon, null, tint = p.onMine, size = 20.dp) }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Bold, color = p.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(subtitle, fontSize = 12.sp, color = p.inkSoft, maxLines = 1)
         }
-        Text("›", fontSize = 22.sp, color = p.inkSoft)
+        AppIcon(R.drawable.ico_chevron, null, tint = p.inkSoft, size = 24.dp)
     }
 }
 
@@ -154,11 +153,11 @@ private fun PageQuest(q: ApiClient.Quest, p: HarbourPalette, onDone: (ApiClient.
             .border(1.dp, p.line, RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(Isle.questEmoji(q.icon), fontSize = 22.sp)
+        AppIcon(AppIcons.questIcon(q.icon), AppIcons.questLabels[q.icon], tint = p.sea, size = 24.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(q.title, fontWeight = FontWeight.Bold, color = p.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(if (done) "erledigt${q.completedByName?.let { " von $it" } ?: ""}" else "⭐ ${q.points} Punkte", fontSize = 12.sp, color = if (done) p.inkSoft else p.gold)
+            Text(if (done) "erledigt${q.completedByName?.let { " von $it" } ?: ""}" else "${q.points} Punkte", fontSize = 12.sp, color = if (done) p.inkSoft else p.gold)
         }
         Box(
             Modifier.size(44.dp).clip(CircleShape).background(if (done) p.sea else p.paper).border(1.5.dp, p.sea, CircleShape)

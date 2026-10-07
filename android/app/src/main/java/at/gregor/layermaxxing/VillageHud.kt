@@ -502,7 +502,7 @@ internal fun RoomHeader(icon: Int, title: String, onBack: (() -> Unit)?, onClose
                 .semantics { contentDescription = "Zurück zur Insel"; role = Role.Button },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("‹", fontSize = 22.sp, color = Isle.Teal, fontWeight = FontWeight.Bold)
+            AppIcon(R.drawable.ico_back, null, tint = Isle.Teal, size = 24.dp)
             Spacer(Modifier.width(8.dp))
             Text("Insel", fontSize = 15.sp, color = Isle.Ink, fontWeight = FontWeight.Bold)
             Text("  ›  ", fontSize = 15.sp, color = Isle.Muted)

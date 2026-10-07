@@ -256,7 +256,7 @@ internal fun PinnedStrip(pinned: List<ApiClient.ChatMessage>, p: HarbourPalette,
     ) {
         Box(Modifier.width(3.dp).height(30.dp).background(p.gold, RoundedCornerShape(2.dp)))
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(if (pinned.size == 1) "📌 Angepinnt" else "📌 ${pinned.size} angepinnt", fontSize = 11.sp, color = p.gold, fontWeight = FontWeight.Bold)
+            Text(if (pinned.size == 1) "Angepinnt" else "${pinned.size} angepinnt", fontSize = 11.sp, color = p.gold, fontWeight = FontWeight.Bold)
             Text(ChatExtras.previewText(latest), fontSize = 13.sp, color = p.ink, maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
@@ -294,7 +294,7 @@ internal fun GlossaryTermDialog(term: ApiClient.GlossaryTerm, onDismiss: () -> U
     val p = Harbour.palette()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("📖 " + term.term, style = Harbour.Title.copy(fontSize = 20.sp)) },
+        icon = { AppIcon(R.drawable.ico_glossary, null, size = 24.dp) }, title = { Text(term.term, style = Harbour.Title.copy(fontSize = 20.sp)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (term.explanations.isEmpty()) Text("Noch keine Erklärung im Wörterbuch.", color = p.inkSoft)
@@ -437,7 +437,7 @@ internal fun VoiceNote(label: String, load: suspend () -> ByteArray, tint: Color
             contentAlignment = Alignment.Center,
         ) {
             if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
-            else Text(if (player != null) "■" else "▶", color = Color.White, fontSize = 15.sp)
+            else AppIcon(if (player != null) R.drawable.ico_stop else R.drawable.ico_play, null, tint = Color.White, size = 16.dp)
         }
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
             Canvas(Modifier.fillMaxWidth().height(18.dp)) {
@@ -449,7 +449,7 @@ internal fun VoiceNote(label: String, load: suspend () -> ByteArray, tint: Color
                         Offset(i * gap + gap / 2, (size.height + hgt) / 2), strokeWidth = gap * .5f)
                 }
             }
-            Text("🍾 Flaschenpost · $label", fontSize = 11.sp, color = tint.copy(alpha = .7f))
+            Text("Flaschenpost · $label", fontSize = 11.sp, color = tint.copy(alpha = .7f))
         }
     }
 }

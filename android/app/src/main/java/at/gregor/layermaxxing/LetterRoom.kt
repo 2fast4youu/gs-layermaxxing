@@ -115,7 +115,7 @@ internal fun LetterRoom(
                 Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onBack)
                     .semantics { contentDescription = "Zurück ins Gespräch mit $friendName"; role = Role.Button },
                 contentAlignment = Alignment.Center,
-            ) { Text("←", fontSize = 22.sp, color = ROOM_INK) }
+            ) { AppIcon(R.drawable.ico_back, null, tint = ROOM_INK, size = 24.dp) }
             Column(Modifier.weight(1f).padding(start = 6.dp)) {
                 Text("Briefe", fontWeight = FontWeight.Bold, fontSize = 19.sp, color = ROOM_INK)
                 Text(
@@ -269,7 +269,7 @@ private fun EnvelopeRow(
                     )
                 }
             }
-            if (hasEpOffer) Text("★", fontSize = 12.sp, color = Color(0xFFD9A441))
+            if (hasEpOffer) AppIcon(R.drawable.ico_points, null, tint = Color(0xFFD9A441), size = 13.dp)
         }
     }
 }
@@ -321,7 +321,7 @@ internal fun LetterActivityRow(
             .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WaxSeal(if (state == LetterState.READY || state == LetterState.LOCKED_MUTUAL_WAITING_ME) "✉" else FiefScenes.envelopeAsset(state, message.incoming).let(::envelopeGlyph), seal, Modifier.size(34.dp))
+        WaxSealIcon(if (state == LetterState.READY || state == LetterState.LOCKED_MUTUAL_WAITING_ME) R.drawable.ico_letter else FiefScenes.envelopeAsset(state, message.incoming).let(::envelopeIcon), seal, Modifier.size(34.dp))
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(title, fontWeight = FontWeight.Bold, maxLines = 1, fontSize = 14.sp, color = p.ink,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -330,7 +330,7 @@ internal fun LetterActivityRow(
                 fontSize = 12.sp, color = if (state == LetterState.READY) p.wax else p.inkSoft, maxLines = 1,
             )
         }
-        Text("›", fontSize = 22.sp, color = p.inkSoft)
+        AppIcon(R.drawable.ico_chevron, null, tint = p.inkSoft, size = 24.dp)
     }
 }
 
@@ -356,10 +356,10 @@ private fun envelopeDrawable(asset: String): Int = when (asset) {
     else -> R.drawable.fief_env_sealed
 }
 
-/** The same four states as a glyph, for the one-line mark inside the chat. */
-private fun envelopeGlyph(asset: String): String = when (asset) {
-    FiefAssets.ENV_READY -> "✦"
-    FiefAssets.ENV_OPEN -> "📖"
-    FiefAssets.ENV_OUT -> "✉"
-    else -> "🔒"
+/** The four envelope states as line icons, for the seal on a letter row. */
+private fun envelopeIcon(asset: String): Int = when (asset) {
+    FiefAssets.ENV_READY -> R.drawable.ico_letter_ready
+    FiefAssets.ENV_OPEN -> R.drawable.ico_letter_open
+    FiefAssets.ENV_OUT -> R.drawable.ico_send
+    else -> R.drawable.ico_lock
 }

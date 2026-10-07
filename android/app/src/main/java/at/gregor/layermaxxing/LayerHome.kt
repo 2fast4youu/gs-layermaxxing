@@ -387,7 +387,9 @@ fun LayerHome(
                                 Sparks.unopenedCount(sparkInbox)
                             else -> 0
                         }
-                        Text(if (count > 0) "${item.icon}${if (count > 9) "9+" else count}" else item.icon, fontSize = 19.sp)
+                        androidx.compose.material3.BadgedBox(badge = { if (count > 0) androidx.compose.material3.Badge { Text(if (count > 9) "9+" else "$count") } }) {
+                            AppIcon(AppIcons.tab(item), null, size = 24.dp)
+                        }
                     },
                     label = { Text(item.label) },
                 ) }
@@ -693,7 +695,7 @@ private fun AppChrome(
             Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onRefresh)
                 .semantics { contentDescription = "Aktualisieren"; role = Role.Button },
             contentAlignment = Alignment.Center,
-        ) { Text("⟳", fontSize = 21.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        ) { AppIcon(R.drawable.ico_refresh, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 23.dp) }
     }
 }
 
@@ -795,7 +797,7 @@ internal fun IncomingMessageCard(
             Column(Modifier.padding(start = 15.dp, end = 15.dp, top = 18.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(message.title.ifBlank { "Versiegelter Brief" }, Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                    if (message.groupId != null) Text("👥", Modifier.padding(start = 6.dp), fontSize = 14.sp)
+                    if (message.groupId != null) AppIcon(R.drawable.ico_group, null, modifier = Modifier.padding(start = 6.dp), size = 15.dp)
                     if (message.oneTime) Text("1×", Modifier.padding(start = 6.dp))
                 }
                 Text("Von ${message.peerName} · ${formatDate(message.createdAt)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -846,7 +848,7 @@ internal fun OutboxMessageCard(
         ) { Column(Modifier.padding(start = 15.dp, end = 15.dp, top = 18.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(message.title.ifBlank { "An ${message.peerName}" }, Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                if (message.groupId != null) Text("👥", Modifier.padding(start = 6.dp), fontSize = 14.sp)
+                if (message.groupId != null) AppIcon(R.drawable.ico_group, null, modifier = Modifier.padding(start = 6.dp), size = 15.dp)
                 if (message.oneTime) Text("1×", Modifier.padding(start = 6.dp))
             }
             Text("An ${message.peerName} · ${formatDate(message.createdAt)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -987,7 +989,7 @@ private fun SendScreen(
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(friend.avatarEmoji, fontSize = 22.sp, modifier = Modifier.width(38.dp))
                         Text(friend.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                        if (friend.id in selected) Text("✓", fontSize = 19.sp, color = MaterialTheme.colorScheme.primary)
+                        if (friend.id in selected) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 21.dp)
                     }
                 }
             }
@@ -1004,9 +1006,9 @@ private fun SendScreen(
                         color = if (groupId == group.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                     ) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("👥", fontSize = 22.sp, modifier = Modifier.width(38.dp))
+                            AppIcon(R.drawable.ico_group, null, modifier = Modifier.width(38.dp), size = 24.dp)
                             Text("${group.name} (${group.members.size})", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                            if (groupId == group.id) Text("✓", fontSize = 19.sp, color = MaterialTheme.colorScheme.primary)
+                            if (groupId == group.id) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 21.dp)
                         }
                     }
                 }
@@ -1038,12 +1040,12 @@ private fun SendScreen(
                     color = if (mode == choice) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                 ) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(modeIcon(choice), fontSize = 22.sp, modifier = Modifier.width(42.dp), color = MaterialTheme.colorScheme.primary)
+                        AppIcon(modeIcon(choice), null, modifier = Modifier.padding(end = 18.dp), tint = MaterialTheme.colorScheme.primary, size = 24.dp)
                         Column(Modifier.weight(1f)) {
                             Text(choice.label, fontWeight = FontWeight.SemiBold)
                             Text(modeDescription(choice), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (mode == choice) Text("✓", fontSize = 20.sp, color = MaterialTheme.colorScheme.primary)
+                        if (mode == choice) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 22.dp)
                     }
                 }
             }
@@ -1075,12 +1077,12 @@ private fun SendScreen(
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onClose) { Text("←", fontSize = 20.sp) }
+            TextButton(onClick = onClose) { AppIcon(R.drawable.ico_back, null, size = 22.dp) }
             Column(Modifier.weight(1f)) {
                 Text("An", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(recipientLabel, fontWeight = FontWeight.Bold, maxLines = 1)
             }
-            if (friends.size > 1 || groups.isNotEmpty()) TextButton(onClick = { keyboard?.hide(); recipientMenu = true }) { Text("＋") }
+            if (friends.size > 1 || groups.isNotEmpty()) TextButton(onClick = { keyboard?.hide(); recipientMenu = true }) { AppIcon(R.drawable.ico_add, null, size = 20.dp) }
         }
         HorizontalDivider()
 
@@ -1124,7 +1126,7 @@ private fun SendScreen(
             // and every preset stays fast-forwardable, so the whole journey of a
             // test letter can be walked without the other side pressing anything.
             if (creativeActive) CreativeMode.LETTER_PRESETS.forEach { (label, _, seconds) ->
-                ComposerChip("⚗ $label") {
+                ComposerChip(label) {
                     val chosen = DelayUnit.entries.lastOrNull { seconds >= it.seconds && seconds % it.seconds == 0L }
                         ?: DelayUnit.MINUTES
                     mode = ComposeMode.DURATION; unit = chosen; amount = (seconds / chosen.seconds).toString()
@@ -1136,7 +1138,7 @@ private fun SendScreen(
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "🔏 Der Server hält den Schlüssel bis zur Freigabe.",
+                "Der Server hält den Schlüssel bis zur Freigabe.",
                 Modifier.weight(1f), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             TextButton(onClick = { keyboard?.hide(); infoSheet = true }) { Text("Mehr", fontSize = 12.sp) }
@@ -1147,7 +1149,7 @@ private fun SendScreen(
             onClick = { keyboard?.hide(); if (mode == ComposeMode.MANUAL) confirmManual = true else scope.launch { send() } },
             enabled = targetValid && text.isNotBlank() && scheduleValid && !busy,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).height(52.dp),
-        ) { Text(if (busy) "Wird versiegelt …" else "✦ Versiegelt senden", fontWeight = FontWeight.Bold) }
+        ) { Text(if (busy) "Wird versiegelt …" else "Versiegelt senden", fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -1174,11 +1176,11 @@ private fun sealChipLabel(
     mode: ComposeMode, amount: String, unit: DelayUnit, dateTime: LocalDateTime, minimumDelay: Long,
 ): String {
     val base = when (mode) {
-        ComposeMode.DURATION -> "◷ ${amount.ifBlank { "0" }} ${unit.label}"
-        ComposeMode.DATE_TIME -> "▣ " + dateTime.format(DateTimeFormatter.ofPattern("dd.MM. HH:mm"))
-        ComposeMode.MANUAL -> "☝ Von mir freigeben"
-        ComposeMode.MUTUAL -> "✓✓ Beide stimmen zu"
-        ComposeMode.PRESENCE -> "● Beide online"
+        ComposeMode.DURATION -> "${amount.ifBlank { "0" }} ${unit.label}"
+        ComposeMode.DATE_TIME -> dateTime.format(DateTimeFormatter.ofPattern("dd.MM. HH:mm"))
+        ComposeMode.MANUAL -> "Von mir freigeben"
+        ComposeMode.MUTUAL -> "Beide stimmen zu"
+        ComposeMode.PRESENCE -> "Beide online"
         ComposeMode.RANDOM -> "? Zufällig"
     }
     return if (minimumDelay > 0) "$base · mind. ${formatRemaining(minimumDelay)}" else base
@@ -1323,7 +1325,7 @@ private fun FriendRow(
                     Modifier.size(48.dp).clickable { menu = true }
                         .semantics { contentDescription = "Verwaltung für ${friend.name}"; role = Role.Button },
                     contentAlignment = Alignment.Center,
-                ) { Text("⋮", fontSize = 22.sp) }
+                ) { AppIcon(R.drawable.ico_menu, null, size = 24.dp) }
                 DropdownMenu(menu, { menu = false }) {
                     DropdownMenuItem(text = { Text("Freundschaftsregeln") }, onClick = { menu = false; onRules() })
                     DropdownMenuItem(text = { Text("Freund entfernen") }, onClick = { menu = false; onRemove() })
@@ -1441,7 +1443,7 @@ internal fun SubScreen(
                 Text(title, Modifier.weight(1f), fontWeight = FontWeight.Black, color = Kit.Ink, maxLines = 1)
             }
         } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { Text("← $backLabel") }
+            TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { AppIcon(R.drawable.ico_back, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text(backLabel) }
             Text(title, Modifier.weight(1f), fontWeight = FontWeight.Bold)
         }
         Box(Modifier.weight(1f)) { content() }
@@ -1456,7 +1458,7 @@ private fun NavCard(title: String, subtitle: String, onClick: () -> Unit) {
                 Text(title, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("›", fontSize = 22.sp)
+            AppIcon(R.drawable.ico_chevron, null, size = 24.dp)
         }
     }
 }
@@ -1645,9 +1647,9 @@ private fun FogOverlay(onFinished: () -> Unit) {
         }
     }
 }
-private fun modeIcon(mode: ComposeMode): String = when (mode) {
-    ComposeMode.DURATION -> "◷"; ComposeMode.DATE_TIME -> "▣"; ComposeMode.MANUAL -> "☝"
-    ComposeMode.MUTUAL -> "✓✓"; ComposeMode.PRESENCE -> "●"; ComposeMode.RANDOM -> "?"
+private fun modeIcon(mode: ComposeMode): Int = when (mode) {
+    ComposeMode.DURATION -> R.drawable.ico_timer; ComposeMode.DATE_TIME -> R.drawable.ico_date; ComposeMode.MANUAL -> R.drawable.ico_manual
+    ComposeMode.MUTUAL -> R.drawable.ico_check_double; ComposeMode.PRESENCE -> R.drawable.ico_presence; ComposeMode.RANDOM -> R.drawable.ico_random
 }
 private fun modeDescription(mode: ComposeMode): String = when (mode) {
     ComposeMode.DURATION -> "Öffnet nach einer Anzahl Stunden oder Tage."
@@ -1689,7 +1691,7 @@ private fun NoticeToast(message: String, onDismiss: () -> Unit, modifier: Modifi
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("⚠", color = Color(0xFFF2C14E), fontSize = 16.sp)
+        AppIcon(R.drawable.ico_warning, null, tint = Color(0xFFF2C14E), size = 18.dp)
         Spacer(Modifier.width(10.dp))
         Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.inverseOnSurface, fontSize = 14.sp, maxLines = 3)
     }

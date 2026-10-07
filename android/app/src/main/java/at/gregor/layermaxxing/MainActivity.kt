@@ -362,7 +362,7 @@ fun ServerProfileSelector(selected: ServerProfile, onSelected: (ServerProfile) -
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(profile.label, Modifier.weight(1f), fontSize = 14.sp)
-                if (profile == selected) Text("✓", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                if (profile == selected) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 20.dp)
             }
         }
     }
@@ -409,7 +409,7 @@ private fun BiometricGate(activity: FragmentActivity, onSuccess: () -> Unit) {
     LaunchedEffect(Unit) { authenticate() }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("🔐", fontSize = 52.sp); Text("App gesperrt", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            AppIcon(R.drawable.ico_app_lock, null, size = 57.dp); Text("App gesperrt", fontWeight = FontWeight.Bold, fontSize = 22.sp)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Button(onClick = ::authenticate) { Text("Entsperren") }
         }
