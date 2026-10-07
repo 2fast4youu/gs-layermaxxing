@@ -9,6 +9,32 @@ Unsere gesamte Kommunikation (bisher WhatsApp, Telegram, Instagram-DMs) läuft �
 Layermaxxing. Dafür muss der Chat **schneller und vollständiger als WhatsApp** sein.
 Die Insel ist der emotionale Mehrwert obendrauf und kein Umweg zum Chat.
 
+## 0. Grundprinzip: Der Chat bleibt Chat
+
+Wunsch von Gerfried (2026-10-07): **Nicht alles ist Chat.** Briefe, Quests, EP und
+andere Zusatzfunktionen dürfen weder den Chatverlauf noch die Freundeskarte überladen.
+
+Heute landen im Chatverlauf zusätzlich zu den Nachrichten:
+Briefzeilen (`LetterActivityRow`), das Siegel-Band (`SealBandRow`), EP-Karten
+(`EpOpportunityCard`) und Anfrage-Karten (`ThreadRequestCard`).
+
+Regeln ab jetzt:
+
+1. **Im Verlauf stehen nur Nachrichten** (Text, Foto, Sprache, Sticker, Datei,
+   später Umfrage). Keine Briefe, Quests oder EP-Karten mehr dazwischen.
+2. **Zusatzfunktionen haben ihren eigenen Ort:** Briefe, Quests und EP liegen in
+   der Freundeskarte und auf der Insel.
+3. **Im Chat gibt es höchstens eine schmale Hinweiszeile** unter dem Kopf, und nur
+   wenn etwas zu tun ist (z. B. „✉ 1 Brief bereit · ⭐ 1 Quest“). Ein Tap darauf
+   öffnet die Freundeskarte an der richtigen Stelle. Gibt es nichts zu tun, ist
+   die Zeile weg.
+4. **Die Freundeskarte bleibt ruhig:** oben das Wichtigste (wer, Stufe,
+   Hauptaktionen). Alles Weitere ist in Abschnitten zugeklappt und nur mit
+   Inhalt sichtbar. Leere Abschnitte werden nicht angezeigt.
+5. **Erstellen bleibt erreichbar, ohne zu stören:** „Brief“ und „Quest“ im
+   „+“-Menü öffnen ein eigenes Blatt. Nach dem Senden erscheint im Chat nichts
+   Zusätzliches.
+
 ## 1. Ist-Stand (geprüft im Code, 7.7.1)
 
 Vorhanden im 1:1-Chat:
@@ -192,12 +218,22 @@ Jede Phase ist für sich nutzbar und wird als APK ausgeliefert.
    Das muss mit Gregor abgestimmt werden.
 4. **Server:** Wann bekommt der echte Betrieb einen eigenen Produktionsserver?
 
-## 5. Vorschlag für die ersten Schritte (je eine APK)
+## 5. Umsetzung: sofort und später
 
-1. Freundeskarte im Chat-Kopf (`FriendCard.kt`, gemeinsam mit der Insel) und
-   „Chat" als Hauptknopf in der Inselansicht
-2. „+"-Blatt in der Eingabeleiste und Medien-Galerie pro Chat
-3. Medien-Speicher auf der Festplatte und Fotos in Originalqualität
-4. Gruppen-Chat
-5. Umfragen
-6. Push-Benachrichtigungen (sobald Punkt 4.1 entschieden ist)
+### Sofort (ohne Server-Umbau, je eine APK)
+
+1. **Chat entrümpeln:** Briefe, Siegel-Band und EP-Karten raus aus dem Verlauf.
+   Stattdessen die schmale Hinweiszeile (nur bei Bedarf).
+2. **Freundeskarte im Chat:** Tap auf den Kopf öffnet die Karte. Sie wird
+   gemeinsam mit der Insel genutzt (`FriendCard.kt`) und ist aufgeräumt nach Regel 4.
+3. **„+“-Menü:** Kamera, Galerie, Sticker, Brief, Quest. Brief und Quest öffnen
+   eigene Blätter.
+
+### Später (braucht Server-Umbau oder Entscheidung)
+
+- Gruppen-Chat
+- Push-Benachrichtigungen in Echtzeit (Entscheidung 4.1)
+- Medien-Speicher, Fotos in Originalqualität, Videos, Dateien
+- Umfragen, Bots, Weiterleiten, Suche, Medien-Galerie
+- Link-Vorschau, Reels und X-Posts
+- Ende-zu-Ende-Verschlüsselung, Produktionsserver
