@@ -134,15 +134,15 @@ internal data class VillageHudInfo(
 )
 
 internal fun ValleyDestination.iconRes(): Int = when (this) {
-    ValleyDestination.CONVERSATIONS -> R.drawable.ic_chat
-    ValleyDestination.TOPICS -> R.drawable.ic_topics
-    ValleyDestination.GROUPS -> R.drawable.ic_groups
-    ValleyDestination.PEOPLE -> R.drawable.ic_people
-    ValleyDestination.GLOSSARY -> R.drawable.ic_glossary
-    ValleyDestination.SPARKS -> R.drawable.ic_sparks
-    ValleyDestination.ARCHIVE -> R.drawable.ic_letter
-    ValleyDestination.EP -> R.drawable.ic_ep
-    ValleyDestination.SETTINGS -> R.drawable.ic_settings
+    ValleyDestination.CONVERSATIONS -> R.drawable.ico_chats
+    ValleyDestination.TOPICS -> R.drawable.ico_topics
+    ValleyDestination.GROUPS -> R.drawable.ico_groups
+    ValleyDestination.PEOPLE -> R.drawable.ico_people
+    ValleyDestination.GLOSSARY -> R.drawable.ico_glossary
+    ValleyDestination.SPARKS -> R.drawable.ico_spark
+    ValleyDestination.ARCHIVE -> R.drawable.ico_letter
+    ValleyDestination.EP -> R.drawable.ico_points
+    ValleyDestination.SETTINGS -> R.drawable.ico_more
 }
 
 /** Label without its legacy emoji prefix: the painted icon carries the meaning now. */
@@ -363,7 +363,7 @@ internal fun ActivityBursts(activities: List<VillageActivity>, scope: PlateScope
                         },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Image(painterResource(a.destination.iconRes()), null, Modifier.size(26.dp * unit))
+                    AppIcon(a.destination.iconRes(), null, tint = Kit.Gold, size = 26.dp * unit)
                     GameText("+${a.count}", size = 16.sp * unit, color = Kit.Gold)
                 }
             }
@@ -515,25 +515,25 @@ internal fun RoomHeader(icon: Int, title: String, onBack: (() -> Unit)?, onClose
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).background(Color.White, CircleShape).padding(4.dp),
+                Modifier.size(44.dp).background(Color(0xFFFBF6EA), CircleShape).padding(4.dp),
                 contentAlignment = Alignment.Center,
-            ) { Image(painterResource(icon), null, Modifier.size(34.dp)) }
+            ) { AppIcon(icon, null, tint = Isle.TealDark, size = 24.dp) }
             Text(title, fontSize = 20.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f).padding(start = 12.dp))
-            if (onBack != null) SmallRound("‹", "Zurück", onBack)
+            if (onBack != null) SmallRound(R.drawable.ico_back, "Zurück", onBack)
             Spacer(Modifier.width(6.dp))
-            SmallRound("✕", "Zurück zur Insel", onClose)
+            SmallRound(R.drawable.ico_close, "Zurück zur Insel", onClose)
         }
     }
 }
 
 @Composable
-private fun SmallRound(glyph: String, description: String, onClick: () -> Unit) {
+private fun SmallRound(icon: Int, description: String, onClick: () -> Unit) {
     Box(
         Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = .14f), CircleShape)
             .semantics { contentDescription = description; role = Role.Button }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { GameText(glyph, size = 18.sp) }
+    ) { AppIcon(icon, null, tint = Color.White, size = 20.dp) }
 }
 
 
@@ -620,7 +620,7 @@ internal fun FreshBanner(destination: ValleyDestination, onOpen: () -> Unit, onD
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(32.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
-            Image(painterResource(destination.iconRes()), null, Modifier.size(26.dp))
+            AppIcon(destination.iconRes(), null, tint = Kit.Navy, size = 20.dp)
         }
         GameText("Neu: ", size = 14.sp, color = Kit.Gold, modifier = Modifier.padding(start = 8.dp))
         GameText(destination.title, size = 14.sp, modifier = Modifier.widthIn(max = 170.dp))
@@ -628,7 +628,7 @@ internal fun FreshBanner(destination: ValleyDestination, onOpen: () -> Unit, onD
             Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onDismiss)
                 .semantics { contentDescription = "Schließen"; role = Role.Button },
             contentAlignment = Alignment.Center,
-        ) { GameText("✕", size = 13.sp, color = Color.White.copy(alpha = .7f)) }
+        ) { AppIcon(R.drawable.ico_close, null, tint = Color.White.copy(alpha = .7f), size = 14.dp) }
     }
 }
 

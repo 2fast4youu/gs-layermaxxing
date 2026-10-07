@@ -56,13 +56,14 @@ import androidx.compose.ui.unit.sp
  * buildings ARE the menus (harbour, post, library, hall, lighthouse, house),
  * the open lawns are decoration slots.
  */
-internal enum class IsleBuilding(val emoji: String, val label: String) {
-    HOUSE("🏠", "Mein Haus"),
-    LIGHTHOUSE("👥", "Freunde"),
-    POST("✉", "Post"),
-    LIBRARY("📖", "Wörterbuch"),
-    CAMPFIRE("🔥", "Gruppen"),
-    HARBOUR("⚓", "Hafen"),
+/** Icons live in [AppIcons.building]; the painted sprites stay on the island itself. */
+internal enum class IsleBuilding(val label: String) {
+    HOUSE("Mein Haus"),
+    LIGHTHOUSE("Freunde"),
+    POST("Post"),
+    LIBRARY("Wörterbuch"),
+    CAMPFIRE("Gruppen"),
+    HARBOUR("Hafen"),
 }
 
 internal object IsleDecor {

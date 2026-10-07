@@ -147,10 +147,8 @@ internal fun LetterRoom(
                             .padding(horizontal = 4.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            "${if (historyOpen) "▾" else "▸"} Verlauf (${group.messages.size})",
-                            color = ROOM_INK_SOFT, fontWeight = FontWeight.SemiBold,
-                        )
+                        AppIcon(if (historyOpen) R.drawable.ico_expand else R.drawable.ico_chevron, null, tint = ROOM_INK_SOFT, size = 18.dp, modifier = Modifier.padding(end = 6.dp))
+                        Text("Verlauf (${group.messages.size})", color = ROOM_INK_SOFT, fontWeight = FontWeight.SemiBold)
                     } else Text(
                         group.bucket.label.uppercase(),
                         Modifier.padding(top = 16.dp, bottom = 2.dp, start = 4.dp),
@@ -174,7 +172,10 @@ internal fun LetterRoom(
         if (action.enabled) Button(
             onClick = onCompose,
             modifier = Modifier.fillMaxWidth().padding(14.dp).height(52.dp),
-        ) { Text(LetterAccess.LABEL_LONG, fontWeight = FontWeight.Bold) }
+        ) {
+            AppIcon(R.drawable.ico_edit, null, size = 18.dp, modifier = Modifier.padding(end = 8.dp))
+            Text(LetterAccess.LABEL_LONG, fontWeight = FontWeight.Bold)
+        }
         else action.reason?.let { reason ->
             Row(
                 Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 12.dp),
@@ -235,11 +236,15 @@ private fun EnvelopeRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(62.dp), contentAlignment = Alignment.Center) {
-            Image(
-                painter = painterResource(envelopeDrawable(asset)),
-                contentDescription = null,
-                modifier = Modifier.size(54.dp),
-                contentScale = ContentScale.Fit,
+            WaxSealIcon(
+                envelopeIcon(asset),
+                when {
+                    state == LetterState.READY -> Harbour.palette().wax
+                    state == LetterState.LOCKED_MUTUAL_WAITING_ME -> Harbour.palette().gold
+                    state.locked -> Harbour.palette().sea
+                    else -> ROOM_INK_SOFT.copy(alpha = .75f)
+                },
+                Modifier.size(44.dp),
             )
         }
         Column(Modifier.weight(1f).padding(start = 8.dp)) {
@@ -257,16 +262,16 @@ private fun EnvelopeRow(
             if (state == LetterState.READY) Surface(
                 shape = RoundedCornerShape(7.dp), color = Color(0xF0D9A441), contentColor = Color(0xFF32270F),
             ) {
-                Text(
-                    "✦ bereit", Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                )
+                Row(Modifier.padding(horizontal = 7.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(R.drawable.ico_letter_ready, null, size = 13.dp, modifier = Modifier.padding(end = 4.dp))
+                    Text("bereit", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             } else tag?.let {
                 Surface(shape = RoundedCornerShape(7.dp), color = ROOM_PAPER, contentColor = ROOM_INK) {
-                    Text(
-                        it, Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                        fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    )
+                    Row(Modifier.padding(horizontal = 7.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FiefScenes.envelopeTagIcon(state)?.let { ic -> AppIcon(ic, null, size = 13.dp, modifier = Modifier.padding(end = 4.dp)) }
+                        Text(it, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             if (hasEpOffer) AppIcon(R.drawable.ico_points, null, tint = Color(0xFFD9A441), size = 13.dp)
@@ -348,13 +353,6 @@ private fun stateWord(state: LetterState): String = when (state) {
     LetterState.LOCKED_TIMED -> "unterwegs"
 }
 
-/** The envelope drawables, resolved once. Mirrors the valley's own mapping. */
-private fun envelopeDrawable(asset: String): Int = when (asset) {
-    FiefAssets.ENV_READY -> R.drawable.fief_env_ready
-    FiefAssets.ENV_OPEN -> R.drawable.fief_env_open
-    FiefAssets.ENV_OUT -> R.drawable.fief_env_out
-    else -> R.drawable.fief_env_sealed
-}
 
 /** The four envelope states as line icons, for the seal on a letter row. */
 private fun envelopeIcon(asset: String): Int = when (asset) {

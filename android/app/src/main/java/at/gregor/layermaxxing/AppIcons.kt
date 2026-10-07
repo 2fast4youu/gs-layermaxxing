@@ -57,4 +57,14 @@ internal object AppIcons {
         IsleBuilding.CAMPFIRE -> R.drawable.ico_groups
         IsleBuilding.HARBOUR -> R.drawable.ico_harbour
     }
+
+    /** Leading icon for a one-line preview (chat list, pinned bar, quotes); null = plain text. */
+    fun previewIcon(text: String, sealed: Boolean): Int? = when {
+        sealed -> R.drawable.ico_letter
+        text == "Foto" || text.startsWith("Foto · ") -> R.drawable.ico_camera
+        text == "Flaschenpost" || text.startsWith("Flaschenpost · ") -> R.drawable.ico_mic
+        text.startsWith("Sticker") -> R.drawable.ico_emoji
+        text == "Nachricht gelöscht" -> R.drawable.ico_delete
+        else -> null
+    }
 }

@@ -203,7 +203,7 @@ fun TopicsScreen(
                     modifier = Modifier.clickable { noteOpen = !noteOpen },
                     shape = RoundedCornerShape(50),
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                ) { Text(if (noteOpen) "－" else "＋", Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) }
+                ) { AppIcon(if (noteOpen) R.drawable.ico_collapse else R.drawable.ico_add, null, modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp), size = 20.dp) }
                 Button(onClick = { create() }, enabled = title.isNotBlank()) { Text("Merken") }
             }
         }

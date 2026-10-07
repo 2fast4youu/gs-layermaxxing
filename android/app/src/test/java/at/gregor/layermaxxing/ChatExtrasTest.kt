@@ -76,8 +76,8 @@ class ChatExtrasTest {
         assertNull(ChatExtras.stickerKey(msg(text = "sticker:unknown", kind = "sticker")))
         assertNull(ChatExtras.stickerKey(msg(text = "sticker:palm")))
         assertEquals("Sticker: Palme", ChatExtras.previewText(s))
-        assertEquals("📷 Foto", ChatExtras.previewText(msg(text = "", kind = "image")))
-        assertEquals("🍾 Flaschenpost", ChatExtras.previewText(msg(text = "", kind = "voice")))
+        assertEquals("Foto", ChatExtras.previewText(msg(text = "", kind = "image")))
+        assertEquals("Flaschenpost", ChatExtras.previewText(msg(text = "", kind = "voice")))
         assertEquals("Nachricht gelöscht", ChatExtras.previewText(msg(deleted = true)))
     }
 

@@ -485,16 +485,28 @@ object FiefScenes {
         else -> FiefAssets.ENV_SEALED
     }
 
-    /** The little paper tag at the nail. One or two characters, never a sentence. */
+    /** The little paper tag: one or two words, never a sentence; the icon comes from [envelopeTagIcon]. */
     fun envelopeTag(state: LetterState, remainingSeconds: Long): String? = when (state) {
         LetterState.LOCKED_TIMED -> shortRemaining(remainingSeconds)
-        LetterState.LOCKED_RANDOM -> "?"
-        LetterState.LOCKED_PRESENCE -> "● ●"
-        LetterState.LOCKED_MUTUAL_WAITING_PEER -> "✓ –"
-        LetterState.LOCKED_MUTUAL_WAITING_ME -> "✓?"
-        LetterState.LOCKED_MANUAL -> "☝"
-        LetterState.DELIVERED -> "✓"
-        LetterState.READ -> "✓✓"
+        LetterState.LOCKED_RANDOM -> "Zufall"
+        LetterState.LOCKED_PRESENCE -> "beide online"
+        LetterState.LOCKED_MUTUAL_WAITING_PEER -> "1 von 2"
+        LetterState.LOCKED_MUTUAL_WAITING_ME -> "du?"
+        LetterState.LOCKED_MANUAL -> "Freigabe"
+        LetterState.DELIVERED -> "zugestellt"
+        LetterState.READ -> "gelesen"
+        LetterState.READY, LetterState.OPENED -> null
+    }
+
+    /** The line icon that goes in front of [envelopeTag]. */
+    fun envelopeTagIcon(state: LetterState): Int? = when (state) {
+        LetterState.LOCKED_TIMED -> R.drawable.ico_timer
+        LetterState.LOCKED_RANDOM -> R.drawable.ico_random
+        LetterState.LOCKED_PRESENCE -> R.drawable.ico_presence
+        LetterState.LOCKED_MUTUAL_WAITING_PEER, LetterState.LOCKED_MUTUAL_WAITING_ME -> R.drawable.ico_check_double
+        LetterState.LOCKED_MANUAL -> R.drawable.ico_manual
+        LetterState.DELIVERED -> R.drawable.ico_check
+        LetterState.READ -> R.drawable.ico_check_double
         LetterState.READY, LetterState.OPENED -> null
     }
 

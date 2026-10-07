@@ -352,7 +352,7 @@ fun ServerProfileSelector(selected: ServerProfile, onSelected: (ServerProfile) -
             horizontalArrangement = Arrangement.Center,
         ) {
             Text("Server: ${selected.label}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(if (open) "  ▴" else "  ▾", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            AppIcon(if (open) R.drawable.ico_collapse else R.drawable.ico_expand, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp, modifier = Modifier.padding(start = 6.dp))
         }
         if (open) ServerProfile.entries.forEach { profile ->
             Row(

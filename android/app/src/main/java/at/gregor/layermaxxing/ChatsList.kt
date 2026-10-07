@@ -225,7 +225,9 @@ internal fun ChatsScreen(
             if (conversations.isEmpty()) item {
                 Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Spacer(Modifier.height(48.dp))
-                    IslandAvatar("⛵", p.sea, 92.dp, p)
+                    Box(Modifier.size(92.dp).background(p.sea.copy(alpha = .14f), CircleShape), Alignment.Center) {
+                AppIcon(R.drawable.ico_boat, null, tint = p.sea, size = 44.dp)
+            }
                     Text("Dein Hafen ist noch still", style = Harbour.Title, color = p.ink, textAlign = TextAlign.Center)
                     Text(
                         "Füge eine Person über ihren Benutzernamen hinzu. Sobald sie annimmt, legt euer erstes Boot ab.",
@@ -400,8 +402,11 @@ private fun ConversationRow(conversation: Conversation, now: Long, onOpen: (Long
                 val body = ChatTools.parseReply(preview.text).second.replace('\n', ' ')
                 val line = when {
                     conversation.silenced -> "Briefe und Chat sind aus"
-                    preview.sealed -> (if (preview.fromMe) "Du: " else "") + "✉ " + body
+                    preview.sealed -> (if (preview.fromMe) "Du: " else "") + body
                     else -> (if (preview.fromMe) "Du: " else "") + body
+                }
+                if (!conversation.silenced) AppIcons.previewIcon(body, preview.sealed)?.let {
+                    AppIcon(it, null, tint = p.inkSoft, size = 15.dp, modifier = Modifier.padding(end = 4.dp))
                 }
                 Text(
                     line, Modifier.weight(1f), fontSize = 14.sp, maxLines = 1,

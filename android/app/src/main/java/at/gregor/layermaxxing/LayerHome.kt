@@ -677,17 +677,17 @@ private fun AppChrome(
                     name.ifBlank { "Konto" }, Modifier.padding(start = 9.dp),
                     fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1,
                 )
-                Text(" ⌄", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                AppIcon(R.drawable.ico_expand, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp, modifier = Modifier.padding(start = 4.dp))
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenu(false) }) {
                 accounts.forEach { account ->
                     DropdownMenuItem(
-                        text = { Text(if (account.name == name) "${account.name} ✓" else account.name) },
+                        text = { Text(account.name) }, trailingIcon = { if (account.name == name) AppIcon(R.drawable.ico_check, null, size = 18.dp) },
                         onClick = { onMenu(false); if (account.name != name) onSwitchAccount(account) },
                     )
                 }
                 if (accounts.isNotEmpty()) HorizontalDivider()
-                DropdownMenuItem(text = { Text("＋ Konto hinzufügen") }, onClick = { onMenu(false); onAddAccount() })
+                DropdownMenuItem(text = { Text("Konto hinzufügen") }, leadingIcon = { AppIcon(R.drawable.ico_add, null, size = 18.dp) }, onClick = { onMenu(false); onAddAccount() })
             }
         }
         Spacer(Modifier.weight(1f))
@@ -806,7 +806,7 @@ internal fun IncomingMessageCard(
                 when {
                     opened != null -> {
                         Text(opened.text, fontSize = 17.sp)
-                        if (opened.attachment != null) OutlinedButton(onClick = { save.launch(safeFileName(opened.name ?: "Anhang")) }) { Text("📎 ${opened.name ?: "Anhang"} speichern") }
+                        if (opened.attachment != null) OutlinedButton(onClick = { save.launch(safeFileName(opened.name ?: "Anhang")) }) { AppIcon(R.drawable.ico_attach, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("${opened.name ?: "Anhang"} speichern") }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf("❤️", "👍", "😂", "😮").forEach { emoji -> TextButton(onClick = { onReact(emoji) }) { Text(emoji) } } }
                     }
                     message.unlocked -> Button(onClick = onOpen) { Text(if (message.oneTime) "Einmalig öffnen" else "Brief öffnen") }
@@ -817,7 +817,7 @@ internal fun IncomingMessageCard(
                     }
                     message.mode == "presence" -> Text("Öffnet, sobald ihr beide online seid")
                     message.mode == "random" -> Text("Öffnet zufällig bis ${message.randomTo?.let(::formatDate) ?: "später"}")
-                    else -> Text("🔒 Noch ${formatRemaining(max(0, (message.releaseAt ?: now) - now))}")
+                    else -> Row(verticalAlignment = Alignment.CenterVertically) { AppIcon(R.drawable.ico_lock, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Noch ${formatRemaining(max(0, (message.releaseAt ?: now) - now))}") }
                 }
                 if (message.reactions.isNotEmpty()) Text(message.reactions.joinToString("  ") { "${it.emoji} ${it.name}" }, fontSize = 13.sp)
             }
@@ -855,13 +855,16 @@ internal fun OutboxMessageCard(
             if (message.coverNote.isNotBlank()) Text("„${message.coverNote}“", fontStyle = FontStyle.Italic)
             if (message.proofStatus == "legacy") Text("Legacy – ohne kryptografischen Nachweis", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
             when {
-                message.unlocked -> Text(if (message.readAt != null) "✓✓ Gelesen" else "✓ Freigegeben", color = Color(0xFF19703B))
+                message.unlocked -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(if (message.readAt != null) R.drawable.ico_check_double else R.drawable.ico_check, null, tint = Color(0xFF19703B), size = 18.dp, modifier = Modifier.padding(end = 6.dp))
+                    Text(if (message.readAt != null) "Gelesen" else "Freigegeben", color = Color(0xFF19703B))
+                }
                 message.mode == "manual" -> Button(onClick = { confirmRelease = true }) { Text("Jetzt freigeben") }
                 message.mode == "mutual" && !message.senderApproved -> Button(onClick = onApprove) { Text("Meine Freigabe bestätigen") }
                 message.mode == "mutual" -> Text("Wartet auf Zustimmung von ${message.peerName}")
                 message.mode == "presence" -> Text("Wartet, bis ihr beide online seid")
                 message.mode == "random" -> Text("Zufällige Freigabe bis ${message.randomTo?.let(::formatDate)}")
-                else -> Text("🔒 Automatisch in ${formatRemaining(max(0, (message.releaseAt ?: now) - now))}")
+                else -> Row(verticalAlignment = Alignment.CenterVertically) { AppIcon(R.drawable.ico_lock, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Automatisch in ${formatRemaining(max(0, (message.releaseAt ?: now) - now))}") }
             }
             if (!message.unlocked) TextButton(onClick = { confirmRetract = true }) { Text("Zurückziehen") }
             if (message.reactions.isNotEmpty()) Text(message.reactions.joinToString("  ") { "${it.emoji} ${it.name}" })
@@ -1070,7 +1073,7 @@ private fun SendScreen(
     }
 
     val recipientLabel = when {
-        groupId != null -> "👥 " + groups.firstOrNull { it.id == groupId }?.name.orEmpty()
+        groupId != null -> "Gruppe: " + groups.firstOrNull { it.id == groupId }?.name.orEmpty()
         selected.isEmpty() -> "Empfänger wählen"
         else -> friends.filter { it.id in selected }.joinToString { "${it.avatarEmoji} ${it.name}" }
     }
@@ -1132,8 +1135,8 @@ private fun SendScreen(
                     mode = ComposeMode.DURATION; unit = chosen; amount = (seconds / chosen.seconds).toString()
                 }
             }
-            ComposerChip(attachment?.let { "📎 ${it.first}" } ?: "📎") { keyboard?.hide(); picker.launch("*/*") }
-            ComposerChip(if (detailsOpen) "－ Details" else "＋ Details") { detailsOpen = !detailsOpen }
+            ComposerChip(attachment?.first ?: "Anhang", icon = R.drawable.ico_attach) { keyboard?.hide(); picker.launch("*/*") }
+            ComposerChip("Details", icon = if (detailsOpen) R.drawable.ico_collapse else R.drawable.ico_expand) { detailsOpen = !detailsOpen }
             if (oneTime) ComposerChip("1×")
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1161,13 +1164,16 @@ internal const val CRYPTO_HONESTY =
         "und verhindert keine Screenshots oder Caches."
 
 @Composable
-private fun ComposerChip(text: String, highlighted: Boolean = false, onClick: (() -> Unit)? = null) {
+private fun ComposerChip(text: String, highlighted: Boolean = false, icon: Int? = null, onClick: (() -> Unit)? = null) {
     Surface(
         modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
         shape = RoundedCornerShape(50),
         color = if (highlighted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
     ) {
-        Text(text, Modifier.padding(horizontal = 13.dp, vertical = 8.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Row(Modifier.padding(horizontal = 13.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) AppIcon(icon, null, size = 15.dp, modifier = Modifier.padding(end = 5.dp))
+            Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
     }
 }
 
@@ -1247,7 +1253,7 @@ private fun FriendsScreen(
             } }
         } }
         item { SectionTitle("Freunde") }
-        if (friends.isEmpty()) item { EmptyHint("🤝", "Noch keine Freunde", "Suche oben nach einem Benutzernamen und schick eine Anfrage – sobald sie annimmt, taucht ihre Insel auf.") }
+        if (friends.isEmpty()) item { EmptyHint(R.drawable.ico_people, "Noch keine Freunde", "Suche oben nach einem Benutzernamen und schick eine Anfrage – sobald sie annimmt, taucht ihre Insel auf.") }
         else items(friends, key = { "friend-${it.id}" }) { friend ->
             val rules = settings.firstOrNull { it.friendId == friend.id }
             FriendRow(
@@ -1280,10 +1286,10 @@ private fun FriendsScreen(
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             SectionTitle("Gruppen")
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onGroups) { Text(if (groups.isEmpty()) "＋ Gruppe" else "Alle Gruppen ›") }
+            TextButton(onClick = onGroups) { Text(if (groups.isEmpty()) "+ Gruppe" else "Alle Gruppen") }
         } }
-        if (groups.isEmpty()) item { EmptyHint("👥", "Noch keine Gruppe", "Mit „＋ Gruppe“ holst du mehrere Freunde an einen Tisch.") }
-        else items(groups, key = { "group-${it.id}" }) { group -> InfoCard("👥 ${group.name}: ${group.members.joinToString { it.name }}") }
+        if (groups.isEmpty()) item { EmptyHint(R.drawable.ico_groups, "Noch keine Gruppe", "Mit „+ Gruppe“ holst du mehrere Freunde an einen Tisch.") }
+        else items(groups, key = { "group-${it.id}" }) { group -> InfoCard("${group.name}: ${group.members.joinToString { it.name }}") }
         item { Spacer(Modifier.height(16.dp)) }
     }
 }
@@ -1569,9 +1575,9 @@ internal fun ActionCard(text: String, actions: @Composable RowScope.() -> Unit) 
 @Composable
 internal fun SectionTitle(text: String) = Text(text, fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
 @Composable
-internal fun EmptyHint(glyph: String, title: String, hint: String) =
+internal fun EmptyHint(icon: Int, title: String, hint: String) =
     Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(glyph, fontSize = 34.sp)
+        AppIcon(icon, null, tint = MaterialTheme.colorScheme.primary, size = 36.dp)
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(hint, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, fontSize = 14.sp)
     }

@@ -280,10 +280,6 @@ internal fun ChatQuestDialog(
     )
 }
 
-internal val QUEST_ICON_GLYPHS = listOf(
-    "star" to "⭐", "hike" to "🥾", "grill" to "🔥", "bike" to "🚲", "food" to "🍝",
-    "game" to "🎲", "travel" to "🧳", "sport" to "⚽", "music" to "🎵", "help" to "🤝",
-)
 
 // ---------------------------------------------------------------------------
 // Glossary

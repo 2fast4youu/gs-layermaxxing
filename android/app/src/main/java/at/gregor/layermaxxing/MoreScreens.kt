@@ -363,7 +363,10 @@ private fun AppearancePage(store: SessionStore, onTheme: (String) -> Unit, onCas
                         })
                     }
                 }) { Text("Benachrichtigungen erlauben") }
-            } else Text("✓ Benachrichtigungen erlaubt", fontSize = 12.sp, color = Color(0xFF19703B))
+            } else Row(verticalAlignment = Alignment.CenterVertically) {
+                AppIcon(R.drawable.ico_check, null, tint = Color(0xFF19703B), size = 14.dp, modifier = Modifier.padding(end = 4.dp))
+                Text("Benachrichtigungen erlaubt", fontSize = 12.sp, color = Color(0xFF19703B))
+            }
         } } }
         item { SectionTitle("Entwickler") }
         item { Card { Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {

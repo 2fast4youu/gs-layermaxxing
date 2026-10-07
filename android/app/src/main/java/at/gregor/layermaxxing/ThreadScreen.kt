@@ -1022,7 +1022,10 @@ internal fun LetterStack(
                 if (history) OutlinedButton(
                     onClick = { historyOpen = !historyOpen },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("${if (historyOpen) "▾" else "▸"} Verlauf (${group.messages.size})") }
+                ) {
+                        AppIcon(if (historyOpen) R.drawable.ico_expand else R.drawable.ico_chevron, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp))
+                        Text("Verlauf (${group.messages.size})")
+                    }
                 else Text(
                     group.bucket.label, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(top = 6.dp),
@@ -1246,10 +1249,9 @@ internal fun TypingBubble(name: String) {
 private fun BubbleMeta(time: String, outgoing: Boolean, read: Boolean, muted: Color, p: HarbourPalette) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(time, fontSize = 10.sp, color = muted)
-        if (outgoing) Text(
-            if (read) " ✓✓" else " ✓", fontSize = 11.sp, fontWeight = FontWeight.Bold,
-            color = if (read) p.read else muted,
-            modifier = Modifier.semantics { contentDescription = if (read) "gelesen" else "zugestellt" },
+        if (outgoing) AppIcon(
+            if (read) R.drawable.ico_check_double else R.drawable.ico_check, if (read) "gelesen" else "zugestellt",
+            modifier = Modifier.padding(start = 3.dp), tint = if (read) p.read else muted, size = 14.dp,
         )
     }
 }

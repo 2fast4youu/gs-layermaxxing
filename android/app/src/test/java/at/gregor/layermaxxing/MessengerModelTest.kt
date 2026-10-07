@@ -563,7 +563,7 @@ class CastleIndependenceTest {
         val open = LetterAccess.forSettings(settings(2, "Bea", letters = true))
         assertTrue(open.enabled)
         assertNull(open.reason)
-        assertEquals("✦ Brief", open.label)
+        assertEquals("Brief", open.label)
 
         val closed = LetterAccess.forSettings(settings(2, "Bea", letters = false))
         assertFalse(closed.enabled)

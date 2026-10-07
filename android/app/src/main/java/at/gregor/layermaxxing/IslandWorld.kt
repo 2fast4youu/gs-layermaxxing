@@ -121,11 +121,6 @@ internal object Isle {
     /** Relative size on the map: closer, bigger friendships read at a glance. */
     fun islandWidth(level: Int): Dp = when (level.coerceIn(1, 4)) { 1 -> 104.dp; 2 -> 118.dp; 3 -> 134.dp; else -> 156.dp }
 
-    val questIcons = linkedMapOf(
-        "hike" to "🥾", "grill" to "🍖", "bike" to "🚲", "food" to "🍝", "game" to "🎲",
-        "travel" to "🧳", "sport" to "⚽", "music" to "🎵", "help" to "🤝", "star" to "⭐",
-    )
-    fun questEmoji(icon: String) = questIcons[icon] ?: "⭐"
 }
 
 /** One boat type per release mechanism, so a letter's rule is readable on the sea. */
@@ -999,7 +994,7 @@ internal fun QuestRow(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> 
         Column(Modifier.weight(1f)) {
             Text(q.title, fontWeight = FontWeight.Bold, color = Isle.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(
-                (if (q.targetType == "group") "👥 " else "mit ") + q.targetName +
+                (if (q.targetType == "group") "Gruppe " else "mit ") + q.targetName +
                     (if (done) " · erledigt${q.completedByName?.let { " von $it" } ?: ""}" else ""),
                 fontSize = 12.sp, color = Isle.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
@@ -1014,7 +1009,7 @@ internal fun QuestRow(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> 
                 .border(2.dp, Isle.Teal, CircleShape)
                 .clickable(onClickLabel = if (done) "Wieder öffnen" else "Als erledigt markieren") { onDone(q, !done) },
             Alignment.Center,
-        ) { Text(if (done) "✓" else "", color = Color.White, fontWeight = FontWeight.Bold) }
+        ) { if (done) AppIcon(R.drawable.ico_check, null, tint = Color.White, size = 16.dp) }
         if (onDelete != null && q.canDelete) TextButton(onClick = { onDelete(q) }, Modifier.heightIn(min = 40.dp)) {
             AppIcon(R.drawable.ico_close, null, tint = Isle.Muted, size = 20.dp)
         }

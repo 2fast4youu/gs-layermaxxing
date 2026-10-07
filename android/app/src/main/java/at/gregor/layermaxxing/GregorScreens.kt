@@ -136,7 +136,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(row.term, Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                if (row.builtIn != null) "App" else "${row.shared!!.explanations.size} ✍",
+                                if (row.builtIn != null) "App" else "${row.shared!!.explanations.size} Erklärungen",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -144,7 +144,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
                             Text(entry.meaning)
                             if (open) Text(entry.action, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                             // Built-in words are editable too: the first own explanation turns them into a shared entry.
-                            if (open && sharedAvailable) OutlinedButton(onClick = { newTerm = entry.term; newText = ""; adding = true }) { Text("＋ Eigene Erklärung") }
+                            if (open && sharedAvailable) OutlinedButton(onClick = { newTerm = entry.term; newText = ""; adding = true }) { AppIcon(R.drawable.ico_add, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Eigene Erklärung") }
                         }
                         row.shared?.let { term ->
                             val shown = if (open) term.explanations else term.explanations.take(1)
@@ -169,7 +169,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
                                 "+ ${term.explanations.size - 1} weitere Erklärung" + if (term.explanations.size > 2) "en" else "",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
                             )
-                            if (open) OutlinedButton(onClick = { explainFor = term; draft = "" }) { Text("＋ Eigene Erklärung") }
+                            if (open) OutlinedButton(onClick = { explainFor = term; draft = "" }) { AppIcon(R.drawable.ico_add, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Eigene Erklärung") }
                         }
                     }
                 }
@@ -278,7 +278,7 @@ fun GroupsHub(
             item { Text(group.name, style = MaterialTheme.typography.headlineSmall); Text(group.members.joinToString { it.name }) }
             // Group quests also work without the island: list, tick off, add.
             val groupQuests = quests.filter { it.targetType == "group" && it.targetId == group.id }.sortedBy { it.completedAt != null }
-            item { ExtensionEntry("⭐ Gruppen-Quests", if (groupQuests.isEmpty()) "Noch keine – ＋ neue anlegen" else "${groupQuests.count { it.completedAt == null }} offen · ＋ neue") { questFor = group.id } }
+            item { ExtensionEntry("⭐ Gruppen-Quests", if (groupQuests.isEmpty()) "Noch keine – neue anlegen" else "${groupQuests.count { it.completedAt == null }} offen · neue anlegen") { questFor = group.id } }
             items(groupQuests.take(6), key = { "gq${it.id}" }) { q ->
                 QuestRow(q, { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } }, null)
             }

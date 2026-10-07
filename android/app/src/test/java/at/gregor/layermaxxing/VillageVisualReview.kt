@@ -198,7 +198,7 @@ class VillageVisualReview {
 
     @Test fun glossary() = shot("07-glossary") {
         VillageTheme(true) {
-            VillageRoom(true, icon = R.drawable.ic_glossary, title = "Wörterbuch", onClose = {}) {
+            VillageRoom(true, icon = R.drawable.ico_glossary, title = "Wörterbuch", onClose = {}) {
                 GlossaryScreen()
             }
         }
@@ -211,7 +211,7 @@ class VillageVisualReview {
 
     @Test fun topicsRoom() = shot("08-topics-room") {
         VillageTheme(true) {
-            VillageRoom(true, icon = R.drawable.ic_topics, title = "Schwarzes Brett", onClose = {}) {
+            VillageRoom(true, icon = R.drawable.ico_topics, title = "Schwarzes Brett", onClose = {}) {
                 TopicsHub(topicsSample, friends, listOf(ApiClient.Group(9, "Hüttenteam", 1, friends)), { _, _ -> })
             }
         }
@@ -219,7 +219,7 @@ class VillageVisualReview {
 
     @Test fun groupsRoom() = shot("09-groups-room") {
         VillageTheme(true) {
-            VillageRoom(true, icon = R.drawable.ic_groups, title = "Gruppenplatz", onClose = {}) {
+            VillageRoom(true, icon = R.drawable.ico_groups, title = "Gruppenplatz", onClose = {}) {
                 GroupsHub(listOf(ApiClient.Group(9, "Hüttenteam", 1, friends)), friends, topicsSample, emptyList(), "", ApiClient(), {}, { _, _ -> })
             }
         }
@@ -227,7 +227,7 @@ class VillageVisualReview {
 
                             @Test fun buildingRoom() = shot("03-room") {
         VillageTheme(true) {
-            VillageRoom(true, icon = R.drawable.ic_topics, title = "Schwarzes Brett", onClose = {}) {
+            VillageRoom(true, icon = R.drawable.ico_topics, title = "Schwarzes Brett", onClose = {}) {
                 androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp)) {
                     androidx.compose.material3.Text("Offene Themen", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                     androidx.compose.material3.OutlinedTextField("", {}, label = { androidx.compose.material3.Text("Neues Thema") })

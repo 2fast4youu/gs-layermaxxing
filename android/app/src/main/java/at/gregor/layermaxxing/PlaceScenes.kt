@@ -418,7 +418,7 @@ private fun QuestNote(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> 
             Spacer(Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (done) "✓" else "Abhaken", fontFamily = Display, fontSize = 11.sp,
+                    if (done) "Erledigt" else "Abhaken", fontFamily = Display, fontSize = 11.sp,
                     color = Color.White,
                     modifier = Modifier.clip(RoundedCornerShape(50)).background(if (done) Color(0xFF5E7F5A) else Color(0xFF3F7C78))
                         .clickable { onDone(q, !done) }.padding(horizontal = 9.dp, vertical = 3.dp),

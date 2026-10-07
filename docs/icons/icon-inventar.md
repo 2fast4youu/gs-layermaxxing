@@ -48,6 +48,13 @@
 | Briefe | ✓✓ | ico_check_double | Beide stimmen zu / gelesen | Brief-Modus |
 | Briefe | ● | ico_presence | Beide online | Brief-Modus |
 | Briefe | ? 🎲 | ico_random | Zufällig | Brief-Modus, Ruderboot |
+| Briefe | 🖼 gemalte Umschläge | ico_letter_ready / ico_letter_open / ico_send / ico_lock | Brief-Zeile im Briefe-Raum (jetzt Siegel mit Linien-Icon) | LetterRoom.kt |
+| Briefe | ? ● ● ✓ – ✓? ☝ ✓✓ | ico_random / ico_presence / ico_check_double / ico_manual / ico_check | Status-Schild am Brief (jetzt Icon + Wort) | FiefScenes.kt |
+| Briefe | ▸ ▾ | ico_chevron / ico_expand | Verlauf auf-/zuklappen | Briefe-Raum, Chat |
+| Chat | ✉ 📷 🍾 (Vorschau) | ico_letter / ico_camera / ico_mic | Letzte Nachricht in der Chatliste | ChatsList.kt |
+| Chat | ✓ ✓✓ (Text) | ico_check / ico_check_double | Zugestellt / gelesen an der Blase | ThreadScreen.kt |
+| Chat | 📎 ＋ － | ico_attach / ico_expand / ico_collapse | Anhang, Details im Brief-Formular | LayerHome.kt |
+| Insel | 🖼 gemalte Raum-Icons (ic_*.webp) | ico_chats / ico_topics / ico_groups / ico_people / ico_glossary / ico_spark / ico_letter / ico_points / ico_more | Raum-Kopf + Gebäude-Hinweise | VillageHud.kt |
 | Insel | 🏠 | ico_house | Mein Haus | Hinweiskarte |
 | Insel | 🗼 | ico_lighthouse | Leuchtturm (Freunde) | Hinweiskarte |
 | Insel | 🔥 👥 | ico_groups | Lagerfeuer (Gruppen) | Hinweiskarte, Quests |

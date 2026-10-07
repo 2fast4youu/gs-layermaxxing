@@ -164,6 +164,6 @@ private fun PageQuest(q: ApiClient.Quest, p: HarbourPalette, onDone: (ApiClient.
                 .clickable { onDone(q, !done) }
                 .semantics { contentDescription = if (done) "Als offen markieren" else "Als erledigt markieren"; role = Role.Button },
             contentAlignment = Alignment.Center,
-        ) { Text(if (done) "✓" else "", color = Color.White, fontWeight = FontWeight.Bold) }
+        ) { if (done) AppIcon(R.drawable.ico_check, null, tint = Color.White, size = 16.dp) }
     }
 }

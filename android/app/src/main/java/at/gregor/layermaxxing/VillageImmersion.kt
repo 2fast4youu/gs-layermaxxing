@@ -67,7 +67,7 @@ internal fun VillageTheme(enabled: Boolean, content: @Composable () -> Unit) {
 internal fun VillageRoom(
     enabled: Boolean,
     mapBehind: Boolean = false,
-    icon: Int = R.drawable.ic_settings,
+    icon: Int = R.drawable.ico_more,
     title: String = "",
     onClose: () -> Unit,
     content: @Composable () -> Unit,

@@ -2,15 +2,15 @@ package at.gregor.layermaxxing
 
 /** Map destinations link real existing features; they grant no extra permissions. */
 enum class ValleyDestination(val label: String, val detail: String, val anchor: MapPoint) {
-    CONVERSATIONS("💬 Treffpunkt", "Chatte mit deinen Freunden", MapPoint(.526f, .245f)),
-    TOPICS("📝 Schwarzes Brett", "Private, Freundschafts- und Gruppenthemen", MapPoint(.802f, .371f)),
-    GROUPS("👥 Gruppenplatz", "Gruppen und gemeinsame Briefe", MapPoint(.242f, .341f)),
-    PEOPLE("🧭 Wegweiser", "Freunde finden und verwalten", MapPoint(.774f, .110f)),
-    GLOSSARY("📖 Bibliothek", "App-Begriffe verständlich erklärt", MapPoint(.260f, .506f)),
-    SPARKS("✨ Funkenplatz", "Freundesfunken senden und empfangen", MapPoint(.763f, .499f)),
-    ARCHIVE("✉ Briefe", "Alle Briefe und Prüfdateien", MapPoint(.451f, .817f)),
-    EP("★ Punkte-Verwaltung", "Punkte vorschlagen und Verlauf prüfen", MapPoint(.749f, .801f)),
-    SETTINGS("⚙ Gemeindehaus", "Profil, Modus, Konten, Geräte und Sicherheit", MapPoint(.254f, .129f)),
+    CONVERSATIONS("Treffpunkt", "Chatte mit deinen Freunden", MapPoint(.526f, .245f)),
+    TOPICS("Schwarzes Brett", "Private, Freundschafts- und Gruppenthemen", MapPoint(.802f, .371f)),
+    GROUPS("Gruppenplatz", "Gruppen und gemeinsame Briefe", MapPoint(.242f, .341f)),
+    PEOPLE("Wegweiser", "Freunde finden und verwalten", MapPoint(.774f, .110f)),
+    GLOSSARY("Bibliothek", "App-Begriffe verständlich erklärt", MapPoint(.260f, .506f)),
+    SPARKS("Funkenplatz", "Freundesfunken senden und empfangen", MapPoint(.763f, .499f)),
+    ARCHIVE("Briefe", "Alle Briefe und Prüfdateien", MapPoint(.451f, .817f)),
+    EP("Punkte-Verwaltung", "Punkte vorschlagen und Verlauf prüfen", MapPoint(.749f, .801f)),
+    SETTINGS("Gemeindehaus", "Profil, Modus, Konten, Geräte und Sicherheit", MapPoint(.254f, .129f)),
 }
 
 object VillageScenes {

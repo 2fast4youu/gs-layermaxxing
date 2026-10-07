@@ -110,8 +110,8 @@ fun formatRemaining(seconds: Long): String {
 data class LetterAction(val enabled: Boolean, val label: String, val reason: String?)
 
 object LetterAccess {
-    const val LABEL = "✦ Brief"
-    const val LABEL_LONG = "✦ Brief schreiben"
+    const val LABEL = "Brief"
+    const val LABEL_LONG = "Brief schreiben"
 
     fun forSettings(settings: ApiClient.FriendshipSettings?): LetterAction = when {
         settings == null -> LetterAction(
