@@ -65,6 +65,8 @@ internal data class IslandPlan(
     val paths: List<Pair<Offset, Offset>>,
     /** Friend islands flip the painted base so neighbours never look identical. */
     val mirror: Boolean = false,
+    /** 0..1: Insel-Ausbau land size from the point score (1 = full painted island). */
+    val landScale: Float = 1f,
 )
 
 internal object IslandPlans {
@@ -81,6 +83,43 @@ internal object IslandPlans {
         return u * u + v * v <= radius * radius
     }
 
+    /**
+     * Insel-Ausbau: how big the land itself is at a given point score. A fresh island
+     * is a small sand mound; every built-upgrade grows the land a step (Aufschüttung).
+     */
+    fun landScale(score: Int): Float = when {
+        score >= 240 -> 1f
+        score >= 160 -> .86f
+        score >= 100 -> .74f
+        score >= 60 -> .62f
+        score >= 25 -> .5f
+        else -> .3f
+    }
+    /** How green the land is (0 = bare sand bank, 1 = full meadow) for a land scale. */
+    fun meadow(landScale: Float): Float = ((landScale - .3f) / .7f).coerceIn(0f, 1f)
+    /** Things on a small island shrink a little so the sand bank is not crammed. */
+    fun pieceScale(landScale: Float): Float = .6f + .4f * landScale
+    /**
+     * On a small sand bank the five signs would pile up at the shore; spread them apart
+     * (fraction of island width/height). Zero on the full island.
+     */
+    fun tagNudge(b: IsleBuilding, landScale: Float): Pair<Float, Float> {
+        val k = ((1f - landScale) / .7f).coerceIn(0f, 1f)
+        val (dx, dy) = when (b) {
+            IsleBuilding.CAMPFIRE -> -.11f to 0f
+            IsleBuilding.LIBRARY -> .11f to 0f
+            IsleBuilding.HARBOUR -> 0f to .05f
+            IsleBuilding.POST -> -.05f to 0f
+            IsleBuilding.LIGHTHOUSE -> .05f to 0f
+            else -> 0f to 0f
+        }
+        return dx * k to dy * k
+    }
+    /** Anchor a land point onto the scaled island (same centre the terrain layer scales about). */
+    fun onLand(x: Float, y: Float, s: Float): Pair<Float, Float> = (CX + (x - CX) * s) to (CY + (y - CY) * s)
+    const val LAND_CX = CX
+    const val LAND_CY = CY
+
     /** Home: the menu buildings around a plaza. Anchors were picked so paths and lawns never cross. */
     /** The app's own places sit at the coast; the inland plots belong to the player's real life (LifePlaces). */
     val homeBuildings = linkedMapOf(
@@ -90,11 +129,42 @@ internal object IslandPlans {
         IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library, .74f, .79f, .10f, name = "Wörterbuch"),
         IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty, .51f, .85f, .115f, name = "Hafen"),
     )
+    /** Stufe-1-Ruinen: unter diesem Punktestand steht die primitive Baumstamm-Version. */
+    val ruinCosts = mapOf(
+        IsleBuilding.CAMPFIRE to 25,   // Feuerstelle zuerst – die günstige Keimzelle
+        IsleBuilding.POST to 60,
+        IsleBuilding.HARBOUR to 100,
+        IsleBuilding.LIBRARY to 160,
+        IsleBuilding.LIGHTHOUSE to 240,
+    )
+    /** The same buildings as level-1 ruins; anchors and sizes are identical. */
+    private val homeRuins = linkedMapOf(
+        IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.lm_lighthouse_ruin, .88f, .44f, .105f, name = "Freunde"),
+        IsleBuilding.POST to IslandPiece(R.drawable.lm_post_ruin, .12f, .47f, .105f, name = "Post"),
+        IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.lm_campfire_ruin, .28f, .80f, .10f, name = "Gruppen"),
+        IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library_ruin, .74f, .79f, .10f, name = "Wörterbuch"),
+        IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty_ruin, .51f, .85f, .115f, name = "Hafen"),
+    )
     val plaza = Offset(.5f, .55f)
     /** Small decoration lawns ringing the plaza, clear of the building plots. */
     val homeSlots = listOf(.41f to .45f, .59f to .45f, .36f to .53f, .64f to .53f, .43f to .61f, .57f to .61f)
 
-    fun home(seed: Long): IslandPlan {
+    /**
+     * Where each app building stands for a score: ruin or finished sprite, moved onto the
+     * grown land and sized for it. Sprites, signs and touch targets all read from here.
+     */
+    fun placedBuildings(score: Int): Map<IsleBuilding, IslandPiece> {
+        val s = landScale(score)
+        val ps = pieceScale(s)
+        return homeBuildings.mapValues { (b, piece) ->
+            // Insel-Ausbau Scheibe 1: below its price a building shows its primitive log-hut look.
+            val p = if (score < (ruinCosts[b] ?: 0)) homeRuins[b] ?: piece else piece
+            val (lx, ly) = onLand(p.x, p.y, s)
+            p.copy(x = lx, y = ly, size = p.size * ps)
+        }
+    }
+
+    fun home(seed: Long, score: Int = Int.MAX_VALUE): IslandPlan {
         // The painted base already carries coast, rocks and bushes; a few calm trees frame the plots.
         val nature = listOf(
             IslandPiece(R.drawable.n_pine, .17f, .30f, .07f, sway = true),
@@ -102,7 +172,15 @@ internal object IslandPlans {
             IslandPiece(R.drawable.n_tree, .14f, .66f, .07f, sway = true),
             IslandPiece(R.drawable.n_cypress, .88f, .66f, .06f, sway = true),
         )
-        return IslandPlan(seed, 1f, homeBuildings.values + nature, emptyList())
+        val s = landScale(score)
+        val ps = pieceScale(s)
+        val buildings = placedBuildings(score).values.toList()
+        // A bare sand bank carries no trees yet; they return once the meadow has grown in.
+        val grown = if (meadow(s) < .3f) emptyList() else nature.map { n ->
+            val (lx, ly) = onLand(n.x, n.y, s)
+            n.copy(x = lx, y = ly, size = n.size * ps)
+        }
+        return IslandPlan(seed, 1f, buildings + grown, emptyList(), landScale = s)
     }
 
     /** What a friendship island holds at each level, placed on the painted clearings. */
@@ -152,17 +230,26 @@ internal fun DynamicIsland(
     else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     BoxWithConstraints(modifier.aspectRatio(IslandPlans.ASPECT)) {
         val w = maxWidth; val h = maxHeight
+        val ls = plan.landScale
         // Gently breathing light on the shallow water, under the painted island.
         Canvas(Modifier.fillMaxSize()) {
             drawOval(
                 Color.White.copy(alpha = .10f),
-                topLeft = Offset(size.width * .03f, size.height * .06f),
-                size = androidx.compose.ui.geometry.Size(size.width * .94f, size.height * .92f),
+                topLeft = Offset(size.width * (IslandPlans.LAND_CX - .47f * ls), size.height * (IslandPlans.LAND_CY - .46f * ls)),
+                size = androidx.compose.ui.geometry.Size(size.width * .94f * ls, size.height * .92f * ls),
             )
         }
-        Image(
-            painterResource(R.drawable.terrain_home), null, Modifier.fillMaxSize()
-                .graphicsLayer { if (plan.mirror) scaleX = -1f },
+        // Insel-Ausbau: the land starts as a small bare sand bank and grows with upgrades;
+        // the meadow fades in over the sand as it grows (fully green at the full island).
+        val landLayer = Modifier.fillMaxSize().graphicsLayer {
+            val k = ls * (if (plan.mirror) -1f else 1f)
+            scaleX = k; scaleY = ls
+            transformOrigin = TransformOrigin(IslandPlans.LAND_CX, IslandPlans.LAND_CY)
+        }
+        val green = IslandPlans.meadow(ls)
+        if (green < 1f) Image(painterResource(R.drawable.terrain_sand), null, landLayer, contentScale = ContentScale.FillBounds)
+        if (green > 0f) Image(
+            painterResource(R.drawable.terrain_home), null, landLayer.graphicsLayer { alpha = green },
             contentScale = ContentScale.FillBounds,
         )
         Canvas(Modifier.fillMaxSize()) {

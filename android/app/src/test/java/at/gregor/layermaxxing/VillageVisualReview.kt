@@ -9,6 +9,8 @@ import androidx.compose.ui.test.doubleClick
 
 import androidx.compose.ui.test.pinch
 
+import androidx.compose.ui.test.swipe
+
 import androidx.compose.ui.test.performTouchInput
 
 import androidx.compose.foundation.layout.height
@@ -295,6 +297,53 @@ class VillageVisualReview {
             },
         )
     }
+    /** Gerfried-Testauftrag: Gruppenraum (Gemeindehaus/CAMPFIRE) im Inselmodus mit 11 Mitgliedern
+     * an einem Tisch (RoundTable nimmt nur members.take(8) – hier sichtbar machen, ob das reicht). */
+    @Test fun campfireLinzerTaskforce() = shot("30-gruppenraum-linzer-taskforce") {
+        val crew = listOf(
+            ApiClient.UserSummary(2, "Veit", "friends", "🦊", "#2E7D32"),
+            ApiClient.UserSummary(3, "Anna", "friends", "🐻", "#1565C0"),
+            ApiClient.UserSummary(4, "Lena", "friends", "🦉", "#EF6C00"),
+            ApiClient.UserSummary(5, "Ida", "friends", "🐺", "#6A1B9A"),
+            ApiClient.UserSummary(6, "Luki", "friends", "🐰", "#C2185B"),
+            ApiClient.UserSummary(7, "Moritz", "friends", "🐨", "#00897B"),
+            ApiClient.UserSummary(8, "Sophie", "friends", "🦋", "#D81B60"),
+            ApiClient.UserSummary(9, "Jonas", "friends", "🐢", "#5D4037"),
+            ApiClient.UserSummary(10, "Clara", "friends", "🐧", "#3949AB"),
+            ApiClient.UserSummary(11, "Paul", "friends", "🦁", "#F57F17"),
+            ApiClient.UserSummary(12, "Mia", "friends", "🦄", "#8E24AA"),
+        )
+        IslandWorld(
+            ownName = "Gregor", ownEmoji = "🦉", friends = crew,
+            groups = listOf(ApiClient.Group(1, "Linzer Taskforce", 1, crew)),
+            islands = ApiClient.Islands(0, emptyList()),
+            quests = emptyList(), letters = emptyList(), topics = emptyList(), opened = emptyMap(),
+            onBack = {}, onChat = {}, onComposeLetter = {}, onOpenLetter = {},
+            onLockedTap = {}, onTopics = {}, onAllTopics = {}, onGlossary = {}, onPeople = {},
+            onCreateQuest = { _, _, _, _, _, _ -> }, onQuestDone = { _, _ -> }, onQuestDelete = {},
+            ownId = 1, startView = "map", startPlace = IsleBuilding.CAMPFIRE.name,
+            glossary = { GlossaryScreen() },
+            loadIsland = { id -> ApiClient.HomeIsland(id, emptyMap(), 0, emptyList()) },
+        )
+    }
+    /** Insel-Ausbau Scheibe 1: frische Insel (10 Punkte) = überall Baumstamm-Ruinen. */
+    @Test fun islandRuinState() = shot("31-insel-ruinen") {
+        VillageTheme(true) {
+            HubIsland(
+                decor = emptyMap(), labels = true, seed = 1L, animate = false,
+                life = ApiClient.HomeIsland(1, emptyMap(), 10, emptyList()),
+            )
+        }
+    }
+    /** Volle Insel (400 Punkte) = überall ausgebaute Gebäude (Regel-Fall). */
+    @Test fun islandBuiltState() = shot("32-insel-ausgebaut") {
+        VillageTheme(true) {
+            HubIsland(
+                decor = emptyMap(), labels = true, seed = 1L, animate = false,
+                life = ApiClient.HomeIsland(1, emptyMap(), 400, emptyList()),
+            )
+        }
+    }
     @Test fun boatSheet() = shot("25-schiff") {
         androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF4FC3C7))) {
             androidx.compose.foundation.layout.Box(
@@ -315,6 +364,17 @@ class VillageVisualReview {
     }) { Isles(start = "home") }
     @Test fun islandHomeDoubleTap() = shot("28-insel-doppeltipp", gesture = {
         rule.onRoot().performTouchInput { doubleClick(androidx.compose.ui.geometry.Offset(width * .3f, height * .62f)) }
+    }) { Isles(start = "home") }
+    /** Gerfried-Fund: Nach Doppeltipp-Zoom nach oben wischen — die Insel darf nicht
+     * aus dem Bild geschnitten werden, nur Stille-Wasser über ihr darf sichtbar sein. */
+    @Test fun islandPanUp() = shot("33-insel-wischen-hoch", gesture = {
+        rule.onRoot().performTouchInput { doubleClick(androidx.compose.ui.geometry.Offset(width * .5f, height * .6f)) }
+        repeat(40) { rule.mainClock.advanceTimeByFrame() }
+        rule.onRoot().performTouchInput {
+            swipe(androidx.compose.ui.geometry.Offset(width * .5f, height * .7f),
+                  androidx.compose.ui.geometry.Offset(width * .5f, height * .25f), 400L)
+        }
+        repeat(20) { rule.mainClock.advanceTimeByFrame() }
     }) { Isles(start = "home") }
     @Test fun islandHomeSingleTap() = shot("29-insel-einzeltipp", gesture = {
         rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick()
