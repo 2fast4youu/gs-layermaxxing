@@ -68,7 +68,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -777,12 +777,16 @@ private fun CloseIsland(title: String, subtitle: String, content: @Composable ()
         Modifier.fillMaxSize().statusBarsPadding().padding(top = 64.dp, bottom = 96.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        WorldText(title, 20.sp, modifier = Modifier.padding(top = 2.dp))
+        // Title cards draw above the island (zIndex), so a zoomed island can slide under them
+        // instead of being cut off at a hard edge.
+        WorldText(title, 20.sp, modifier = Modifier.zIndex(1f).padding(top = 2.dp))
         Spacer(Modifier.height(3.dp))
-        WorldText(subtitle, 11.sp, fill = Color(0xFFE6D3A3), display = false)
+        WorldText(subtitle, 11.sp, fill = Color(0xFFE6D3A3), display = false, modifier = Modifier.zIndex(1f))
         Spacer(Modifier.height(8.dp))
+        // No clipToBounds: the island lies on the same full-screen sea, so panning/zooming
+        // never shows a straight cut between the moving island and the static water.
         Box(
-            Modifier.fillMaxWidth().weight(1f).clipToBounds()
+            Modifier.fillMaxWidth().weight(1f)
                 .onSizeChanged { view = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
                 .pointerInput(Unit) {
                     detectTransformGestures { centroid, pan, zoomBy, _ ->
