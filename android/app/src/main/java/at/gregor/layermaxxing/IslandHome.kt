@@ -124,27 +124,32 @@ internal fun HubIsland(
     onFigure: (() -> Unit)? = null,
     lifeTags: Boolean = true,
 ) {
-    val plan = androidx.compose.runtime.remember(seed, decor) {
-        val base = IslandPlans.home(seed)
-        val decorPieces = IslandPlans.homeSlots.mapIndexedNotNull { i, (x, y) ->
+    val plan = androidx.compose.runtime.remember(seed, decor, life?.score) {
+        val base = IslandPlans.home(seed, life?.score ?: Int.MAX_VALUE)
+        val decorPieces = IslandPlans.homeSlots.mapIndexedNotNull { i, (sx, sy) ->
             val key = decor[i] ?: return@mapIndexedNotNull null
+            val (x, y) = IslandPlans.onLand(sx, sy, base.landScale)
             IsleDecor.res(key)?.let { IslandPiece(it, x, y, IsleDecor.share(key), sway = key == "palm" || key == "flag", name = IsleDecor.labels[key]) }
         }
         base.copy(pieces = base.pieces + decorPieces)
     }
     DynamicIsland(plan, modifier, animate = animate) {
         val w = maxWidth; val h = maxHeight
+        val ls = plan.landScale
         if (labels) androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-            val inland = androidx.compose.ui.geometry.Offset(size.width * .51f, size.height * .77f)
-            val tip = androidx.compose.ui.geometry.Offset(size.width * .51f, size.height * .93f)
-            drawIslandJetty(tip, inland, size.width * .035f)
+            val (ix, iy) = IslandPlans.onLand(.51f, .77f, ls)
+            val (tx, ty) = IslandPlans.onLand(.51f, .93f, ls)
+            val inland = androidx.compose.ui.geometry.Offset(size.width * ix, size.height * iy)
+            val tip = androidx.compose.ui.geometry.Offset(size.width * tx, size.height * ty)
+            drawIslandJetty(tip, inland, size.width * .035f * IslandPlans.pieceScale(ls))
         }
         if (life != null) LifeLayer(
             places = life.places, plots = life.plots, unlocks = life.plotUnlocks, here = life.here?.plot,
             showFigure = showFigure && onSlot == null, onPlot = if (onSlot == null) onPlot else null, onFigure = onFigure,
-            tags = lifeTags,
+            tags = lifeTags, landScale = ls,
         )
-        if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (x, y) ->
+        if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (sx, sy) ->
+            val (x, y) = IslandPlans.onLand(sx, sy, ls)
             val item = decor[i]
             val s = 44.dp
             Box(
@@ -156,7 +161,9 @@ internal fun HubIsland(
             ) { AppIcon(if (item == null) R.drawable.ico_add else R.drawable.ico_edit, null, tint = Isle.TealDark, size = 17.dp) }
         }
         val gate = LocalIslandTapGate.current
-        if (labels && onSlot == null) IslandPlans.homeBuildings.forEach { (b, piece) ->
+        // Signs and touch targets follow the buildings onto the grown land (not the full-size anchors).
+        val placed = androidx.compose.runtime.remember(life?.score) { IslandPlans.placedBuildings(life?.score ?: Int.MAX_VALUE) }
+        if (labels && onSlot == null) placed.forEach { (b, piece) ->
             val count = badges[b] ?: 0
             val box = w * piece.size
             // The whole building is the touch target; the pill sits at its foot.
@@ -165,8 +172,9 @@ internal fun HubIsland(
                     .worldTap("${b.label} öffnen") { gate { onBuilding(b) } },
             )
             val zoom = LocalIslandZoom.current
+            val (nx, ny) = IslandPlans.tagNudge(b, plan.landScale)
             Row(
-                Modifier.offset(x = w * piece.x - 50.dp, y = h * piece.y - 2.dp).width(100.dp)
+                Modifier.offset(x = w * (piece.x + nx) - 50.dp, y = h * (piece.y + ny) - 2.dp).width(100.dp)
                     // Counter-scale: when the island is zoomed, the sign keeps its on-screen size.
                     .graphicsLayer { val k = 1f / zoom().coerceAtLeast(1f); scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f) }
                     .then(if (onBuilding != null) Modifier.worldTap("${b.label} öffnen") { gate { onBuilding(b) } } else Modifier)

@@ -55,4 +55,46 @@ class IslandWorldTest {
         IslandPlans.homeSlots.forEach { (x, y) -> assertTrue(IslandPlans.inside(x, y)) }
         IslandPlans.homeBuildings.values.forEach { assertTrue(IslandPlans.inside(it.x, it.y, radius = .95f)) }
     }
+
+    /** Insel-Ausbau: a fresh island is a small bare sand bank and grows step by step. */
+    @Test fun freshIslandIsSmallSandBankAndGrows() {
+        val sizes = listOf(0, 25, 60, 100, 160, 240, 999).map { IslandPlans.landScale(it) }
+        assertTrue(sizes.first() <= .35f)
+        assertEquals(1f, sizes.last())
+        assertTrue(sizes.zipWithNext().all { (a, b) -> b >= a })
+        assertEquals(0f, IslandPlans.meadow(IslandPlans.landScale(0)))
+        assertEquals(1f, IslandPlans.meadow(1f))
+        // No trees on the bare sand bank, all of them on the full island.
+        val trees = setOf(R.drawable.n_pine, R.drawable.n_tree, R.drawable.n_cypress)
+        assertTrue(IslandPlans.home(1L, 0).pieces.none { it.res in trees })
+        assertEquals(4, IslandPlans.home(1L, 999).pieces.count { it.res in trees })
+    }
+
+    @Test fun everythingStaysOnTheGrowingLand() {
+        listOf(0, 25, 60, 100, 160, 240).forEach { score ->
+            val s = IslandPlans.landScale(score)
+            // Buildings (named pieces) and plots; rim trees stand on the painted coast by design.
+            IslandPlans.home(1L, score).pieces.filter { it.name != null }
+                .forEach { assertTrue("$score ${it.name}", IslandPlans.inside(it.x, it.y, s, .95f)) }
+            LifePlaces.plots.forEach { (px, py) ->
+                val (x, y) = IslandPlans.onLand(px, py, s)
+                assertTrue("$score plot", IslandPlans.inside(x, y, s, .95f))
+            }
+        }
+    }
+
+    /** Signs/touch targets read placedBuildings: on a small island they sit with the sprites, not in the sea. */
+    @Test fun signsFollowBuildingsOntoSmallIsland() {
+        val placed = IslandPlans.placedBuildings(0)
+        val sprites = IslandPlans.home(1L, 0).pieces.filter { it.name != null }
+        placed.values.forEach { p -> assertTrue(sprites.any { it.x == p.x && it.y == p.y }) }
+        placed.values.forEach { assertTrue(IslandPlans.inside(it.x, it.y, IslandPlans.landScale(0), .95f)) }
+    }
+
+    @Test fun freshIslandShowsLogRuinsAndFullIslandFinishedBuildings() {
+        val fresh = IslandPlans.home(1L, 0).pieces.map { it.res }.toSet()
+        val built = IslandPlans.home(1L, 999).pieces.map { it.res }.toSet()
+        assertTrue(R.drawable.lm_post_ruin in fresh && R.drawable.lm_post !in fresh)
+        assertTrue(R.drawable.lm_post in built && R.drawable.lm_post_ruin !in built)
+    }
 }

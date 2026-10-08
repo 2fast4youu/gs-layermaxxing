@@ -120,16 +120,18 @@ internal fun BoxWithConstraintsScope.LifeLayer(
     onPlot: ((Int) -> Unit)?,
     onFigure: (() -> Unit)?,
     tags: Boolean = true,
+    landScale: Float = 1f,
 ) {
     val w = maxWidth; val h = maxHeight
     val zoom = LocalIslandZoom.current
     val gate = LocalIslandTapGate.current
     val keep = Modifier.graphicsLayer { val k = 1f / zoom().coerceAtLeast(1f); scaleX = k; scaleY = k; transformOrigin = TransformOrigin(.5f, 0f) }
-    LifePlaces.plots.forEachIndexed { i, (x, y) ->
+    LifePlaces.plots.forEachIndexed { i, (px, py) ->
+        val (x, y) = IslandPlans.onLand(px, py, landScale)
         val place = places[i]
         val open = i < plots
         if (place == null && (!open || onPlot == null)) return@forEachIndexed
-        val box = w * LifePlaces.PLACE_SIZE
+        val box = w * LifePlaces.PLACE_SIZE * IslandPlans.pieceScale(landScale)
         val res = place?.let { LifePlaces.kind(it.kind)?.res } ?: R.drawable.place_plot
         val label = place?.let(LifePlaces::label) ?: "Bauplatz"
         Image(
@@ -144,8 +146,9 @@ internal fun BoxWithConstraintsScope.LifeLayer(
         }
     }
     if (showFigure) {
-        val (fx, fy) = LifePlaces.figureAt(here, places)
-        val fh = w * .085f
+        val (fx0, fy0) = LifePlaces.figureAt(here, places)
+        val (fx, fy) = IslandPlans.onLand(fx0, fy0, landScale)
+        val fh = w * .085f * IslandPlans.pieceScale(landScale)
         Image(
             painterResource(R.drawable.char_me), "Du",
             Modifier.offset(x = w * fx - fh * .2f, y = h * fy - fh).height(fh).width(fh * .4f)
