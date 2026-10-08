@@ -1,0 +1,30 @@
+{
+  "basis": "reconstructed from current source; not the unavailable old menuplan",
+  "edges": [
+    {"from":"MainActivity authenticated shell","action":"Chats tab","to":"ChatsScreen","evidence":"android/app/src/main/java/at/gregor/layermaxxing/MainActivity.kt:168-218; Navigation.kt:12-23"},
+    {"from":"MainActivity authenticated shell","action":"Mehr tab","to":"MoreScreen / MoreHub","evidence":"MainActivity.kt:168-218; MoreScreens.kt:141-224"},
+    {"from":"MainActivity authenticated shell","action":"Inseln tab when experiment enabled","to":"IslandWorld","evidence":"Navigation.kt:18-23; MainActivity.kt:198-205"},
+    {"from":"ChatsScreen","action":"open conversation","to":"ThreadScreen","evidence":"ChatsList.kt:143-190; ThreadScreen.kt:137-149"},
+    {"from":"ChatsScreen","action":"people / groups / topics / glossary / valley callbacks","to":"People, GroupsHub, TopicsHub, GlossaryScreen, IslandWorld","evidence":"ChatsList.kt:143-190; GregorScreens.kt:57-239; IslandWorld.kt:176-240"},
+    {"from":"ThreadScreen","action":"header menu","to":"LetterRoom, TopicsScreen, search, ThreadInfoSheet, removal/block confirmation","evidence":"ThreadScreen.kt:276-284; 696-707; 580-608"},
+    {"from":"ThreadScreen","action":"composer extras","to":"sticker tray, photo picker, voice recording, letter compose","evidence":"ThreadScreen.kt:454-482; 842-879"},
+    {"from":"IslandWorld","action":"home / friend / place tap","to":"HubIsland, FriendSheet, place sheets and place scenes","evidence":"IslandWorld.kt:176-240; 863-1187; PlaceScenes.kt:1-180"},
+    {"from":"IslandWorld","action":"post / harbour / lighthouse / library / campfire / house place keys","to":"current place-specific screen","evidence":"VillageVisualReview.kt:354-360; IslandWorld.kt:176-240"},
+    {"from":"MoreScreen","action":"menu rows","to":"settings sub-screens and account/security dialogs","evidence":"MoreScreens.kt:141-224; LayerHome.kt:1433-1560"},
+    {"from":"AuthScreen","action":"profile selector / recover / login","to":"authenticated shell or recovery flow","evidence":"MainActivity.kt:219-359"},
+    {"from":"ThreadScreen header menu","action":"Themen öffnen","to":"TopicsScreen","asset":"rendered/36-topics-screen.png","semantics":"Thema notieren …; Merken; topic cards","evidence":"ThreadScreen.kt:276-284; TopicsScreen.kt:59"},
+    {"from":"Mehr / Punkte","action":"Punkteverwaltung öffnen","to":"EpScreen","asset":"rendered/37-ep-screen.png","semantics":"Punkte; Vorschlagen; Annehmen","evidence":"SocialScreens.kt:34-103"},
+    {"from":"ThreadScreen header menu","action":"Briefe öffnen","to":"LetterRoom","asset":"rendered/38-letter-room.png","semantics":"Briefe; Brief schreiben; envelope rows","evidence":"LetterRoom.kt:77-205"},
+    {"from":"ChatsScreen","action":"Funken öffnen","to":"SparkRoom","asset":"rendered/39-spark-room.png","semantics":"Was ein Funke ist; Funke senden; Funke öffnen","evidence":"SparkScreens.kt:68-140"},
+    {"from":"ThreadScreen info","action":"Info öffnen","to":"ThreadInfoSheet","asset":"rendered/40-thread-info-sheet.png","semantics":"Freundschaftsregeln","evidence":"ThreadScreen.kt:580-582; 923-952"},
+    {"from":"Thread composer","action":"Quest aus Chat erstellen","to":"ChatQuestDialog","asset":"rendered/41-quest-dialog.png","semantics":"Quest-Titel; Erstellen","evidence":"ChatMedia.kt:271-318"},
+    {"from":"Thread glossary term","action":"Begriff öffnen","to":"GlossaryTermDialog","asset":"rendered/42-glossary-term-dialog.png","semantics":"Wörterbuch-Begriff; Schließen","evidence":"ChatMedia.kt:321-345"},
+    {"from":"IslandWorld friend","action":"Freund öffnen","to":"FriendSheet","asset":"rendered/43-friend-sheet.png","semantics":"Insel besuchen; Chat; Brief schreiben; + Neue","evidence":"IslandWorld.kt:863-943"},
+    {"from":"FriendSheet","action":"+ Neue","to":"NewQuestSheet","asset":"rendered/44-new-quest-sheet.png","semantics":"Neue Quest; Was habt ihr vor?; Quest ans Brett hängen","evidence":"IslandWorld.kt:1008-1065"},
+    {"from":"FriendSheet","action":"Namen ändern","to":"LabelDialog","asset":"rendered/45-label-dialog.png","semantics":"Wie nennst du Gerfried?; Speichern","evidence":"IslandWorld.kt:883; 1153-1180"},
+    {"from":"LayerHome security","action":"Recovery code shown","to":"RecoveryDialog","asset":"rendered/46-recovery-dialog.png","semantics":"Sicherheitscode sichern; Code kopieren; Ich habe ihn notiert","evidence":"LayerHome.kt:283; 1498-1512"},
+    {"from":"Letter proof action","action":"Prüfnachweis öffnen","to":"ProofDialog","asset":"rendered/47-proof-dialog.png","semantics":"Kryptografischer Nachweis; Öffentliche Prüfdatei exportieren; Schließen","evidence":"LayerHome.kt:284; 1515-1556"},
+    {"from":"Letter EP opportunity","action":"Punkte vorschlagen","to":"EpProposalDialog","asset":"rendered/48-ep-proposal-dialog.png","semantics":"Punkte vorschlagen; Titel (erforderlich); Vorschlagen","evidence":"ThreadScreen.kt:1268-1301"},
+    {"from":"Request inbox","action":"Anfrage öffnen","to":"RequestDialog","asset":"rendered/49-request-dialog.png","semantics":"Annehmen; Ablehnen; Später","evidence":"ThreadScreen.kt:1304-1321"}
+  ]
+}

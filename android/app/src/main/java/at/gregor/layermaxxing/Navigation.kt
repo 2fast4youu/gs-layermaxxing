@@ -9,10 +9,11 @@ package at.gregor.layermaxxing
  * experiment and only appears when its flag is on. Keeping the tab list a pure
  * function makes the "flag off means nothing changes" guarantee testable.
  */
-enum class MainTab(val icon: String, val label: String) {
-    CHATS("💬", "Chats"),
-    MORE("⚙", "Mehr"),
-    CASTLES("🏝", "Inseln"),
+/** Icons live in [AppIcons.tab]; the enum only names the tab. */
+enum class MainTab(val label: String) {
+    CHATS("Chats"),
+    MORE("Mehr"),
+    CASTLES("Inseln"),
 }
 
 object Navigation {

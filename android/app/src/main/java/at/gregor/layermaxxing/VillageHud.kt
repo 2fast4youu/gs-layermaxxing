@@ -134,15 +134,15 @@ internal data class VillageHudInfo(
 )
 
 internal fun ValleyDestination.iconRes(): Int = when (this) {
-    ValleyDestination.CONVERSATIONS -> R.drawable.ic_chat
-    ValleyDestination.TOPICS -> R.drawable.ic_topics
-    ValleyDestination.GROUPS -> R.drawable.ic_groups
-    ValleyDestination.PEOPLE -> R.drawable.ic_people
-    ValleyDestination.GLOSSARY -> R.drawable.ic_glossary
-    ValleyDestination.SPARKS -> R.drawable.ic_sparks
-    ValleyDestination.ARCHIVE -> R.drawable.ic_letter
-    ValleyDestination.EP -> R.drawable.ic_ep
-    ValleyDestination.SETTINGS -> R.drawable.ic_settings
+    ValleyDestination.CONVERSATIONS -> R.drawable.ico_chats
+    ValleyDestination.TOPICS -> R.drawable.ico_topics
+    ValleyDestination.GROUPS -> R.drawable.ico_groups
+    ValleyDestination.PEOPLE -> R.drawable.ico_people
+    ValleyDestination.GLOSSARY -> R.drawable.ico_glossary
+    ValleyDestination.SPARKS -> R.drawable.ico_spark
+    ValleyDestination.ARCHIVE -> R.drawable.ico_letter
+    ValleyDestination.EP -> R.drawable.ico_points
+    ValleyDestination.SETTINGS -> R.drawable.ico_more
 }
 
 /** Label without its legacy emoji prefix: the painted icon carries the meaning now. */
@@ -363,7 +363,7 @@ internal fun ActivityBursts(activities: List<VillageActivity>, scope: PlateScope
                         },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Image(painterResource(a.destination.iconRes()), null, Modifier.size(26.dp * unit))
+                    AppIcon(a.destination.iconRes(), null, tint = Kit.Gold, size = 26.dp * unit)
                     GameText("+${a.count}", size = 16.sp * unit, color = Kit.Gold)
                 }
             }
@@ -490,68 +490,6 @@ internal fun GameButton(text: String, onClick: () -> Unit, modifier: Modifier = 
     }
 }
 
-/**
- * Bottom card for the selected building: what it is, what is new there, one
- * clear way in. Ivory with a single fine gold line, like a printed game card.
- */
-@Composable
-internal fun BuildingCard(
-    icon: Int?,
-    emoji: String?,
-    title: String,
-    detail: String,
-    news: String?,
-    action: String,
-    onAction: () -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-    secondary: Pair<String, () -> Unit>? = null,
-) {
-    val shape = RoundedCornerShape(24.dp)
-    Box(modifier.fillMaxWidth()) {
-        Row(
-            Modifier.padding(top = 14.dp).fillMaxWidth()
-                .shadow(16.dp, shape, ambientColor = Kit.Navy, spotColor = Kit.Navy)
-                .background(Kit.parchmentBrush, shape)
-                .padding(3.dp).border(1.dp, Kit.Trim.copy(alpha = .7f), RoundedCornerShape(21.dp))
-                .padding(start = 76.dp, end = 12.dp, top = 14.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = TextStyle(color = Kit.Ink, fontSize = 20.sp, fontFamily = Kit.Display), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(detail, style = TextStyle(color = Kit.InkSoft, fontSize = 12.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp),
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (news != null) Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).background(Kit.Red, CircleShape))
-                    Text(" $news", style = TextStyle(color = Kit.Red, fontSize = 12.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                GameButton(action, onAction, Modifier.fillMaxWidth())
-                secondary?.let { (label, run) -> GameButton(label, run, Modifier.fillMaxWidth(), primary = false) }
-            }
-        }
-        Box(
-            Modifier.padding(start = 12.dp).size(64.dp)
-                .shadow(8.dp, CircleShape, ambientColor = Kit.Navy, spotColor = Kit.Navy)
-                .background(Color.White, CircleShape).padding(2.5.dp)
-                .background(Brush.radialGradient(listOf(Color.White, Kit.Ivory, Kit.IvoryDeep)), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (icon != null) Image(painterResource(icon), null, Modifier.size(50.dp))
-            else Text(emoji ?: "", fontSize = 30.sp)
-        }
-        Box(
-            Modifier.align(Alignment.TopEnd).padding(top = 22.dp, end = 10.dp).size(28.dp).clip(CircleShape)
-                .background(Kit.Navy.copy(alpha = .08f), CircleShape)
-                .semantics { contentDescription = "Schließen"; role = Role.Button }
-                .clickable(onClick = onDismiss),
-            contentAlignment = Alignment.Center,
-        ) { Text("✕", color = Kit.InkSoft, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-    }
-}
-
 /** Header for rooms inside the island world: breadcrumb back to the island, then a teal title bar. */
 @Composable
 internal fun RoomHeader(icon: Int, title: String, onBack: (() -> Unit)?, onClose: () -> Unit) {
@@ -564,7 +502,7 @@ internal fun RoomHeader(icon: Int, title: String, onBack: (() -> Unit)?, onClose
                 .semantics { contentDescription = "Zurück zur Insel"; role = Role.Button },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("‹", fontSize = 22.sp, color = Isle.Teal, fontWeight = FontWeight.Bold)
+            AppIcon(R.drawable.ico_back, null, tint = Isle.Teal, size = 24.dp)
             Spacer(Modifier.width(8.dp))
             Text("Insel", fontSize = 15.sp, color = Isle.Ink, fontWeight = FontWeight.Bold)
             Text("  ›  ", fontSize = 15.sp, color = Isle.Muted)
@@ -577,25 +515,25 @@ internal fun RoomHeader(icon: Int, title: String, onBack: (() -> Unit)?, onClose
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).background(Color.White, CircleShape).padding(4.dp),
+                Modifier.size(44.dp).background(Color(0xFFFBF6EA), CircleShape).padding(4.dp),
                 contentAlignment = Alignment.Center,
-            ) { Image(painterResource(icon), null, Modifier.size(34.dp)) }
+            ) { AppIcon(icon, null, tint = Isle.TealDark, size = 24.dp) }
             Text(title, fontSize = 20.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f).padding(start = 12.dp))
-            if (onBack != null) SmallRound("‹", "Zurück", onBack)
+            if (onBack != null) SmallRound(R.drawable.ico_back, "Zurück", onBack)
             Spacer(Modifier.width(6.dp))
-            SmallRound("✕", "Zurück zur Insel", onClose)
+            SmallRound(R.drawable.ico_close, "Zurück zur Insel", onClose)
         }
     }
 }
 
 @Composable
-private fun SmallRound(glyph: String, description: String, onClick: () -> Unit) {
+private fun SmallRound(icon: Int, description: String, onClick: () -> Unit) {
     Box(
         Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = .14f), CircleShape)
             .semantics { contentDescription = description; role = Role.Button }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { GameText(glyph, size = 18.sp) }
+    ) { AppIcon(icon, null, tint = Color.White, size = 20.dp) }
 }
 
 
@@ -682,7 +620,7 @@ internal fun FreshBanner(destination: ValleyDestination, onOpen: () -> Unit, onD
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(32.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
-            Image(painterResource(destination.iconRes()), null, Modifier.size(26.dp))
+            AppIcon(destination.iconRes(), null, tint = Kit.Navy, size = 20.dp)
         }
         GameText("Neu: ", size = 14.sp, color = Kit.Gold, modifier = Modifier.padding(start = 8.dp))
         GameText(destination.title, size = 14.sp, modifier = Modifier.widthIn(max = 170.dp))
@@ -690,7 +628,7 @@ internal fun FreshBanner(destination: ValleyDestination, onOpen: () -> Unit, onD
             Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onDismiss)
                 .semantics { contentDescription = "Schließen"; role = Role.Button },
             contentAlignment = Alignment.Center,
-        ) { GameText("✕", size = 13.sp, color = Color.White.copy(alpha = .7f)) }
+        ) { AppIcon(R.drawable.ico_close, null, tint = Color.White.copy(alpha = .7f), size = 14.dp) }
     }
 }
 

@@ -56,13 +56,14 @@ import androidx.compose.ui.unit.sp
  * buildings ARE the menus (harbour, post, library, hall, lighthouse, house),
  * the open lawns are decoration slots.
  */
-internal enum class IsleBuilding(val emoji: String, val label: String) {
-    HOUSE("🏠", "Mein Haus"),
-    LIGHTHOUSE("👥", "Freunde"),
-    POST("✉", "Post"),
-    LIBRARY("📖", "Wörterbuch"),
-    CAMPFIRE("🔥", "Gruppen"),
-    HARBOUR("⚓", "Hafen"),
+/** Icons live in [AppIcons.building]; the painted sprites stay on the island itself. */
+internal enum class IsleBuilding(val label: String) {
+    HOUSE("Mein Haus"),
+    LIGHTHOUSE("Freunde"),
+    POST("Post"),
+    LIBRARY("Wörterbuch"),
+    CAMPFIRE("Gruppen"),
+    HARBOUR("Hafen"),
 }
 
 internal object IsleDecor {
@@ -152,7 +153,7 @@ internal fun HubIsland(
                     .border(2.dp, Isle.Teal, CircleShape)
                     .clickable(onClickLabel = if (item == null) "Deko setzen" else "Deko ändern") { onSlot(i) },
                 Alignment.Center,
-            ) { Text(if (item == null) "+" else "✎", color = Isle.TealDark, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+            ) { AppIcon(if (item == null) R.drawable.ico_add else R.drawable.ico_edit, null, tint = Isle.TealDark, size = 17.dp) }
         }
         val gate = LocalIslandTapGate.current
         if (labels && onSlot == null) IslandPlans.homeBuildings.forEach { (b, piece) ->
@@ -211,7 +212,7 @@ internal fun DecorPickerContent(
     run {
         Column(Modifier.padding(horizontal = 20.dp).navigationBarsPadding()) {
             Text("Deko wählen", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Isle.Ink)
-            Text("Rein zur Zierde. Neue Deko schaltest du mit Quests frei · du hast ⭐$score", color = Isle.Muted, fontSize = 13.sp)
+            Text("Rein zur Zierde. Neue Deko schaltest du mit Quests frei · du hast $score Punkte", color = Isle.Muted, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
             LazyVerticalGrid(GridCells.Fixed(3), Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(items, key = { it.key }) { item ->
@@ -228,7 +229,10 @@ internal fun DecorPickerContent(
                             Image(painterResource(it), null, Modifier.size(56.dp).alpha(if (item.unlocked) 1f else .35f))
                         }
                         Text(IsleDecor.labels[item.key] ?: item.key, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Isle.Ink, textAlign = TextAlign.Center, maxLines = 1)
-                        Text(if (item.unlocked) " " else "🔒 ab ⭐${item.unlockAt}", fontSize = 10.sp, color = Isle.Muted)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!item.unlocked) AppIcon(R.drawable.ico_lock, null, tint = Isle.Muted, size = 11.dp)
+                    Text(if (item.unlocked) " " else " ab ${item.unlockAt}", fontSize = 10.sp, color = Isle.Muted)
+                }
                     }
                 }
             }

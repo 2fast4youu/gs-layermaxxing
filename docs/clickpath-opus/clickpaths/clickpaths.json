@@ -1,0 +1,273 @@
+{
+ "journeys": [
+  {
+   "title": "Mit einem Freund chatten",
+   "taps": 2,
+   "file": "01-mit-einem-freund-chatten.png"
+  },
+  {
+   "title": "Brief an einen Freund schreiben",
+   "taps": 2,
+   "file": "02-brief-an-einen-freund-schreiben.png"
+  },
+  {
+   "title": "Neuen Brief lesen",
+   "taps": 3,
+   "file": "03-neuen-brief-lesen.png"
+  },
+  {
+   "title": "Quest mit Freund anlegen",
+   "taps": 2,
+   "file": "04-quest-mit-freund-anlegen.png"
+  },
+  {
+   "title": "Freund einen Spitznamen geben",
+   "taps": 3,
+   "file": "05-freund-einen-spitznamen-geben.png"
+  },
+  {
+   "title": "„Ich bin hier“ / Status setzen",
+   "taps": 2,
+   "file": "06-ich-bin-hier-status-setzen.png"
+  },
+  {
+   "title": "Lebensort bauen",
+   "taps": 3,
+   "file": "07-lebensort-bauen.png"
+  },
+  {
+   "title": "Deko setzen",
+   "taps": 3,
+   "file": "08-deko-setzen.png"
+  },
+  {
+   "title": "Gruppe erstellen",
+   "taps": 3,
+   "file": "09-gruppe-erstellen.png"
+  },
+  {
+   "title": "Thema fürs nächste Gespräch notieren",
+   "taps": 4,
+   "file": "10-thema-furs-nachste-gesprach-noti.png"
+  },
+  {
+   "title": "Freunde finden",
+   "taps": 2,
+   "file": "11-freunde-finden.png"
+  },
+  {
+   "title": "Einstellungen / Debug-Modus",
+   "taps": 3,
+   "file": "12-einstellungen-debug-modus.png"
+  },
+  {
+   "title": "Punkte ansehen",
+   "taps": 1,
+   "file": "13-punkte-ansehen.png"
+  },
+  {
+   "title": "Raus aus der Insel → Hauptmenü (NEU)",
+   "taps": 1,
+   "file": "14-raus-aus-der-insel-hauptmenu-neu.png"
+  },
+  {
+   "title": "Thema notieren (Messenger, NEU)",
+   "taps": 4,
+   "file": "15-thema-notieren-messenger-neu.png"
+  },
+  {
+   "title": "Spitzname im Messenger (NEU)",
+   "taps": 3,
+   "file": "16-spitzname-im-messenger-neu.png"
+  },
+  {
+   "title": "Freundschaftsregeln (NEU kürzer)",
+   "taps": 2,
+   "file": "17-freundschaftsregeln-neu-kurzer.png"
+  }
+ ],
+ "theme": {
+  "03-room": [
+   "FITS",
+   "Hafenpapier + gedämpftes Teal"
+  ],
+  "05-chats": [
+   "FITS",
+   "Hafenpapier, gedämpftes Teal"
+  ],
+  "06-thread": [
+   "PARTLY",
+   "Kopf jetzt Teal; Sprechblasen sehr hell"
+  ],
+  "07-glossary": [
+   "FITS",
+   "Creme + Teal, ruhig"
+  ],
+  "08-topics-room": [
+   "FITS",
+   "Teal-Rahmen, Creme-Panel"
+  ],
+  "09-groups-room": [
+   "FITS",
+   "Teal-Rahmen, Creme-Panel"
+  ],
+  "12-empty-chats": [
+   "FITS",
+   "Hafen-Text + Boot-Illustration"
+  ],
+  "13-chat-extras": [
+   "PARTLY",
+   "ok, aber unruhig: viele Emoji/Werkzeuge"
+  ],
+  "13-login": [
+   "PARTLY",
+   "Formular Hafenpost; bunte Szene dahinter"
+  ],
+  "14-chat-actions": [
+   "PARTLY",
+   "loses Werkzeug-Palette"
+  ],
+  "14-more": [
+   "FITS",
+   "Hafenpost statt Lavendel"
+  ],
+  "20-inseln": [
+   "FITS",
+   "Kernstil"
+  ],
+  "21-inseln-leer": [
+   "FITS",
+   "Kernstil"
+  ],
+  "22-meine-insel": [
+   "FITS",
+   "Kernstil, Leiste mit Chats"
+  ],
+  "23-besuch": [
+   "FITS",
+   "Kernstil"
+  ],
+  "24-deko-wahl": [
+   "FITS",
+   "Hafenpapier statt Weiß"
+  ],
+  "25-bauen": [
+   "FITS",
+   "Hafenpapier statt Weiß"
+  ],
+  "25-schiff": [
+   "FITS",
+   "dunkles Glas-Sheet über Meer"
+  ],
+  "26-inseln-debug": [
+   "DEBUG",
+   "nur Debug-Modus (Hitboxen) – kein Theme-Thema"
+  ],
+  "26-ort": [
+   "FITS",
+   "Hafenpapier statt Weiß"
+  ],
+  "27-insel-zoom": [
+   "FITS",
+   "Kernstil"
+  ],
+  "28-insel-doppeltipp": [
+   "FITS",
+   "Kernstil"
+  ],
+  "29-insel-einzeltipp": [
+   "FITS",
+   "Postamt, Holz + Siegel"
+  ],
+  "30-post": [
+   "FITS",
+   "Holz, Umschläge, Wachssiegel"
+  ],
+  "31-hafen": [
+   "FITS",
+   "Kork, Zettel, Küste"
+  ],
+  "32-leuchtturm": [
+   "FITS",
+   "Küste, Holzschild"
+  ],
+  "33-bibliothek": [
+   "FITS",
+   "Holz + Papier"
+  ],
+  "34-gemeindehaus": [
+   "FITS",
+   "warmes Holz"
+  ],
+  "35-haus": [
+   "FITS",
+   "gemaltes Portrait, Holz"
+  ],
+  "36-topics-screen": [
+   "FITS",
+   "Hafenpost statt Weiß"
+  ],
+  "37-ep-screen": [
+   "FITS",
+   "Creme + Teal statt Blaugrau"
+  ],
+  "38-letter-room": [
+   "FITS",
+   "hell statt dunkelbraun"
+  ],
+  "39-spark-room": [
+   "FITS",
+   "Sand + Teal-Knopf"
+  ],
+  "40-thread-info-sheet": [
+   "FITS",
+   "Hafenpost statt Weiß"
+  ],
+  "41-quest-dialog": [
+   "FITS",
+   "das eine Quest-Formular"
+  ],
+  "42-glossary-term-dialog": [
+   "FITS",
+   "Creme-Dialog"
+  ],
+  "43-friend-sheet": [
+   "FITS",
+   "Inselbild, Teal/Creme"
+  ],
+  "44-new-quest-sheet": [
+   "FITS",
+   "dasselbe Quest-Formular"
+  ],
+  "45-label-dialog": [
+   "FITS",
+   "Creme-Dialog"
+  ],
+  "46-recovery-dialog": [
+   "FITS",
+   "Creme-Dialog"
+  ],
+  "47-proof-dialog": [
+   "FITS",
+   "Creme-Dialog"
+  ],
+  "48-ep-proposal-dialog": [
+   "FITS",
+   "Creme-Dialog"
+  ],
+  "49-request-dialog": [
+   "FITS",
+   "Creme-Dialog"
+  ],
+  "50-friend-page": [
+   "FITS",
+   "NEU: neutrale Freund-Seite"
+  ]
+ },
+ "counts": {
+  "FITS": 39,
+  "PARTLY": 4,
+  "OLD": 0,
+  "DEBUG": 1
+ }
+}

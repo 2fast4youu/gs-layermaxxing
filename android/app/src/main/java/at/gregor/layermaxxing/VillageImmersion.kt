@@ -30,18 +30,19 @@ internal fun VillageTheme(enabled: Boolean, content: @Composable () -> Unit) {
     fun TextStyle.display() = copy(fontFamily = Kit.Display, fontWeight = FontWeight.Normal)
     MaterialTheme(
         colorScheme = lightColorScheme(
-            primary = Color(0xFF17A2A6), onPrimary = Color.White,
-            primaryContainer = Color(0xFFCFF1F0), onPrimaryContainer = Color(0xFF0B3F42),
-            secondary = Color(0xFF2F5E9E), onSecondary = Color.White,
-            secondaryContainer = Color(0xFFDCE7F6), onSecondaryContainer = Color(0xFF0F2747),
-            tertiary = Color(0xFFB5832A), onTertiary = Color.White,
-            background = Color.White, onBackground = Color(0xFF1F3B4D),
-            surface = Color.White, onSurface = Color(0xFF1F3B4D),
-            surfaceVariant = Color(0xFFEFF7F7), onSurfaceVariant = Color(0xFF5E7884),
-            outline = Color(0xFFB7D3D6), outlineVariant = Color(0xFFDDEDEE),
-            surfaceContainer = Color(0xFFF2F9F9), surfaceContainerHigh = Color(0xFFEAF5F5),
-            surfaceContainerLow = Color(0xFFF7FBFB), surfaceContainerLowest = Color.White,
-            surfaceContainerHighest = Color(0xFFE2F0F1), surfaceDim = Color(0xFFDCEBEC), surfaceBright = Color.White,
+            // Island rooms: harbour paper with the muted Nordic teal of the map – no plain white.
+            primary = Color(0xFF3F7C78), onPrimary = Color.White,
+            primaryContainer = Color(0xFFD5ECE6), onPrimaryContainer = Color(0xFF173A40),
+            secondary = Color(0xFF2F5D5A), onSecondary = Color.White,
+            secondaryContainer = Color(0xFFEFE3CA), onSecondaryContainer = Color(0xFF3B3122),
+            tertiary = Color(0xFFC9A55C), onTertiary = Color.White,
+            background = Color(0xFFFBF3E2), onBackground = Color(0xFF1F3B4D),
+            surface = Color(0xFFFBF3E2), onSurface = Color(0xFF1F3B4D),
+            surfaceVariant = Color(0xFFF1E6CE), onSurfaceVariant = Color(0xFF6B6250),
+            outline = Color(0xFFC9B892), outlineVariant = Color(0xFFE6D9BC),
+            surfaceContainer = Color(0xFFF7EEDA), surfaceContainerHigh = Color(0xFFF3E8D1),
+            surfaceContainerLow = Color(0xFFFAF2E2), surfaceContainerLowest = Color(0xFFFFFBF2),
+            surfaceContainerHighest = Color(0xFFEFE3CA), surfaceDim = Color(0xFFE9DDC3), surfaceBright = Color(0xFFFFFBF2),
         ),
         typography = Typography(
             displayLarge = base.displayLarge.display(), displayMedium = base.displayMedium.display(), displaySmall = base.displaySmall.display(),
@@ -66,7 +67,7 @@ internal fun VillageTheme(enabled: Boolean, content: @Composable () -> Unit) {
 internal fun VillageRoom(
     enabled: Boolean,
     mapBehind: Boolean = false,
-    icon: Int = R.drawable.ic_settings,
+    icon: Int = R.drawable.ico_more,
     title: String = "",
     onClose: () -> Unit,
     content: @Composable () -> Unit,
@@ -92,7 +93,7 @@ internal fun VillageRoom(
             Box(
                 Modifier.weight(1f, fill = false).fillMaxWidth()
                     .shadow(12.dp, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
-                    .background(Color.White, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
+                    .background(Isle.Card, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
                     .clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)),
             ) { CompositionLocalProvider(LocalInVillageRoom provides true) { content() } }
         }

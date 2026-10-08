@@ -26,14 +26,18 @@ class IsleMotionTest {
     }
 
     @Test fun seaTimeSpeaksSailor() {
-        assertEquals("⚓ vor Anker · wartet auf Wind", IsleMotion.seaTime(null, 0L))
-        assertEquals("⚓ Anker", IsleMotion.seaTimeShort(null, 0L))
-        assertEquals("🌊 2 Tage", IsleMotion.seaTimeShort(2 * 86_400L + 5, 0L))
-        assertEquals("🔔 Land in Sicht!", IsleMotion.seaTime(100L, 100L))
+        assertEquals("vor Anker · wartet auf Wind", IsleMotion.seaTime(null, 0L))
+        assertEquals("Anker", IsleMotion.seaTimeShort(null, 0L))
+        assertEquals("2 Tage", IsleMotion.seaTimeShort(2 * 86_400L + 5, 0L))
+        assertEquals("Land in Sicht!", IsleMotion.seaTime(100L, 100L))
         assertTrue(IsleMotion.seaTime(1_800L, 0L).contains("30 Min"))
         assertTrue(IsleMotion.seaTime(5 * 3600L, 0L).contains("5 Stunden"))
         assertTrue(IsleMotion.seaTime(3 * 86_400L, 0L).contains("3 Tage"))
         assertTrue(IsleMotion.seaTime(15 * 86_400L, 0L).contains("2 Wochen"))
+        // Interface symbols are line icons now, never emoji in the text.
+        assertEquals(R.drawable.ico_harbour, IsleMotion.seaIcon(null, 0L))
+        assertEquals(R.drawable.ico_date, IsleMotion.seaIcon(2 * 86_400L, 0L))
+        assertEquals(R.drawable.ico_bell, IsleMotion.seaIcon(5L, 10L))
     }
 
     @Test fun timedBoatMovesForwardAndNeverWraps() {

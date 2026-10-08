@@ -41,7 +41,7 @@ class SparkTest {
     @Test
     fun theCoverNamesNobody() {
         // The heading a recipient sees is fixed copy, so it cannot grow a name.
-        assertEquals("Für dich ✨", Sparks.COVER)
+        assertEquals("Für dich", Sparks.COVER)
         assertFalse(Sparks.COVER.contains("von", ignoreCase = true))
     }
 

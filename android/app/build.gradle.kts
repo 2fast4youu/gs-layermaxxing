@@ -35,8 +35,8 @@ android {
         applicationId = "at.gregor.layermaxxing.gerfried"
         minSdk = 26
         targetSdk = 36
-        versionCode = 53
-        versionName = "7.7.1-uebersicht"
+        versionCode = 57
+        versionName = "7.9.1-medienfix"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GREGOR_API_BASE_URL", "\"$gregorApiBaseUrl\"")
         buildConfigField("String", "GERFRIED_API_BASE_URL", "\"$gerfriedApiBaseUrl\"")
@@ -74,6 +74,8 @@ dependencies {
     implementation(libs.okhttp.dnsoverhttps)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.biometric)
+    // biometric 1.1.0 pulls fragment 1.2.5; pin a modern one so MainActivity (FragmentActivity) accepts ActivityResult launchers.
+    implementation(libs.androidx.fragment.ktx)
     testImplementation(libs.junit)
     testImplementation(libs.json)
     // Visual review only: renders composables to PNG on the JVM; not packaged in the APK.

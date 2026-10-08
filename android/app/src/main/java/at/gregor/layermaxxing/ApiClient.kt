@@ -326,8 +326,8 @@ class ApiClient(
         val lastText = when {
             it.optBoolean("last_deleted") -> "Nachricht gelöscht"
             else -> when (it.optString("last_kind", "text")) {
-                "image" -> "📷 Foto"
-                "voice" -> "🍾 Flaschenpost"
+                "image" -> "Foto"
+                "voice" -> "Flaschenpost"
                 "sticker" -> "Sticker"
                 else -> decrypted
             }

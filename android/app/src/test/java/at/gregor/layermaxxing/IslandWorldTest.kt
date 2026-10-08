@@ -35,7 +35,7 @@ class IslandWorldTest {
 
     @Test fun levelNamesAndUnknownIconsAreSafe() {
         assertEquals("Neu", Isle.levelName(0)); assertEquals("Beste Freunde", Isle.levelName(9))
-        assertEquals("⭐", Isle.questEmoji("??")); assertEquals("🥾", Isle.questEmoji("hike"))
+        assertEquals(R.drawable.ico_q_star, AppIcons.questIcon("??")); assertEquals(R.drawable.ico_q_hike, AppIcons.questIcon("hike"))
     }
 
     @Test fun serverFriendsAppearOnMap() {

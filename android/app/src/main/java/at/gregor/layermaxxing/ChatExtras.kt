@@ -139,8 +139,8 @@ internal object ChatExtras {
     /** What a line says in previews, quotes and the action sheet. */
     fun previewText(message: ApiClient.ChatMessage): String = when {
         message.deleted -> "Nachricht gelöscht"
-        message.kind == "image" -> "📷 Foto" + message.text.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
-        message.kind == "voice" -> "🍾 Flaschenpost" + message.text.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
+        message.kind == "image" -> "Foto" + message.text.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
+        message.kind == "voice" -> "Flaschenpost" + message.text.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
         message.kind == "sticker" -> "Sticker: " + (stickerKey(message)?.let(::stickerLabel) ?: "Sticker")
         else -> ChatTools.parseReply(message.text).second
     }
@@ -163,5 +163,5 @@ internal object ChatExtras {
 
     /** The little growth note shown once a shared chat day counts. */
     fun growthNote(presence: ApiClient.ChatPresence): String =
-        "🌱 Chat-Tag gezählt · ${presence.chatDays} gemeinsame Tage lassen eure Insel wachsen"
+        "Chat-Tag gezählt · ${presence.chatDays} gemeinsame Tage lassen eure Insel wachsen"
 }

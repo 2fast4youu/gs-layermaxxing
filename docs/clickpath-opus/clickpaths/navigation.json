@@ -1,0 +1,1199 @@
+{
+ "nodes": {
+  "login": {
+   "screenshot": "13-login",
+   "name": "Login"
+  },
+  "chats": {
+   "screenshot": "05-chats",
+   "name": "Chats (Tab)"
+  },
+  "more": {
+   "screenshot": "14-more",
+   "name": "Mehr (Tab)"
+  },
+  "map": {
+   "screenshot": "20-inseln",
+   "name": "Inselkarte (Tab Inseln / Leiste Karte)"
+  },
+  "home": {
+   "screenshot": "22-meine-insel",
+   "name": "Meine Insel (Leiste)"
+  },
+  "harbour": {
+   "screenshot": "31-hafen",
+   "name": "Hafen (Leiste)"
+  },
+  "thread": {
+   "screenshot": "06-thread",
+   "name": "Chat"
+  },
+  "extras": {
+   "screenshot": "13-chat-extras",
+   "name": "Chat-Extras"
+  },
+  "actions": {
+   "screenshot": "14-chat-actions",
+   "name": "Reaktionen"
+  },
+  "search": {
+   "screenshot": null,
+   "name": "Im Chat suchen"
+  },
+  "confirm": {
+   "screenshot": null,
+   "name": "Entfernen / Blockieren"
+  },
+  "info": {
+   "screenshot": "40-thread-info-sheet",
+   "name": "Info & Verschlüsselung"
+  },
+  "friendpage": {
+   "screenshot": "50-friend-page",
+   "name": "Freund-Seite (neutral, NEU)"
+  },
+  "rules": {
+   "screenshot": null,
+   "name": "Freundschaftsregeln"
+  },
+  "letterroom": {
+   "screenshot": "38-letter-room",
+   "name": "Briefe mit Freund"
+  },
+  "topics": {
+   "screenshot": "36-topics-screen",
+   "name": "Themen (Liste)"
+  },
+  "questdlg": {
+   "screenshot": "41-quest-dialog",
+   "name": "Chat → Quest"
+  },
+  "glossdlg": {
+   "screenshot": "42-glossary-term-dialog",
+   "name": "Begriff"
+  },
+  "epprop": {
+   "screenshot": "48-ep-proposal-dialog",
+   "name": "Punkte vorschlagen"
+  },
+  "request": {
+   "screenshot": "49-request-dialog",
+   "name": "Anfrage (Pop-up)"
+  },
+  "compose": {
+   "screenshot": null,
+   "name": "Brief schreiben"
+  },
+  "letteropen": {
+   "screenshot": null,
+   "name": "Brief lesen"
+  },
+  "proof": {
+   "screenshot": "47-proof-dialog",
+   "name": "Nachweis"
+  },
+  "people": {
+   "screenshot": null,
+   "name": "Leute / Freunde finden"
+  },
+  "groupnew": {
+   "screenshot": null,
+   "name": "Gruppe erstellen"
+  },
+  "sparks": {
+   "screenshot": "39-spark-room",
+   "name": "Funken"
+  },
+  "sparknew": {
+   "screenshot": null,
+   "name": "Funke senden"
+  },
+  "groups": {
+   "screenshot": "09-groups-room",
+   "name": "Gruppen"
+  },
+  "topicshub": {
+   "screenshot": "08-topics-room",
+   "name": "Themen-Übersicht"
+  },
+  "glossary": {
+   "screenshot": "07-glossary",
+   "name": "Wörterbuch"
+  },
+  "letters": {
+   "screenshot": null,
+   "name": "Briefe-Archiv"
+  },
+  "ep": {
+   "screenshot": "37-ep-screen",
+   "name": "Punkte"
+  },
+  "profile": {
+   "screenshot": null,
+   "name": "Profil"
+  },
+  "appearance": {
+   "screenshot": null,
+   "name": "Darstellung / Modus / Debug"
+  },
+  "account": {
+   "screenshot": null,
+   "name": "Konto & Sicherheit"
+  },
+  "about": {
+   "screenshot": null,
+   "name": "Über die App"
+  },
+  "recovery": {
+   "screenshot": "46-recovery-dialog",
+   "name": "Sicherheitscode"
+  },
+  "accounts": {
+   "screenshot": null,
+   "name": "Konten wechseln"
+  },
+  "settings": {
+   "screenshot": "14-more",
+   "name": "Einstellungen (aus Haus)"
+  },
+  "friend": {
+   "screenshot": "43-friend-sheet",
+   "name": "Freundes-Sheet"
+  },
+  "label": {
+   "screenshot": "45-label-dialog",
+   "name": "Spitzname"
+  },
+  "newquest": {
+   "screenshot": "44-new-quest-sheet",
+   "name": "Neue Quest (ein Formular)"
+  },
+  "visit": {
+   "screenshot": "23-besuch",
+   "name": "Insel besuchen"
+  },
+  "boat": {
+   "screenshot": "25-schiff",
+   "name": "Boot"
+  },
+  "post": {
+   "screenshot": "30-post",
+   "name": "Post"
+  },
+  "lighthouse": {
+   "screenshot": "32-leuchtturm",
+   "name": "Leuchtturm"
+  },
+  "hall": {
+   "screenshot": "34-gemeindehaus",
+   "name": "Gemeindehaus"
+  },
+  "library": {
+   "screenshot": "33-bibliothek",
+   "name": "Bibliothek"
+  },
+  "house": {
+   "screenshot": "35-haus",
+   "name": "Mein Haus"
+  },
+  "place": {
+   "screenshot": "26-ort",
+   "name": "Lebensort"
+  },
+  "build": {
+   "screenshot": "25-bauen",
+   "name": "Bauen"
+  },
+  "decor": {
+   "screenshot": "24-deko-wahl",
+   "name": "Deko"
+  }
+ },
+ "edges": [
+  {
+   "from": "chats",
+   "to": "thread",
+   "tap": "Zeile",
+   "mode": "B",
+   "src": "ChatsList.kt:143 onOpen"
+  },
+  {
+   "from": "chats",
+   "to": "people",
+   "tap": "Neuer Chat",
+   "mode": "B",
+   "src": "ChatsList.kt:233/259 onGoPeople"
+  },
+  {
+   "from": "chats",
+   "to": "sparks",
+   "tap": "Funken",
+   "mode": "B",
+   "src": "ChatsList.kt:220"
+  },
+  {
+   "from": "chats",
+   "to": "sparknew",
+   "tap": "Funke-Knopf",
+   "mode": "B",
+   "src": "ChatsList.kt:253"
+  },
+  {
+   "from": "chats",
+   "to": "groups",
+   "tap": "Chip Gruppen (immer)",
+   "mode": "B",
+   "src": "ChatsList.kt Chip"
+  },
+  {
+   "from": "chats",
+   "to": "topicshub",
+   "tap": "Chip Themen (immer)",
+   "mode": "B",
+   "src": "ChatsList.kt Chip"
+  },
+  {
+   "from": "chats",
+   "to": "glossary",
+   "tap": "Chip Wörterbuch",
+   "mode": "B",
+   "src": "ChatsList.kt Chip"
+  },
+  {
+   "from": "chats",
+   "to": "map",
+   "tap": "Chip Inseln",
+   "mode": "I",
+   "src": "ChatsList.kt Chip"
+  },
+  {
+   "from": "chats",
+   "to": "request",
+   "tap": "automatisch",
+   "mode": "B",
+   "src": "LayerHome.kt:571"
+  },
+  {
+   "from": "chats",
+   "to": "map",
+   "tap": "Tab Inseln",
+   "mode": "I",
+   "src": "AppMode.kt:17"
+  },
+  {
+   "from": "chats",
+   "to": "more",
+   "tap": "Tab Mehr",
+   "mode": "B",
+   "src": "AppMode.kt:16"
+  },
+  {
+   "from": "more",
+   "to": "chats",
+   "tap": "Tab Chats",
+   "mode": "B",
+   "src": "AppMode.kt:16"
+  },
+  {
+   "from": "chats",
+   "to": "accounts",
+   "tap": "Avatar oben",
+   "mode": "B",
+   "src": "LayerHome.kt:362 AppChrome / 675"
+  },
+  {
+   "from": "more",
+   "to": "accounts",
+   "tap": "Avatar oben",
+   "mode": "B",
+   "src": "LayerHome.kt:362 AppChrome / 675"
+  },
+  {
+   "from": "thread",
+   "to": "letterroom",
+   "tap": "Umschlag-Knopf",
+   "mode": "B",
+   "src": "ThreadScreen.kt:683"
+  },
+  {
+   "from": "thread",
+   "to": "topics",
+   "tap": "Menü → Themen",
+   "mode": "B",
+   "src": "ThreadScreen.kt:697"
+  },
+  {
+   "from": "thread",
+   "to": "search",
+   "tap": "Menü → Suchen",
+   "mode": "B",
+   "src": "ThreadScreen.kt:698"
+  },
+  {
+   "from": "thread",
+   "to": "friendpage",
+   "tap": "Name antippen",
+   "mode": "B",
+   "src": "ThreadScreen.kt onInfo → FriendPage"
+  },
+  {
+   "from": "thread",
+   "to": "info",
+   "tap": "Menü → Info",
+   "mode": "B",
+   "src": "ThreadScreen.kt Menü"
+  },
+  {
+   "from": "thread",
+   "to": "rules",
+   "tap": "Menü → Regeln",
+   "mode": "B",
+   "src": "ThreadScreen.kt Menü"
+  },
+  {
+   "from": "thread",
+   "to": "questdlg",
+   "tap": "Menü/Extras → Quest",
+   "mode": "B",
+   "src": "ThreadScreen.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "label",
+   "tap": "Namen ändern",
+   "mode": "B",
+   "src": "FriendPage.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "newquest",
+   "tap": "+ Neue Quest",
+   "mode": "B",
+   "src": "FriendPage.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "letterroom",
+   "tap": "Briefe",
+   "mode": "B",
+   "src": "FriendPage.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "topics",
+   "tap": "Themen",
+   "mode": "B",
+   "src": "FriendPage.kt"
+  },
+  {
+   "from": "friendpage",
+   "to": "rules",
+   "tap": "Regeln",
+   "mode": "B",
+   "src": "FriendPage.kt"
+  },
+  {
+   "from": "thread",
+   "to": "confirm",
+   "tap": "Menü → Entfernen",
+   "mode": "B",
+   "src": "ThreadScreen.kt:704"
+  },
+  {
+   "from": "thread",
+   "to": "extras",
+   "tap": "Extras",
+   "mode": "B",
+   "src": "ThreadScreen.kt:454"
+  },
+  {
+   "from": "thread",
+   "to": "actions",
+   "tap": "lange drücken",
+   "mode": "B",
+   "src": "ThreadScreen.kt:842"
+  },
+  {
+   "from": "thread",
+   "to": "questdlg",
+   "tap": "Nachricht → Quest",
+   "mode": "B",
+   "src": "ThreadScreen.kt:539"
+  },
+  {
+   "from": "thread",
+   "to": "glossdlg",
+   "tap": "Begriff",
+   "mode": "B",
+   "src": "ChatMedia.kt:321"
+  },
+  {
+   "from": "thread",
+   "to": "compose",
+   "tap": "Brief-Knopf",
+   "mode": "B",
+   "src": "Conversations.kt:114"
+  },
+  {
+   "from": "info",
+   "to": "rules",
+   "tap": "Freundschaftsregeln",
+   "mode": "B",
+   "src": "ThreadScreen.kt:581"
+  },
+  {
+   "from": "letterroom",
+   "to": "compose",
+   "tap": "Brief schreiben",
+   "mode": "B",
+   "src": "ThreadScreen.kt:572"
+  },
+  {
+   "from": "letterroom",
+   "to": "letteropen",
+   "tap": "Umschlag",
+   "mode": "B",
+   "src": "ThreadScreen.kt:575"
+  },
+  {
+   "from": "letterroom",
+   "to": "proof",
+   "tap": "Nachweis",
+   "mode": "B",
+   "src": "ThreadScreen.kt:577"
+  },
+  {
+   "from": "letterroom",
+   "to": "epprop",
+   "tap": "Punkte vorschlagen",
+   "mode": "B",
+   "src": "ThreadScreen.kt:578"
+  },
+  {
+   "from": "letterroom",
+   "to": "rules",
+   "tap": "Regeln",
+   "mode": "B",
+   "src": "ThreadScreen.kt:573"
+  },
+  {
+   "from": "people",
+   "to": "thread",
+   "tap": "Freund",
+   "mode": "B",
+   "src": "LayerHome.kt:536"
+  },
+  {
+   "from": "people",
+   "to": "groups",
+   "tap": "Gruppen",
+   "mode": "B",
+   "src": "LayerHome.kt PeopleScreen onGroups"
+  },
+  {
+   "from": "groups",
+   "to": "groupnew",
+   "tap": "+ Gruppe erstellen",
+   "mode": "B",
+   "src": "GregorScreens.kt GroupsHub"
+  },
+  {
+   "from": "sparks",
+   "to": "sparknew",
+   "tap": "Funke senden",
+   "mode": "B",
+   "src": "SparkScreens.kt:139"
+  },
+  {
+   "from": "groups",
+   "to": "topics",
+   "tap": "Gemeinsame Themen",
+   "mode": "B",
+   "src": "GregorScreens.kt:256"
+  },
+  {
+   "from": "topicshub",
+   "to": "topics",
+   "tap": "Freund / Gruppe",
+   "mode": "B",
+   "src": "GregorScreens.kt:226"
+  },
+  {
+   "from": "more",
+   "to": "letters",
+   "tap": "Briefe",
+   "mode": "B",
+   "src": "MoreScreens.kt (jetzt in beiden Modi)"
+  },
+  {
+   "from": "more",
+   "to": "ep",
+   "tap": "Punkte",
+   "mode": "B",
+   "src": "MoreScreens.kt (jetzt in beiden Modi)"
+  },
+  {
+   "from": "more",
+   "to": "glossary",
+   "tap": "Wörterbuch",
+   "mode": "B",
+   "src": "MoreScreens.kt (jetzt in beiden Modi)"
+  },
+  {
+   "from": "more",
+   "to": "profile",
+   "tap": "Profil",
+   "mode": "B",
+   "src": "MoreScreens.kt:198"
+  },
+  {
+   "from": "more",
+   "to": "appearance",
+   "tap": "Darstellung",
+   "mode": "B",
+   "src": "MoreScreens.kt:214"
+  },
+  {
+   "from": "more",
+   "to": "account",
+   "tap": "Konto & Sicherheit",
+   "mode": "B",
+   "src": "MoreScreens.kt:215"
+  },
+  {
+   "from": "more",
+   "to": "about",
+   "tap": "Über die App",
+   "mode": "B",
+   "src": "MoreScreens.kt:216"
+  },
+  {
+   "from": "settings",
+   "to": "accounts",
+   "tap": "Konten wechseln",
+   "mode": "I",
+   "src": "MoreScreens.kt:169 / LayerHome.kt:493"
+  },
+  {
+   "from": "settings",
+   "to": "profile",
+   "tap": "Profil",
+   "mode": "I",
+   "src": "MoreScreens.kt:198"
+  },
+  {
+   "from": "settings",
+   "to": "appearance",
+   "tap": "Darstellung",
+   "mode": "I",
+   "src": "MoreScreens.kt:214"
+  },
+  {
+   "from": "settings",
+   "to": "account",
+   "tap": "Konto & Sicherheit",
+   "mode": "I",
+   "src": "MoreScreens.kt:215"
+  },
+  {
+   "from": "settings",
+   "to": "about",
+   "tap": "Über die App",
+   "mode": "I",
+   "src": "MoreScreens.kt:216"
+  },
+  {
+   "from": "profile",
+   "to": "recovery",
+   "tap": "Code",
+   "mode": "B",
+   "src": "MoreScreens.kt:161"
+  },
+  {
+   "from": "account",
+   "to": "recovery",
+   "tap": "Code",
+   "mode": "B",
+   "src": "MoreScreens.kt:163"
+  },
+  {
+   "from": "letters",
+   "to": "letteropen",
+   "tap": "Umschlag",
+   "mode": "M",
+   "src": "MoreScreens.kt:158"
+  },
+  {
+   "from": "letters",
+   "to": "proof",
+   "tap": "Nachweis",
+   "mode": "M",
+   "src": "MoreScreens.kt:158"
+  },
+  {
+   "from": "map",
+   "to": "friend",
+   "tap": "Insel antippen",
+   "mode": "I",
+   "src": "IslandWorld.kt:297"
+  },
+  {
+   "from": "map",
+   "to": "home",
+   "tap": "Meine Insel",
+   "mode": "I",
+   "src": "IslandWorld.kt:340"
+  },
+  {
+   "from": "map",
+   "to": "harbour",
+   "tap": "Hafen",
+   "mode": "I",
+   "src": "IslandWorld.kt:341"
+  },
+  {
+   "from": "map",
+   "to": "ep",
+   "tap": "Punkte-Pille (immer)",
+   "mode": "I",
+   "src": "IslandWorld.kt Pill"
+  },
+  {
+   "from": "map",
+   "to": "post",
+   "tap": "Brief-Pille (immer)",
+   "mode": "I",
+   "src": "IslandWorld.kt Pill"
+  },
+  {
+   "from": "map",
+   "to": "boat",
+   "tap": "Boot",
+   "mode": "I",
+   "src": "IslandWorld.kt:1187"
+  },
+  {
+   "from": "map",
+   "to": "people",
+   "tap": "Freunde finden (leer)",
+   "mode": "I",
+   "src": "IslandWorld.kt:313"
+  },
+  {
+   "from": "map",
+   "to": "chats",
+   "tap": "Leiste Chats / zurück",
+   "mode": "I",
+   "src": "IslandWorld.kt BarItem Chats"
+  },
+  {
+   "from": "home",
+   "to": "chats",
+   "tap": "Leiste Chats",
+   "mode": "I",
+   "src": "IslandWorld.kt BarItem Chats"
+  },
+  {
+   "from": "harbour",
+   "to": "chats",
+   "tap": "Leiste Chats",
+   "mode": "I",
+   "src": "IslandWorld.kt BarItem Chats"
+  },
+  {
+   "from": "home",
+   "to": "map",
+   "tap": "Karte",
+   "mode": "I",
+   "src": "IslandWorld.kt:339"
+  },
+  {
+   "from": "home",
+   "to": "harbour",
+   "tap": "Hafen",
+   "mode": "I",
+   "src": "IslandWorld.kt:341"
+  },
+  {
+   "from": "harbour",
+   "to": "map",
+   "tap": "Karte",
+   "mode": "I",
+   "src": "IslandWorld.kt:339"
+  },
+  {
+   "from": "harbour",
+   "to": "home",
+   "tap": "Meine Insel",
+   "mode": "I",
+   "src": "IslandWorld.kt:340"
+  },
+  {
+   "from": "friend",
+   "to": "thread",
+   "tap": "Chat",
+   "mode": "I",
+   "src": "IslandWorld.kt:919"
+  },
+  {
+   "from": "friend",
+   "to": "compose",
+   "tap": "Brief schreiben",
+   "mode": "I",
+   "src": "IslandWorld.kt:923"
+  },
+  {
+   "from": "friend",
+   "to": "label",
+   "tap": "Wie nennst du …?",
+   "mode": "I",
+   "src": "IslandWorld.kt:898"
+  },
+  {
+   "from": "friend",
+   "to": "newquest",
+   "tap": "+ Neue",
+   "mode": "I",
+   "src": "IslandWorld.kt:399"
+  },
+  {
+   "from": "friend",
+   "to": "visit",
+   "tap": "Insel besuchen",
+   "mode": "I",
+   "src": "IslandWorld.kt:917"
+  },
+  {
+   "from": "friend",
+   "to": "topics",
+   "tap": "Themen mit …",
+   "mode": "I",
+   "src": "IslandWorld.kt:937"
+  },
+  {
+   "from": "visit",
+   "to": "thread",
+   "tap": "Schreiben → Chat",
+   "mode": "I",
+   "src": "IslandWorld.kt:327"
+  },
+  {
+   "from": "visit",
+   "to": "compose",
+   "tap": "Schreiben → Brief",
+   "mode": "I",
+   "src": "IslandWorld.kt:328"
+  },
+  {
+   "from": "home",
+   "to": "post",
+   "tap": "Post",
+   "mode": "I",
+   "src": "IslandWorld.kt:265"
+  },
+  {
+   "from": "home",
+   "to": "lighthouse",
+   "tap": "Leuchtturm",
+   "mode": "I",
+   "src": "IslandWorld.kt:265"
+  },
+  {
+   "from": "home",
+   "to": "hall",
+   "tap": "Gemeindehaus",
+   "mode": "I",
+   "src": "IslandWorld.kt:265"
+  },
+  {
+   "from": "home",
+   "to": "library",
+   "tap": "Bibliothek",
+   "mode": "I",
+   "src": "IslandWorld.kt:265"
+  },
+  {
+   "from": "home",
+   "to": "house",
+   "tap": "Figur",
+   "mode": "I",
+   "src": "IslandWorld.kt:270"
+  },
+  {
+   "from": "home",
+   "to": "place",
+   "tap": "Lebensort",
+   "mode": "I",
+   "src": "IslandWorld.kt:268"
+  },
+  {
+   "from": "home",
+   "to": "build",
+   "tap": "+ Bauplatz",
+   "mode": "I",
+   "src": "IslandWorld.kt:268"
+  },
+  {
+   "from": "home",
+   "to": "decor",
+   "tap": "Bearbeiten → Platz",
+   "mode": "I",
+   "src": "IslandWorld.kt:332 / IslandHome.kt:153"
+  },
+  {
+   "from": "post",
+   "to": "compose",
+   "tap": "Brief schreiben",
+   "mode": "I",
+   "src": "PlaceScenes.kt:239/276"
+  },
+  {
+   "from": "post",
+   "to": "letteropen",
+   "tap": "Umschlag",
+   "mode": "I",
+   "src": "IslandWorld.kt:355"
+  },
+  {
+   "from": "harbour",
+   "to": "newquest",
+   "tap": "Quest anpinnen",
+   "mode": "I",
+   "src": "PlaceScenes.kt:357"
+  },
+  {
+   "from": "harbour",
+   "to": "topicshub",
+   "tap": "Themen",
+   "mode": "I",
+   "src": "PlaceScenes.kt:380"
+  },
+  {
+   "from": "lighthouse",
+   "to": "people",
+   "tap": "Freunde finden",
+   "mode": "I",
+   "src": "PlaceScenes.kt:455"
+  },
+  {
+   "from": "lighthouse",
+   "to": "friend",
+   "tap": "Freund",
+   "mode": "I",
+   "src": "IslandWorld.kt:363"
+  },
+  {
+   "from": "hall",
+   "to": "groups",
+   "tap": "Gruppen verwalten",
+   "mode": "I",
+   "src": "PlaceScenes.kt:587"
+  },
+  {
+   "from": "hall",
+   "to": "newquest",
+   "tap": "Gruppen-Quest",
+   "mode": "I",
+   "src": "IslandWorld.kt:367"
+  },
+  {
+   "from": "library",
+   "to": "glossary",
+   "tap": "(Wörterbuch drin)",
+   "mode": "I",
+   "src": "IslandWorld.kt:365"
+  },
+  {
+   "from": "house",
+   "to": "settings",
+   "tap": "Profil & Einstellungen",
+   "mode": "I",
+   "src": "PlaceScenes.kt:656 → LayerHome.kt:434/551"
+  },
+  {
+   "from": "house",
+   "to": "decor",
+   "tap": "Insel bearbeiten",
+   "mode": "I",
+   "src": "IslandWorld.kt:375"
+  }
+ ],
+ "taps_messenger": {
+  "chats": 0,
+  "more": 0,
+  "thread": 1,
+  "people": 1,
+  "sparks": 1,
+  "sparknew": 1,
+  "groups": 1,
+  "topicshub": 1,
+  "glossary": 1,
+  "request": 1,
+  "accounts": 1,
+  "letters": 1,
+  "ep": 1,
+  "profile": 1,
+  "appearance": 1,
+  "account": 1,
+  "about": 1,
+  "letterroom": 2,
+  "topics": 2,
+  "search": 2,
+  "friendpage": 2,
+  "info": 2,
+  "rules": 2,
+  "questdlg": 2,
+  "confirm": 2,
+  "extras": 2,
+  "actions": 2,
+  "glossdlg": 2,
+  "compose": 2,
+  "groupnew": 2,
+  "letteropen": 2,
+  "proof": 2,
+  "recovery": 2,
+  "epprop": 3,
+  "label": 3,
+  "newquest": 3
+ },
+ "taps_islands": {
+  "chats": 0,
+  "more": 0,
+  "map": 0,
+  "thread": 1,
+  "people": 1,
+  "sparks": 1,
+  "sparknew": 1,
+  "groups": 1,
+  "topicshub": 1,
+  "glossary": 1,
+  "request": 1,
+  "accounts": 1,
+  "letters": 1,
+  "ep": 1,
+  "profile": 1,
+  "appearance": 1,
+  "account": 1,
+  "about": 1,
+  "friend": 1,
+  "home": 1,
+  "harbour": 1,
+  "post": 1,
+  "boat": 1,
+  "letterroom": 2,
+  "topics": 2,
+  "search": 2,
+  "friendpage": 2,
+  "info": 2,
+  "rules": 2,
+  "questdlg": 2,
+  "confirm": 2,
+  "extras": 2,
+  "actions": 2,
+  "glossdlg": 2,
+  "compose": 2,
+  "groupnew": 2,
+  "recovery": 2,
+  "label": 2,
+  "newquest": 2,
+  "visit": 2,
+  "lighthouse": 2,
+  "hall": 2,
+  "library": 2,
+  "house": 2,
+  "place": 2,
+  "build": 2,
+  "decor": 2,
+  "letteropen": 2,
+  "proof": 3,
+  "epprop": 3,
+  "settings": 3
+ },
+ "taps_inside_world": {
+  "map": 0,
+  "home": 0,
+  "harbour": 0,
+  "chats": 0,
+  "friend": 1,
+  "ep": 1,
+  "post": 1,
+  "boat": 1,
+  "people": 1,
+  "lighthouse": 1,
+  "hall": 1,
+  "library": 1,
+  "house": 1,
+  "place": 1,
+  "build": 1,
+  "decor": 1,
+  "newquest": 1,
+  "topicshub": 1,
+  "thread": 1,
+  "sparks": 1,
+  "sparknew": 1,
+  "groups": 1,
+  "glossary": 1,
+  "request": 1,
+  "more": 1,
+  "accounts": 1,
+  "compose": 2,
+  "label": 2,
+  "visit": 2,
+  "topics": 2,
+  "letteropen": 2,
+  "settings": 2,
+  "letterroom": 2,
+  "search": 2,
+  "friendpage": 2,
+  "info": 2,
+  "rules": 2,
+  "questdlg": 2,
+  "confirm": 2,
+  "extras": 2,
+  "actions": 2,
+  "glossdlg": 2,
+  "groupnew": 2,
+  "letters": 2,
+  "profile": 2,
+  "appearance": 2,
+  "account": 2,
+  "about": 2,
+  "proof": 3,
+  "epprop": 3,
+  "recovery": 3
+ },
+ "features": [
+  {
+   "feature": "Chat öffnen",
+   "messenger": 1,
+   "islands": 1,
+   "world": 1
+  },
+  {
+   "feature": "Brief schreiben",
+   "messenger": 2,
+   "islands": 2,
+   "world": 2
+  },
+  {
+   "feature": "Brief lesen",
+   "messenger": 2,
+   "islands": 2,
+   "world": 2
+  },
+  {
+   "feature": "Alle Briefe (Archiv / Post)",
+   "messenger": 1,
+   "islands": 1,
+   "world": 1
+  },
+  {
+   "feature": "Freunde finden / hinzufügen",
+   "messenger": 1,
+   "islands": 1,
+   "world": 1
+  },
+  {
+   "feature": "Anfrage beantworten",
+   "messenger": 1,
+   "islands": 1,
+   "world": 1
+  },
+  {
+   "feature": "Funke senden",
+   "messenger": 1,
+   "islands": 1,
+   "world": 1
+  },
+  {
+   "feature": "Thema notieren",
+   "messenger": 2,
+   "islands": 2,
+   "world": 2
+  },
+  {
+   "feature": "Gruppen",
+   "messenger": 1,
+   "islands": 1,
+   "world": 1
+  },
+  {
+   "feature": "Gruppe erstellen",
+   "messenger": 2,
+   "islands": 2,
+   "world": 2
+  },
+  {
+   "feature": "Quest anlegen",
+   "messenger": 2,
+   "islands": 2,
+   "world": 1
+  },
+  {
+   "feature": "Quest aus Chat",
+   "messenger": 2,
+   "islands": 2,
+   "world": 2
+  },
+  {
+   "feature": "Punkte",
+   "messenger": 1,
+   "islands": 1,
+   "world": 1
+  },
+  {
+   "feature": "Wörterbuch",
+   "messenger": 1,
+   "islands": 1,
+   "world": 1
+  },
+  {
+   "feature": "Freundschaftsregeln",
+   "messenger": 2,
+   "islands": 2,
+   "world": 2
+  },
+  {
+   "feature": "Darstellung / Modus / Debug",
+   "messenger": 1,
+   "islands": 1,
+   "world": 2
+  },
+  {
+   "feature": "Konto & Sicherheit",
+   "messenger": 1,
+   "islands": 1,
+   "world": 2
+  },
+  {
+   "feature": "Konto wechseln",
+   "messenger": 1,
+   "islands": 1,
+   "world": 1
+  },
+  {
+   "feature": "Profil",
+   "messenger": 1,
+   "islands": 1,
+   "world": 2
+  },
+  {
+   "feature": "Spitzname",
+   "messenger": 3,
+   "islands": 2,
+   "world": 2
+  },
+  {
+   "feature": "Status „Ich bin hier“",
+   "messenger": null,
+   "islands": 2,
+   "world": 1
+  },
+  {
+   "feature": "Deko",
+   "messenger": null,
+   "islands": 2,
+   "world": 1
+  }
+ ]
+}

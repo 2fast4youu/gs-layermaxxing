@@ -344,6 +344,13 @@ fun LayerHome(
             if (added.isNotEmpty()) { villageFresh = villageFresh + added; store.setVillageFresh(villageFresh) }
         }
     }
+    // Personal friend names live on the device, shared by the island and the neutral friend page.
+    val labelAccount = "${store.serverProfile.key}_${store.name}"
+    var friendLabels by remember(labelAccount) { mutableStateOf(FriendLabels.load(context, labelAccount)) }
+    fun saveFriendLabel(id: Long, label: String?) {
+        friendLabels = friendLabels.toMutableMap().apply { if (label == null) remove(id) else put(id, label) }
+        FriendLabels.save(context, labelAccount, friendLabels)
+    }
     val fullScreenPlace = tab == MainTab.CASTLES || openThreadFriend != null || peopleOpen || sparksOpen || hub != null || topicScope != null
     // The valley is a painted world, so it runs under the system bars instead of
     // sitting in a window of app background: a letterboxed plate inside inset
@@ -380,7 +387,9 @@ fun LayerHome(
                                 Sparks.unopenedCount(sparkInbox)
                             else -> 0
                         }
-                        Text(if (count > 0) "${item.icon}${if (count > 9) "9+" else count}" else item.icon, fontSize = 19.sp)
+                        androidx.compose.material3.BadgedBox(badge = { if (count > 0) androidx.compose.material3.Badge { Text(if (count > 9) "9+" else "$count") } }) {
+                            AppIcon(AppIcons.tab(item), null, size = 24.dp)
+                        }
                     },
                     label = { Text(item.label) },
                 ) }
@@ -394,14 +403,9 @@ fun LayerHome(
             else Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
         ) {
             if (tab == MainTab.CASTLES) { villageStateHolder.SaveableStateProvider("isles_${store.serverProfile.key}_${store.name}") {
-                val labelAccount = "${store.serverProfile.key}_${store.name}"
-                var friendLabels by remember(labelAccount) { mutableStateOf(FriendLabels.load(context, labelAccount)) }
                 IslandWorld(
                     labels = friendLabels,
-                    onLabel = { id, label ->
-                        friendLabels = friendLabels.toMutableMap().apply { if (label == null) remove(id) else put(id, label) }
-                        FriendLabels.save(context, labelAccount, friendLabels)
-                    },
+                    onLabel = { id, label -> saveFriendLabel(id, label) },
                     ownName = status?.name ?: store.name, ownEmoji = status?.avatarEmoji ?: "🙂",
                     friends = friends, groups = groups, islands = islands, quests = quests,
                     letters = messages + outbox, topics = topics, opened = opened,
@@ -428,6 +432,7 @@ fun LayerHome(
                     saveDecor = { decor -> api.setDecor(token, decor) },
                     savePlaces = { places -> api.setPlaces(token, places) },
                     saveHere = { plot, status -> api.setHere(token, plot, status) },
+                    chatsBadge = requestInbox.size + conversations.count { it.hasNews } + Sparks.unopenedCount(sparkInbox),
                     onError = { error = it },
                     onPlace = { place ->
                         when (place) {
@@ -504,7 +509,7 @@ fun LayerHome(
                     TopicsHub(topics, friends, groups) { s, name -> topicScope = s; topicName = name }
                 }
                 hub == "groups" -> SubScreen("Gruppen", onBack = { hub = null }, backLabel = "Zurück") {
-                    GroupsHub(groups, friends, topics, friendshipSettings, token, api, ::act) { s, name -> topicScope = s; topicName = name }
+                    GroupsHub(groups, friends, topics, friendshipSettings, token, api, ::act, { s, name -> topicScope = s; topicName = name }, quests = quests)
                 }
                 threadFriend != null -> ThreadScreen(
                     friend = threadFriend,
@@ -526,6 +531,9 @@ fun LayerHome(
                     topics = topics,
                     epLine = epLineFor(ep, status?.userId, threadFriend),
                     creativeActive = creativeActive,
+                    quests = quests, label = friendLabels[threadFriend.id],
+                    onLabel = { label -> saveFriendLabel(threadFriend.id, label) },
+                    onQuestDone = { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } },
                 )
                 sparksOpen -> SparkRoom(
                     inbox = sparkInbox, sent = sparkSent, token = token, api = api, act = ::act,
@@ -533,7 +541,8 @@ fun LayerHome(
                 )
                 peopleOpen -> SubScreen("Leute", onBack = { peopleOpen = false }, backLabel = "Chats") {
                     FriendsScreen(token, api, users, friends, incoming, outgoing, groups,
-                        friendshipSettings, onOpenThread = { peopleOpen = false; openThreadFriend = it }, act = ::act)
+                        friendshipSettings, onOpenThread = { peopleOpen = false; openThreadFriend = it }, act = ::act,
+                        onGroups = { peopleOpen = false; hub = "groups" })
                 }
                 tab == MainTab.CHATS -> ChatsScreen(
                     conversations = conversations, requests = requestInbox,
@@ -668,17 +677,17 @@ private fun AppChrome(
                     name.ifBlank { "Konto" }, Modifier.padding(start = 9.dp),
                     fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1,
                 )
-                Text(" ⌄", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                AppIcon(R.drawable.ico_expand, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp, modifier = Modifier.padding(start = 4.dp))
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenu(false) }) {
                 accounts.forEach { account ->
                     DropdownMenuItem(
-                        text = { Text(if (account.name == name) "${account.name} ✓" else account.name) },
+                        text = { Text(account.name) }, trailingIcon = { if (account.name == name) AppIcon(R.drawable.ico_check, null, size = 18.dp) },
                         onClick = { onMenu(false); if (account.name != name) onSwitchAccount(account) },
                     )
                 }
                 if (accounts.isNotEmpty()) HorizontalDivider()
-                DropdownMenuItem(text = { Text("＋ Konto hinzufügen") }, onClick = { onMenu(false); onAddAccount() })
+                DropdownMenuItem(text = { Text("Konto hinzufügen") }, leadingIcon = { AppIcon(R.drawable.ico_add, null, size = 18.dp) }, onClick = { onMenu(false); onAddAccount() })
             }
         }
         Spacer(Modifier.weight(1f))
@@ -686,7 +695,7 @@ private fun AppChrome(
             Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onRefresh)
                 .semantics { contentDescription = "Aktualisieren"; role = Role.Button },
             contentAlignment = Alignment.Center,
-        ) { Text("⟳", fontSize = 21.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        ) { AppIcon(R.drawable.ico_refresh, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 23.dp) }
     }
 }
 
@@ -788,7 +797,7 @@ internal fun IncomingMessageCard(
             Column(Modifier.padding(start = 15.dp, end = 15.dp, top = 18.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(message.title.ifBlank { "Versiegelter Brief" }, Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                    if (message.groupId != null) Text("👥", Modifier.padding(start = 6.dp), fontSize = 14.sp)
+                    if (message.groupId != null) AppIcon(R.drawable.ico_group, null, modifier = Modifier.padding(start = 6.dp), size = 15.dp)
                     if (message.oneTime) Text("1×", Modifier.padding(start = 6.dp))
                 }
                 Text("Von ${message.peerName} · ${formatDate(message.createdAt)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -797,7 +806,7 @@ internal fun IncomingMessageCard(
                 when {
                     opened != null -> {
                         Text(opened.text, fontSize = 17.sp)
-                        if (opened.attachment != null) OutlinedButton(onClick = { save.launch(safeFileName(opened.name ?: "Anhang")) }) { Text("📎 ${opened.name ?: "Anhang"} speichern") }
+                        if (opened.attachment != null) OutlinedButton(onClick = { save.launch(safeFileName(opened.name ?: "Anhang")) }) { AppIcon(R.drawable.ico_attach, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("${opened.name ?: "Anhang"} speichern") }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf("❤️", "👍", "😂", "😮").forEach { emoji -> TextButton(onClick = { onReact(emoji) }) { Text(emoji) } } }
                     }
                     message.unlocked -> Button(onClick = onOpen) { Text(if (message.oneTime) "Einmalig öffnen" else "Brief öffnen") }
@@ -808,7 +817,7 @@ internal fun IncomingMessageCard(
                     }
                     message.mode == "presence" -> Text("Öffnet, sobald ihr beide online seid")
                     message.mode == "random" -> Text("Öffnet zufällig bis ${message.randomTo?.let(::formatDate) ?: "später"}")
-                    else -> Text("🔒 Noch ${formatRemaining(max(0, (message.releaseAt ?: now) - now))}")
+                    else -> Row(verticalAlignment = Alignment.CenterVertically) { AppIcon(R.drawable.ico_lock, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Noch ${formatRemaining(max(0, (message.releaseAt ?: now) - now))}") }
                 }
                 if (message.reactions.isNotEmpty()) Text(message.reactions.joinToString("  ") { "${it.emoji} ${it.name}" }, fontSize = 13.sp)
             }
@@ -839,20 +848,23 @@ internal fun OutboxMessageCard(
         ) { Column(Modifier.padding(start = 15.dp, end = 15.dp, top = 18.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(message.title.ifBlank { "An ${message.peerName}" }, Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                if (message.groupId != null) Text("👥", Modifier.padding(start = 6.dp), fontSize = 14.sp)
+                if (message.groupId != null) AppIcon(R.drawable.ico_group, null, modifier = Modifier.padding(start = 6.dp), size = 15.dp)
                 if (message.oneTime) Text("1×", Modifier.padding(start = 6.dp))
             }
             Text("An ${message.peerName} · ${formatDate(message.createdAt)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (message.coverNote.isNotBlank()) Text("„${message.coverNote}“", fontStyle = FontStyle.Italic)
             if (message.proofStatus == "legacy") Text("Legacy – ohne kryptografischen Nachweis", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
             when {
-                message.unlocked -> Text(if (message.readAt != null) "✓✓ Gelesen" else "✓ Freigegeben", color = Color(0xFF19703B))
+                message.unlocked -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(if (message.readAt != null) R.drawable.ico_check_double else R.drawable.ico_check, null, tint = Color(0xFF19703B), size = 18.dp, modifier = Modifier.padding(end = 6.dp))
+                    Text(if (message.readAt != null) "Gelesen" else "Freigegeben", color = Color(0xFF19703B))
+                }
                 message.mode == "manual" -> Button(onClick = { confirmRelease = true }) { Text("Jetzt freigeben") }
                 message.mode == "mutual" && !message.senderApproved -> Button(onClick = onApprove) { Text("Meine Freigabe bestätigen") }
                 message.mode == "mutual" -> Text("Wartet auf Zustimmung von ${message.peerName}")
                 message.mode == "presence" -> Text("Wartet, bis ihr beide online seid")
                 message.mode == "random" -> Text("Zufällige Freigabe bis ${message.randomTo?.let(::formatDate)}")
-                else -> Text("🔒 Automatisch in ${formatRemaining(max(0, (message.releaseAt ?: now) - now))}")
+                else -> Row(verticalAlignment = Alignment.CenterVertically) { AppIcon(R.drawable.ico_lock, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Automatisch in ${formatRemaining(max(0, (message.releaseAt ?: now) - now))}") }
             }
             if (!message.unlocked) TextButton(onClick = { confirmRetract = true }) { Text("Zurückziehen") }
             if (message.reactions.isNotEmpty()) Text(message.reactions.joinToString("  ") { "${it.emoji} ${it.name}" })
@@ -980,7 +992,7 @@ private fun SendScreen(
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(friend.avatarEmoji, fontSize = 22.sp, modifier = Modifier.width(38.dp))
                         Text(friend.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                        if (friend.id in selected) Text("✓", fontSize = 19.sp, color = MaterialTheme.colorScheme.primary)
+                        if (friend.id in selected) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 21.dp)
                     }
                 }
             }
@@ -997,9 +1009,9 @@ private fun SendScreen(
                         color = if (groupId == group.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                     ) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("👥", fontSize = 22.sp, modifier = Modifier.width(38.dp))
+                            AppIcon(R.drawable.ico_group, null, modifier = Modifier.width(38.dp), size = 24.dp)
                             Text("${group.name} (${group.members.size})", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                            if (groupId == group.id) Text("✓", fontSize = 19.sp, color = MaterialTheme.colorScheme.primary)
+                            if (groupId == group.id) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 21.dp)
                         }
                     }
                 }
@@ -1031,12 +1043,12 @@ private fun SendScreen(
                     color = if (mode == choice) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                 ) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(modeIcon(choice), fontSize = 22.sp, modifier = Modifier.width(42.dp), color = MaterialTheme.colorScheme.primary)
+                        AppIcon(modeIcon(choice), null, modifier = Modifier.padding(end = 18.dp), tint = MaterialTheme.colorScheme.primary, size = 24.dp)
                         Column(Modifier.weight(1f)) {
                             Text(choice.label, fontWeight = FontWeight.SemiBold)
                             Text(modeDescription(choice), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (mode == choice) Text("✓", fontSize = 20.sp, color = MaterialTheme.colorScheme.primary)
+                        if (mode == choice) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 22.dp)
                     }
                 }
             }
@@ -1061,19 +1073,19 @@ private fun SendScreen(
     }
 
     val recipientLabel = when {
-        groupId != null -> "👥 " + groups.firstOrNull { it.id == groupId }?.name.orEmpty()
+        groupId != null -> "Gruppe: " + groups.firstOrNull { it.id == groupId }?.name.orEmpty()
         selected.isEmpty() -> "Empfänger wählen"
         else -> friends.filter { it.id in selected }.joinToString { "${it.avatarEmoji} ${it.name}" }
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onClose) { Text("←", fontSize = 20.sp) }
+            TextButton(onClick = onClose) { AppIcon(R.drawable.ico_back, null, size = 22.dp) }
             Column(Modifier.weight(1f)) {
                 Text("An", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(recipientLabel, fontWeight = FontWeight.Bold, maxLines = 1)
             }
-            if (friends.size > 1 || groups.isNotEmpty()) TextButton(onClick = { keyboard?.hide(); recipientMenu = true }) { Text("＋") }
+            if (friends.size > 1 || groups.isNotEmpty()) TextButton(onClick = { keyboard?.hide(); recipientMenu = true }) { AppIcon(R.drawable.ico_add, null, size = 20.dp) }
         }
         HorizontalDivider()
 
@@ -1117,19 +1129,19 @@ private fun SendScreen(
             // and every preset stays fast-forwardable, so the whole journey of a
             // test letter can be walked without the other side pressing anything.
             if (creativeActive) CreativeMode.LETTER_PRESETS.forEach { (label, _, seconds) ->
-                ComposerChip("⚗ $label") {
+                ComposerChip(label) {
                     val chosen = DelayUnit.entries.lastOrNull { seconds >= it.seconds && seconds % it.seconds == 0L }
                         ?: DelayUnit.MINUTES
                     mode = ComposeMode.DURATION; unit = chosen; amount = (seconds / chosen.seconds).toString()
                 }
             }
-            ComposerChip(attachment?.let { "📎 ${it.first}" } ?: "📎") { keyboard?.hide(); picker.launch("*/*") }
-            ComposerChip(if (detailsOpen) "－ Details" else "＋ Details") { detailsOpen = !detailsOpen }
+            ComposerChip(attachment?.first ?: "Anhang", icon = R.drawable.ico_attach) { keyboard?.hide(); picker.launch("*/*") }
+            ComposerChip("Details", icon = if (detailsOpen) R.drawable.ico_collapse else R.drawable.ico_expand) { detailsOpen = !detailsOpen }
             if (oneTime) ComposerChip("1×")
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "🔏 Der Server hält den Schlüssel bis zur Freigabe.",
+                "Der Server hält den Schlüssel bis zur Freigabe.",
                 Modifier.weight(1f), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             TextButton(onClick = { keyboard?.hide(); infoSheet = true }) { Text("Mehr", fontSize = 12.sp) }
@@ -1140,7 +1152,7 @@ private fun SendScreen(
             onClick = { keyboard?.hide(); if (mode == ComposeMode.MANUAL) confirmManual = true else scope.launch { send() } },
             enabled = targetValid && text.isNotBlank() && scheduleValid && !busy,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).height(52.dp),
-        ) { Text(if (busy) "Wird versiegelt …" else "✦ Versiegelt senden", fontWeight = FontWeight.Bold) }
+        ) { Text(if (busy) "Wird versiegelt …" else "Versiegelt senden", fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -1152,13 +1164,16 @@ internal const val CRYPTO_HONESTY =
         "und verhindert keine Screenshots oder Caches."
 
 @Composable
-private fun ComposerChip(text: String, highlighted: Boolean = false, onClick: (() -> Unit)? = null) {
+private fun ComposerChip(text: String, highlighted: Boolean = false, icon: Int? = null, onClick: (() -> Unit)? = null) {
     Surface(
         modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
         shape = RoundedCornerShape(50),
         color = if (highlighted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
     ) {
-        Text(text, Modifier.padding(horizontal = 13.dp, vertical = 8.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Row(Modifier.padding(horizontal = 13.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) AppIcon(icon, null, size = 15.dp, modifier = Modifier.padding(end = 5.dp))
+            Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
     }
 }
 
@@ -1167,11 +1182,11 @@ private fun sealChipLabel(
     mode: ComposeMode, amount: String, unit: DelayUnit, dateTime: LocalDateTime, minimumDelay: Long,
 ): String {
     val base = when (mode) {
-        ComposeMode.DURATION -> "◷ ${amount.ifBlank { "0" }} ${unit.label}"
-        ComposeMode.DATE_TIME -> "▣ " + dateTime.format(DateTimeFormatter.ofPattern("dd.MM. HH:mm"))
-        ComposeMode.MANUAL -> "☝ Von mir freigeben"
-        ComposeMode.MUTUAL -> "✓✓ Beide stimmen zu"
-        ComposeMode.PRESENCE -> "● Beide online"
+        ComposeMode.DURATION -> "${amount.ifBlank { "0" }} ${unit.label}"
+        ComposeMode.DATE_TIME -> dateTime.format(DateTimeFormatter.ofPattern("dd.MM. HH:mm"))
+        ComposeMode.MANUAL -> "Von mir freigeben"
+        ComposeMode.MUTUAL -> "Beide stimmen zu"
+        ComposeMode.PRESENCE -> "Beide online"
         ComposeMode.RANDOM -> "? Zufällig"
     }
     return if (minimumDelay > 0) "$base · mind. ${formatRemaining(minimumDelay)}" else base
@@ -1192,11 +1207,9 @@ private fun FriendsScreen(
     token: String, api: ApiClient, users: List<ApiClient.UserSummary>, friends: List<ApiClient.UserSummary>,
     incoming: List<ApiClient.IncomingRequest>, outgoing: List<ApiClient.OutgoingRequest>, groups: List<ApiClient.Group>,
     settings: List<ApiClient.FriendshipSettings>, onOpenThread: (Long) -> Unit,
-    act: ((suspend () -> Unit) -> Unit),
+    act: ((suspend () -> Unit) -> Unit), onGroups: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope(); var search by remember { mutableStateOf("") }; var result by remember { mutableStateOf<List<ApiClient.UserSummary>>(emptyList()) }
-    var groupName by remember { mutableStateOf("") }; var groupMembers by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    var creatingGroup by remember { mutableStateOf(false) }
     var rulesFriend by remember { mutableStateOf<ApiClient.UserSummary?>(null) }
     var confirmRemove by remember { mutableStateOf<ApiClient.UserSummary?>(null) }
     var confirmBlock by remember { mutableStateOf<ApiClient.UserSummary?>(null) }
@@ -1240,7 +1253,7 @@ private fun FriendsScreen(
             } }
         } }
         item { SectionTitle("Freunde") }
-        if (friends.isEmpty()) item { EmptyHint("🤝", "Noch keine Freunde", "Suche oben nach einem Benutzernamen und schick eine Anfrage – sobald sie annimmt, taucht ihre Insel auf.") }
+        if (friends.isEmpty()) item { EmptyHint(R.drawable.ico_people, "Noch keine Freunde", "Suche oben nach einem Benutzernamen und schick eine Anfrage – sobald sie annimmt, taucht ihre Insel auf.") }
         else items(friends, key = { "friend-${it.id}" }) { friend ->
             val rules = settings.firstOrNull { it.friendId == friend.id }
             FriendRow(
@@ -1269,24 +1282,14 @@ private fun FriendsScreen(
         if (outgoing.isNotEmpty()) { item { SectionTitle("Angefragt") }; items(outgoing, key = { "outreq-${it.id}" }) { request ->
             ActionCard("${request.recipientName}") { TextButton(onClick = { act { api.withdrawFriendRequest(token, request.id) } }) { Text("Zurückziehen") } }
         } }
+        // Groups are created in exactly one place – the groups hub; here they are only listed.
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             SectionTitle("Gruppen")
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = { creatingGroup = !creatingGroup }) { Text(if (creatingGroup) "Schließen" else "+ Neue Gruppe") }
+            TextButton(onClick = onGroups) { Text(if (groups.isEmpty()) "+ Gruppe" else "Alle Gruppen") }
         } }
-        if (groups.isEmpty()) item { EmptyHint("👥", "Noch keine Gruppe", "Mit „+ Neue Gruppe“ holst du mehrere Freunde an einen Tisch.") }
-        else items(groups, key = { "group-${it.id}" }) { group -> InfoCard("👥 ${group.name}: ${group.members.joinToString { it.name }}") }
-        if (friends.isNotEmpty() && creatingGroup) item {
-            Card { Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Neue Gruppe", fontWeight = FontWeight.Bold)
-                OutlinedTextField(groupName, { groupName = it }, Modifier.fillMaxWidth(), label = { Text("Gruppenname") })
-                friends.forEach { friend -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(friend.id in groupMembers, { checked -> groupMembers = if (checked) groupMembers + friend.id else groupMembers - friend.id }); Text(friend.name)
-                } }
-                Button(onClick = { act { api.createGroup(token, groupName.trim(), groupMembers.toList()); groupName = ""; groupMembers = emptySet() } },
-                    enabled = groupName.isNotBlank() && groupMembers.isNotEmpty()) { Text("Gruppe erstellen") }
-            } }
-        }
+        if (groups.isEmpty()) item { EmptyHint(R.drawable.ico_groups, "Noch keine Gruppe", "Mit „+ Gruppe“ holst du mehrere Freunde an einen Tisch.") }
+        else items(groups, key = { "group-${it.id}" }) { group -> InfoCard("${group.name}: ${group.members.joinToString { it.name }}") }
         item { Spacer(Modifier.height(16.dp)) }
     }
 }
@@ -1328,7 +1331,7 @@ private fun FriendRow(
                     Modifier.size(48.dp).clickable { menu = true }
                         .semantics { contentDescription = "Verwaltung für ${friend.name}"; role = Role.Button },
                     contentAlignment = Alignment.Center,
-                ) { Text("⋮", fontSize = 22.sp) }
+                ) { AppIcon(R.drawable.ico_menu, null, size = 24.dp) }
                 DropdownMenu(menu, { menu = false }) {
                     DropdownMenuItem(text = { Text("Freundschaftsregeln") }, onClick = { menu = false; onRules() })
                     DropdownMenuItem(text = { Text("Freund entfernen") }, onClick = { menu = false; onRemove() })
@@ -1446,7 +1449,7 @@ internal fun SubScreen(
                 Text(title, Modifier.weight(1f), fontWeight = FontWeight.Black, color = Kit.Ink, maxLines = 1)
             }
         } else Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { Text("← $backLabel") }
+            TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { AppIcon(R.drawable.ico_back, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text(backLabel) }
             Text(title, Modifier.weight(1f), fontWeight = FontWeight.Bold)
         }
         Box(Modifier.weight(1f)) { content() }
@@ -1461,7 +1464,7 @@ private fun NavCard(title: String, subtitle: String, onClick: () -> Unit) {
                 Text(title, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("›", fontSize = 22.sp)
+            AppIcon(R.drawable.ico_chevron, null, size = 24.dp)
         }
     }
 }
@@ -1495,7 +1498,7 @@ private fun DateTimeChooser(value: LocalDateTime, onChange: (LocalDateTime) -> U
 }
 
 @Composable
-private fun RecoveryDialog(code: String, onDismiss: () -> Unit) {
+internal fun RecoveryDialog(code: String, onDismiss: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
     AlertDialog(
@@ -1512,7 +1515,7 @@ private fun RecoveryDialog(code: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ProofDialog(proof: ApiClient.ProofDetails, onDismiss: () -> Unit) {
+internal fun ProofDialog(proof: ApiClient.ProofDetails, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) context.contentResolver.openOutputStream(uri)?.use { it.write(proof.rawExport.toByteArray()) }
@@ -1572,9 +1575,9 @@ internal fun ActionCard(text: String, actions: @Composable RowScope.() -> Unit) 
 @Composable
 internal fun SectionTitle(text: String) = Text(text, fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
 @Composable
-internal fun EmptyHint(glyph: String, title: String, hint: String) =
+internal fun EmptyHint(icon: Int, title: String, hint: String) =
     Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(glyph, fontSize = 34.sp)
+        AppIcon(icon, null, tint = MaterialTheme.colorScheme.primary, size = 36.dp)
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(hint, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, fontSize = 14.sp)
     }
@@ -1650,9 +1653,9 @@ private fun FogOverlay(onFinished: () -> Unit) {
         }
     }
 }
-private fun modeIcon(mode: ComposeMode): String = when (mode) {
-    ComposeMode.DURATION -> "◷"; ComposeMode.DATE_TIME -> "▣"; ComposeMode.MANUAL -> "☝"
-    ComposeMode.MUTUAL -> "✓✓"; ComposeMode.PRESENCE -> "●"; ComposeMode.RANDOM -> "?"
+private fun modeIcon(mode: ComposeMode): Int = when (mode) {
+    ComposeMode.DURATION -> R.drawable.ico_timer; ComposeMode.DATE_TIME -> R.drawable.ico_date; ComposeMode.MANUAL -> R.drawable.ico_manual
+    ComposeMode.MUTUAL -> R.drawable.ico_check_double; ComposeMode.PRESENCE -> R.drawable.ico_presence; ComposeMode.RANDOM -> R.drawable.ico_random
 }
 private fun modeDescription(mode: ComposeMode): String = when (mode) {
     ComposeMode.DURATION -> "Öffnet nach einer Anzahl Stunden oder Tage."
@@ -1694,7 +1697,7 @@ private fun NoticeToast(message: String, onDismiss: () -> Unit, modifier: Modifi
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("⚠", color = Color(0xFFF2C14E), fontSize = 16.sp)
+        AppIcon(R.drawable.ico_warning, null, tint = Color(0xFFF2C14E), size = 18.dp)
         Spacer(Modifier.width(10.dp))
         Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.inverseOnSurface, fontSize = 14.sp, maxLines = 3)
     }

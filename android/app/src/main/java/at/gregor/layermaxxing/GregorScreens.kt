@@ -17,6 +17,12 @@ import java.time.Instant
 import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.launch
 
+private val ENTRY_ICONS = mapOf(
+    "👥" to R.drawable.ico_groups, "🔒" to R.drawable.ico_lock, "⭐" to R.drawable.ico_points, "✉" to R.drawable.ico_letter,
+    "📝" to R.drawable.ico_topics, "📖" to R.drawable.ico_glossary, "💬" to R.drawable.ico_chat, "🧭" to R.drawable.ico_compass,
+    "🏠" to R.drawable.ico_house, "🏡" to R.drawable.ico_island,
+)
+
 @Composable
 fun ExtensionEntry(title: String, detail: String, onClick: () -> Unit) {
     // "🦊 Gerfried" → avatar disc + name: emoji become portraits, not inline glyphs.
@@ -34,14 +40,19 @@ fun ExtensionEntry(title: String, detail: String, onClick: () -> Unit) {
                 Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
                     .background(MaterialTheme.colorScheme.secondaryContainer),
                 contentAlignment = Alignment.Center,
-            ) { Text(head, style = MaterialTheme.typography.titleMedium) }
+            ) {
+                // Interface symbols become line icons; a real avatar emoji (🦊) stays the person's face.
+                val res = ENTRY_ICONS[head]
+                if (res != null) AppIcon(res, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, size = 20.dp)
+                else Text(head, style = MaterialTheme.typography.titleMedium)
+            }
             Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
-        Text("›", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.outline)
+        AppIcon(R.drawable.ico_chevron, null, modifier = Modifier.padding(start = 12.dp), tint = MaterialTheme.colorScheme.outline, size = 20.dp)
     }
 }
 
@@ -98,7 +109,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
             item {
                 OutlinedTextField(
                     query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    placeholder = { Text("Wort oder Erklärung suchen") }, leadingIcon = { Text("🔍") },
+                    placeholder = { Text("Wort oder Erklärung suchen") }, leadingIcon = { AppIcon(R.drawable.ico_search, null, size = 20.dp) },
                     shape = RoundedCornerShape(24.dp),
                 )
             }
@@ -125,7 +136,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(row.term, Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                if (row.builtIn != null) "App" else "${row.shared!!.explanations.size} ✍",
+                                if (row.builtIn != null) "App" else "${row.shared!!.explanations.size} Erklärungen",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -133,7 +144,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
                             Text(entry.meaning)
                             if (open) Text(entry.action, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                             // Built-in words are editable too: the first own explanation turns them into a shared entry.
-                            if (open && sharedAvailable) OutlinedButton(onClick = { newTerm = entry.term; newText = ""; adding = true }) { Text("＋ Eigene Erklärung") }
+                            if (open && sharedAvailable) OutlinedButton(onClick = { newTerm = entry.term; newText = ""; adding = true }) { AppIcon(R.drawable.ico_add, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Eigene Erklärung") }
                         }
                         row.shared?.let { term ->
                             val shown = if (open) term.explanations else term.explanations.take(1)
@@ -158,7 +169,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
                                 "+ ${term.explanations.size - 1} weitere Erklärung" + if (term.explanations.size > 2) "en" else "",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
                             )
-                            if (open) OutlinedButton(onClick = { explainFor = term; draft = "" }) { Text("＋ Eigene Erklärung") }
+                            if (open) OutlinedButton(onClick = { explainFor = term; draft = "" }) { AppIcon(R.drawable.ico_add, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Eigene Erklärung") }
                         }
                     }
                 }
@@ -167,7 +178,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
         if (sharedAvailable) ExtendedFloatingActionButton(
             onClick = { newTerm = query.trim(); newText = ""; adding = true },
             modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp),
-            text = { Text("Wort hinzufügen") }, icon = { Text("＋") },
+            text = { Text("Wort hinzufügen") }, icon = { AppIcon(R.drawable.ico_add, null, size = 20.dp) },
         )
     }
 
@@ -236,8 +247,20 @@ fun TopicsHub(topics: List<ApiClient.Topic>, friends: List<ApiClient.UserSummary
 }
 
 @Composable
-fun GroupsHub(groups: List<ApiClient.Group>, friends: List<ApiClient.UserSummary>, topics: List<ApiClient.Topic>, settings: List<ApiClient.FriendshipSettings>, token: String, api: ApiClient, act: ((suspend () -> Unit) -> Unit), onTopics: (TopicScope, String) -> Unit) {
+fun GroupsHub(
+    groups: List<ApiClient.Group>, friends: List<ApiClient.UserSummary>, topics: List<ApiClient.Topic>, settings: List<ApiClient.FriendshipSettings>,
+    token: String, api: ApiClient, act: ((suspend () -> Unit) -> Unit), onTopics: (TopicScope, String) -> Unit,
+    quests: List<ApiClient.Quest> = emptyList(),
+) {
     var selectedId by remember { mutableStateOf<Long?>(null) }
+    var questFor by remember { mutableStateOf<Long?>(null) }
+    questFor?.let { gid ->
+        NewQuestSheet(
+            pals = emptyList(), groups = groups.filter { it.id == gid }, presetPeer = null, presetGroup = gid,
+            onDismiss = { questFor = null },
+            onCreate = { t, d, icon, pts, _, g -> questFor = null; act { api.createQuest(token, t, d, icon, pts, null, g) } },
+        )
+    }
     var creating by remember { mutableStateOf(false) }
     var savingGroup by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
@@ -251,8 +274,14 @@ fun GroupsHub(groups: List<ApiClient.Group>, friends: List<ApiClient.UserSummary
     BackHandler(enabled = selectedId != null || creating) { selectedId = null; creating = false; letterOpen = false }
     LazyColumn(Modifier.fillMaxSize().imePadding().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
         if (group != null) {
-            item { TextButton(onClick = { selectedId = null; letterOpen = false }) { Text("← Alle Gruppen") } }
+            item { TextButton(onClick = { selectedId = null; letterOpen = false }) { AppIcon(R.drawable.ico_back, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Alle Gruppen") } }
             item { Text(group.name, style = MaterialTheme.typography.headlineSmall); Text(group.members.joinToString { it.name }) }
+            // Group quests also work without the island: list, tick off, add.
+            val groupQuests = quests.filter { it.targetType == "group" && it.targetId == group.id }.sortedBy { it.completedAt != null }
+            item { ExtensionEntry("⭐ Gruppen-Quests", if (groupQuests.isEmpty()) "Noch keine – neue anlegen" else "${groupQuests.count { it.completedAt == null }} offen · neue anlegen") { questFor = group.id } }
+            items(groupQuests.take(6), key = { "gq${it.id}" }) { q ->
+                QuestRow(q, { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } }, null)
+            }
             item { ExtensionEntry("📝 Gemeinsame Themen", "${TopicScope.group(group.id).filter(topics).count { it.completedAt == null }} offen") { onTopics(TopicScope.group(group.id), group.name) } }
             item { ExtensionEntry("✉ Gruppenbrief", "Ein versiegelter Brief an die Gruppe, kein Sofort-Gruppenchat") { letterOpen = !letterOpen } }
             if (letterOpen) item { Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -304,7 +333,7 @@ fun GroupsHub(groups: List<ApiClient.Group>, friends: List<ApiClient.UserSummary
 @Composable
 fun ValleyActionGuide(friendName: String, openTopics: Int, onChat: () -> Unit, onTopics: () -> Unit, onGroups: () -> Unit, onGlossary: () -> Unit, onCourt: () -> Unit, onFriend: () -> Unit, onFriends: () -> Unit, modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
-    FilledTonalButton(onClick = { open = true }, modifier = modifier) { Text("☰ Insel-Aktionen · $openTopics Themen") }
+    FilledTonalButton(onClick = { open = true }, modifier = modifier) { Text("Insel-Aktionen · $openTopics Themen") }
     if (open) ModalBottomSheet(onDismissRequest = { open = false }) {
         LazyColumn(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 28.dp)) {
             item { Text("Eure Insel, $friendName", style = MaterialTheme.typography.titleLarge) }

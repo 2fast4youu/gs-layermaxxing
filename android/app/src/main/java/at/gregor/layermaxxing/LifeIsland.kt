@@ -140,7 +140,7 @@ internal fun BoxWithConstraintsScope.LifeLayer(
             alignment = Alignment.BottomCenter,
         )
         if (tags) Box(Modifier.offset(x = w * x - 60.dp, y = h * y + 2.dp).width(120.dp).then(keep), Alignment.TopCenter) {
-            PlaceTag(if (place == null) "＋ Bauplatz" else label, accent = place == null)
+            PlaceTag(if (place == null) "+ Bauplatz" else label, accent = place == null)
         }
     }
     if (showFigure) {

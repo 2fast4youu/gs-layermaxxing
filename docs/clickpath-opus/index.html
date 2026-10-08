@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8"><title>GS Layermaxxing · Clickpath Opus source gallery</title>
+<style>body{font:15px system-ui;background:#101418;color:#eef2f3;margin:24px}h1{margin-bottom:4px}p{color:#aab7bb}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}.card{background:#1b2429;border:1px solid #33444a;border-radius:12px;padding:10px}.card img{width:100%;height:420px;object-fit:contain;background:#080b0c;border-radius:8px}.card b{display:block;margin-top:8px}.tag{color:#74d7aa;font-size:12px}a{color:inherit;text-decoration:none}</style>
+<h1>GS Layermaxxing · current render gallery</h1>
+<p>Robolectric screenshots, synthetic fixtures only. 43 nonblank PNGs from 44 test methods; one ModalBottomSheet is explicitly missing. Dialogs use their actual popup-window sizes. Reconstructed navigation; not the unavailable old menuplan. <a href="screens.json">screens.json</a> · <a href="pixel-evidence.json">pixel-evidence.json</a> · <a href="clickpath-rendered.zip">ZIP</a>.</p>
+<div class="grid">
+<script>
+const shots=['03-room','04-card','05-chats','06-thread','07-glossary','08-topics-room','09-groups-room','12-empty-chats','13-chat-extras','13-login','14-chat-actions','14-more','20-inseln','21-inseln-leer','22-meine-insel','23-besuch','24-deko-wahl','25-bauen','25-schiff','26-inseln-debug','26-ort','27-insel-zoom','28-insel-doppeltipp','29-insel-einzeltipp','30-post','31-hafen','32-leuchtturm','33-bibliothek','34-gemeindehaus','35-haus','36-topics-screen','37-ep-screen','38-letter-room','39-spark-room','40-thread-info-sheet','41-quest-dialog','42-glossary-term-dialog','43-friend-sheet','45-label-dialog','46-recovery-dialog','47-proof-dialog','48-ep-proposal-dialog','49-request-dialog'];
+for(const s of shots)document.write(`<a class="card" href="rendered/${s}.png"><img loading="lazy" src="rendered/${s}.png"><b>${s}</b><span class="tag">rendered · pixel-verified</span></a>`);
+</script></div>

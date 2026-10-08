@@ -64,7 +64,7 @@ internal object Harbour {
         sea = Color(0xFF2F7F95), seaDeep = Color(0xFF1C4E66),
         mine = Color(0xFFD5ECE6), onMine = Color(0xFF173A40), theirs = Color(0xFFFFFCF5),
         gold = Color(0xFFC8962F), wax = Color(0xFFB3473C), read = Color(0xFF2F7F95),
-        head = Brush.verticalGradient(listOf(Color(0xFF1F3A55), Color(0xFF1A3047))), onHead = Color(0xFFFFF7E6),
+        head = Brush.verticalGradient(listOf(Color(0xFF2F7F95), Color(0xFF1C4E66))), onHead = Color(0xFFFFF7E6),
     )
     private val night = HarbourPalette(
         dark = true,
@@ -155,6 +155,17 @@ internal fun WaxSeal(text: String, color: Color, modifier: Modifier = Modifier) 
     ) {
         Text(text, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, fontFamily = Kit.Body)
     }
+}
+
+/** A wax seal carrying a line icon instead of a glyph. */
+@Composable
+internal fun WaxSealIcon(icon: Int, color: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier.sizeIn(minWidth = 22.dp, minHeight = 22.dp)
+            .background(Brush.radialGradient(listOf(color.copy(alpha = .85f), color)), CircleShape)
+            .border(1.dp, Color.White.copy(alpha = .22f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { AppIcon(icon, null, tint = Color.White, size = 17.dp) }
 }
 
 /** A folded paper boat – the send glyph of the harbour. Drawn, not an emoji. */

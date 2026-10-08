@@ -26,7 +26,7 @@ object Sparks {
     /** One kind line, not a channel. The server enforces its own cap on top. */
     const val MAX_TEXT = 120
 
-    const val COVER = "Für dich ✨"
+    const val COVER = "Für dich"
 
     fun statusLabel(opened: Boolean): String = if (opened) "Geöffnet" else "Unterwegs"
 

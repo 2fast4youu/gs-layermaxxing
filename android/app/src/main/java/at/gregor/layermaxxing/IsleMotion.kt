@@ -75,31 +75,42 @@ internal object IsleMotion {
      * null arrival = waits at anchor (approval / presence).
      */
     fun seaTime(arrivalSec: Long?, nowSec: Long): String {
-        if (arrivalSec == null) return "⚓ vor Anker · wartet auf Wind"
+        if (arrivalSec == null) return "vor Anker · wartet auf Wind"
         val left = arrivalSec - nowSec
-        if (left <= 0) return "🔔 Land in Sicht!"
+        if (left <= 0) return "Land in Sicht!"
         val min = left / 60
         val h = left / 3600
         val d = left / 86_400
         return when {
-            min < 60 -> "⏳ noch ${min.coerceAtLeast(1)} Min · gleich im Hafen"
-            h < 24 -> "🧭 noch $h ${if (h == 1L) "Stunde" else "Stunden"} auf See"
-            d < 7 -> "🌊 noch $d ${if (d == 1L) "Tag" else "Tage"} auf See"
-            else -> "🗺 noch ${d / 7} ${if (d / 7 == 1L) "Woche" else "Wochen"} auf hoher See"
+            min < 60 -> "noch ${min.coerceAtLeast(1)} Min · gleich im Hafen"
+            h < 24 -> "noch $h ${if (h == 1L) "Stunde" else "Stunden"} auf See"
+            d < 7 -> "noch $d ${if (d == 1L) "Tag" else "Tage"} auf See"
+            else -> "noch ${d / 7} ${if (d / 7 == 1L) "Woche" else "Wochen"} auf hoher See"
+        }
+    }
+
+    /** Line icon that goes with [seaTime]: anchor (waiting), bell (arrived), hourglass (today), calendar (days+). */
+    fun seaIcon(arrivalSec: Long?, nowSec: Long): Int {
+        if (arrivalSec == null) return R.drawable.ico_harbour
+        val left = arrivalSec - nowSec
+        return when {
+            left <= 0 -> R.drawable.ico_bell
+            left < 86_400 -> R.drawable.ico_timer
+            else -> R.drawable.ico_date
         }
     }
 
     /** Short form for the label right under a boat on the map. */
     fun seaTimeShort(arrivalSec: Long?, nowSec: Long): String {
-        if (arrivalSec == null) return "⚓ Anker"
+        if (arrivalSec == null) return "Anker"
         val left = arrivalSec - nowSec
-        if (left <= 0) return "🔔 Land in Sicht"
+        if (left <= 0) return "Land in Sicht"
         val min = left / 60; val h = left / 3600; val d = left / 86_400
         return when {
-            min < 60 -> "⏳ ${min.coerceAtLeast(1)} Min"
-            h < 24 -> "🧭 $h Std"
-            d < 7 -> "🌊 $d ${if (d == 1L) "Tag" else "Tage"}"
-            else -> "🗺 ${d / 7} Wo"
+            min < 60 -> "${min.coerceAtLeast(1)} Min"
+            h < 24 -> "$h Std"
+            d < 7 -> "$d ${if (d == 1L) "Tag" else "Tage"}"
+            else -> "${d / 7} Wo"
         }
     }
 

@@ -164,9 +164,9 @@ internal fun MoreScreen(
             MoreDest.ABOUT -> AboutPage(status, serverProfile, onServerProfile)
         }
     } else Column(Modifier.fillMaxSize()) {
-        if (onExit != null) Row(Modifier.fillMaxWidth()) {
-            TextButton(onClick = onExit) { Text("← Inseln") }
-            if (onAccounts != null) TextButton(onClick = onAccounts) { Text("Konten wechseln") }
+        // From the island the room frame already has its close button: only the account switch stays here.
+        if (onExit != null && onAccounts != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onAccounts) { Text("Konten wechseln") }
         }
         Box(Modifier.weight(1f)) { MoreHub(status, ep, onLogout, onDest = { dest = it }, placesOnIsland = castleExperiment) }
     }
@@ -198,22 +198,22 @@ private fun MoreHub(
                     Text(status?.name ?: "Profil", style = MaterialTheme.typography.titleLarge)
                     Text("Profil bearbeiten", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("›", fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                AppIcon(R.drawable.ico_chevron, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 26.dp)
             }
         }
         if (status?.needsPassword == true) item {
             Row(
                 Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.errorContainer).clickable { onDest(MoreDest.PROFILE) }.padding(14.dp),
-            ) { Text("⚠  Dein Konto hat noch kein Passwort – jetzt absichern", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold) }
+            ) { Text("Dein Konto hat noch kein Passwort – jetzt absichern", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold) }
         }
-        if (!placesOnIsland) item { MenuRow("✉", "Briefe", "Eingang, Ausgang und Nachweise") { onDest(MoreDest.LETTERS) } }
-        if (!placesOnIsland) item { MenuRow("★", "Punkte", if ((ep?.given ?: 0) + (ep?.received ?: 0) > 0) "Gegeben ${ep?.given ?: 0} · Erhalten ${ep?.received ?: 0}" else "Noch keine") { onDest(MoreDest.EP) } }
-        if (!placesOnIsland) item { MenuRow("📖", "Wörterbuch", "Begriffe der App, gemeinsam erklärt") { onDest(MoreDest.GLOSSARY) } }
+        item { MenuRow(R.drawable.ico_letter, "Briefe", "Eingang, Ausgang und Nachweise") { onDest(MoreDest.LETTERS) } }
+        item { MenuRow(R.drawable.ico_points, "Punkte", if ((ep?.given ?: 0) + (ep?.received ?: 0) > 0) "Gegeben ${ep?.given ?: 0} · Erhalten ${ep?.received ?: 0}" else "Noch keine") { onDest(MoreDest.EP) } }
+        item { MenuRow(R.drawable.ico_glossary, "Wörterbuch", "Begriffe der App, gemeinsam erklärt") { onDest(MoreDest.GLOSSARY) } }
         item { HorizontalDivider(Modifier.padding(vertical = 6.dp)) }
-        item { MenuRow("🎨", "Darstellung", "Modus, Design, App-Sperre") { onDest(MoreDest.APPEARANCE) } }
-        item { MenuRow("🔐", "Konto & Sicherheit", "Passwort, Geräte, Blockierungen") { onDest(MoreDest.ACCOUNT) } }
-        item { MenuRow("ℹ", "Über die App", "Server und Version") { onDest(MoreDest.ABOUT) } }
+        item { MenuRow(R.drawable.ico_appearance, "Darstellung", "Modus, Design, App-Sperre") { onDest(MoreDest.APPEARANCE) } }
+        item { MenuRow(R.drawable.ico_security, "Konto & Sicherheit", "Passwort, Geräte, Blockierungen") { onDest(MoreDest.ACCOUNT) } }
+        item { MenuRow(R.drawable.ico_about, "Über die App", "Server und Version") { onDest(MoreDest.ABOUT) } }
         item { Spacer(Modifier.height(12.dp)) }
         item { OutlinedButton(onClick = onLogout, Modifier.fillMaxWidth().height(48.dp)) { Text("Auf diesem Gerät abmelden") } }
         item { Spacer(Modifier.height(24.dp)) }
@@ -221,21 +221,21 @@ private fun MoreHub(
 }
 
 @Composable
-private fun MenuRow(glyph: String, title: String, subtitle: String, onClick: () -> Unit) {
+private fun MenuRow(icon: Int, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 60.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
-            Text(glyph, fontSize = 18.sp)
+            AppIcon(icon, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, size = 21.dp)
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
-        Text("›", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AppIcon(R.drawable.ico_chevron, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 24.dp)
     }
 }
 
@@ -298,7 +298,7 @@ private fun ProfilePage(
                             .border(if (on) 3.dp else 0.dp, if (on) MaterialTheme.colorScheme.onSurface else Color.Transparent, CircleShape)
                             .clickable { color = value }.semantics { contentDescription = "Farbe $label" },
                         contentAlignment = Alignment.Center,
-                    ) { if (on) Text("✓", color = Color.White, fontWeight = FontWeight.Bold) }
+                    ) { if (on) AppIcon(R.drawable.ico_check, null, tint = Color.White, size = 20.dp) }
                 }
             }
         }
@@ -342,7 +342,7 @@ private fun AppearancePage(store: SessionStore, onTheme: (String) -> Unit, onCas
         item { Text("Nachrichten und Insel-Fortschritt bleiben beim Wechseln erhalten.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { SectionTitle("Design") }
         item { Card { Column(Modifier.padding(vertical = 6.dp)) {
-            listOf("system" to "Wie das Handy", "light" to "Hell", "dark" to "Dunkel", "antique" to "Altertümlich").forEach { (key, label) ->
+            listOf("system" to "Hafenpost – hell/dunkel wie das Handy", "light" to "Hafenpost hell", "dark" to "Hafenpost dunkel", "material" to "Material You (Handyfarben)", "antique" to "Altertümlich").forEach { (key, label) ->
                 Row(Modifier.fillMaxWidth().clickable { theme = key; onTheme(key) }.padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.RadioButton(selected = theme == key, onClick = { theme = key; onTheme(key) })
                     Text(label)
@@ -363,7 +363,10 @@ private fun AppearancePage(store: SessionStore, onTheme: (String) -> Unit, onCas
                         })
                     }
                 }) { Text("Benachrichtigungen erlauben") }
-            } else Text("✓ Benachrichtigungen erlaubt", fontSize = 12.sp, color = Color(0xFF19703B))
+            } else Row(verticalAlignment = Alignment.CenterVertically) {
+                AppIcon(R.drawable.ico_check, null, tint = Color(0xFF19703B), size = 14.dp, modifier = Modifier.padding(end = 4.dp))
+                Text("Benachrichtigungen erlaubt", fontSize = 12.sp, color = Color(0xFF19703B))
+            }
         } } }
         item { SectionTitle("Entwickler") }
         item { Card { Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
