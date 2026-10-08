@@ -604,8 +604,10 @@ private fun RoundTable(g: ApiClient.Group, openQuests: Int, onClick: () -> Unit)
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "Quest für ${g.name}", onClick = onClick)) {
         BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f)) {
             val w = maxWidth
-            val seat: Dp = w * .25f
-            val members = g.members.take(8)
+            val members = g.members.take(12)
+            val overflow = g.members.size - members.size
+            // Up to 8 keep full seat size; beyond that, shrink seats so everyone still fits the rim.
+            val seat: Dp = if (members.size <= 8) w * .25f else w * .25f * (8f / members.size).coerceAtLeast(.62f)
             // Stools first (behind), then the table, then the people on the front stools.
             val placed = members.mapIndexed { i, m ->
                 val a = (i.toFloat() / members.size) * 2f * PI.toFloat() - PI.toFloat() / 2
@@ -629,6 +631,10 @@ private fun RoundTable(g: ApiClient.Group, openQuests: Int, onClick: () -> Unit)
                     Alignment.Center,
                 ) { Text(m.avatarEmoji, fontSize = 16.sp) }
             }
+            if (overflow > 0) Box(
+                Modifier.align(Alignment.BottomEnd).offset(x = (-4).dp, y = (-4).dp).shadow(2.dp, RoundedCornerShape(50))
+                    .background(Color(0xFF4A2414), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 3.dp),
+            ) { Text("+$overflow", fontFamily = Display, fontSize = 11.sp, color = Color(0xFFFFF6E5)) }
         }
         Tag(g.name, size = 14, modifier = Modifier.offset(y = (-6).dp))
         Text("${g.members.size} am Tisch", fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFFFFF6E5),
