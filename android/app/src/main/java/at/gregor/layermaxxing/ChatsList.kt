@@ -149,6 +149,7 @@ internal fun ChatsScreen(
     groupCount: Int, topicCount: Int, showValley: Boolean,
     refreshing: Boolean = false, onRefresh: () -> Unit = {},
 ) {
+    var placesMenu by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(ChatTools.ListFilter.ALL) }
     val now = remember(conversations) { Instant.now().epochSecond }
@@ -209,11 +210,15 @@ internal fun ChatsScreen(
                         val count = if (f == ChatTools.ListFilter.UNREAD) conversations.count { it.hasNews } else 0
                         ListChip(if (count > 0) "${f.label} $count" else f.label, selected = filter == f, p = p) { filter = f }
                     }
-                    // The shared places are always one tap from the main menu, even before the first one exists.
-                    ListChip(if (groupCount > 0) "Gruppen $groupCount" else "+ Gruppe", selected = false, p = p, onClick = onGroups)
-                    ListChip(if (topicCount > 0) "Themen $topicCount" else "+ Thema", selected = false, p = p, onClick = onTopicsHub)
-                    ListChip("Wörterbuch", selected = false, p = p, onClick = onGlossary)
-                    if (showValley) ListChip("Inseln", selected = false, p = p, onClick = onValley)
+                    Box {
+                        ListChip("Gemeinsam", selected = placesMenu, p = p) { placesMenu = true }
+                        DropdownMenu(placesMenu, { placesMenu = false }) {
+                            DropdownMenuItem(text = { Text("Gruppen${if (groupCount > 0) " · $groupCount" else ""}") }, leadingIcon = { AppIcon(R.drawable.ico_groups, null, size = 20.dp) }, onClick = { placesMenu = false; onGroups() })
+                            DropdownMenuItem(text = { Text("Themen${if (topicCount > 0) " · $topicCount" else ""}") }, leadingIcon = { AppIcon(R.drawable.ico_topics, null, size = 20.dp) }, onClick = { placesMenu = false; onTopicsHub() })
+                            DropdownMenuItem(text = { Text("Wörterbuch") }, leadingIcon = { AppIcon(R.drawable.ico_glossary, null, size = 20.dp) }, onClick = { placesMenu = false; onGlossary() })
+                        }
+                    }
+
                 }
             }
             if (requests.isNotEmpty()) items(requests, key = { it.key }) { request ->

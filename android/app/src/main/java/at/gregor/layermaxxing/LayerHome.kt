@@ -531,6 +531,7 @@ fun LayerHome(
                     topics = topics,
                     epLine = epLineFor(ep, status?.userId, threadFriend),
                     creativeActive = creativeActive,
+                    islandInfo = islands?.friends?.firstOrNull { it.friendId == threadFriend.id },
                     quests = quests, label = friendLabels[threadFriend.id],
                     onLabel = { label -> saveFriendLabel(threadFriend.id, label) },
                     onQuestDone = { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } },
@@ -691,11 +692,7 @@ private fun AppChrome(
             }
         }
         Spacer(Modifier.weight(1f))
-        Box(
-            Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onRefresh)
-                .semantics { contentDescription = "Aktualisieren"; role = Role.Button },
-            contentAlignment = Alignment.Center,
-        ) { AppIcon(R.drawable.ico_refresh, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 23.dp) }
+
     }
 }
 

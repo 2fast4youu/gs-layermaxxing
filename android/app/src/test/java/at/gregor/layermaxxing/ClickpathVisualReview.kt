@@ -68,6 +68,7 @@ class ClickpathVisualReview {
     private val api = ApiClient()
     private val act: ((suspend () -> Unit) -> Unit) = {}
 
+    @Test fun emojiPicker() = shot("54-emoji-picker", dialog = true) { light { EmojiPicker("Emoji", {}, {}) } }
     @Test fun topicsScreen() = shot("36-topics-screen") { light { TopicsScreen(listOf(topic), friend, "synthetic", api, act) } }
     @Test fun epScreen() = shot("37-ep-screen") { light { EpScreen("synthetic", api, listOf(settings), ApiClient.EpOverview(emptyList(), emptyList(), emptyList(), 4, 7, "Wegweiser"), EpPrompt(2, 7), {}, act) } }
     @Test fun letterRoom() = shot("38-letter-room") { light { LetterRoom("Gerfried", listOf(msg), emptyMap(), LetterAction(true, "Brief schreiben", null), "synthetic", api, act, false, emptyMap(), null, {}, {}, {}, {}, {}, {}, {}, {}) } }

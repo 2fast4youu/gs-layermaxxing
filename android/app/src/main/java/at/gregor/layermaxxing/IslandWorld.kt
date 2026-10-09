@@ -870,122 +870,6 @@ private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name
 }
 
 @Composable
-internal fun FriendSheet(
-    friend: ApiClient.UserSummary,
-    info: ApiClient.IslandInfo?,
-    label: String?,
-    onLabel: (String?) -> Unit,
-    letters: List<ApiClient.Message>,
-    opened: Map<Long, OpenedMessage>,
-    quests: List<ApiClient.Quest>,
-    topicCount: Int,
-    onChat: () -> Unit,
-    onLetter: () -> Unit,
-    onOpenLetter: (ApiClient.Message) -> Unit,
-    onLockedTap: (ApiClient.Message) -> Unit,
-    onTopics: () -> Unit,
-    onVisit: () -> Unit,
-    onNewQuest: () -> Unit,
-    onQuestDone: (ApiClient.Quest, Boolean) -> Unit,
-) {
-    val level = info?.level ?: 1
-    var naming by rememberSaveable { mutableStateOf(false) }
-    if (naming) LabelDialog(friend.name, label, onDismiss = { naming = false }) { onLabel(it); naming = false }
-    LazyColumn(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding()) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(52.dp).background(profileColor(friend.displayColor).copy(alpha = .18f), CircleShape), Alignment.Center) {
-                    Text(friend.avatarEmoji, fontSize = 26.sp)
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(friend.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Isle.Ink)
-                    Text(
-                        (label?.let { "$it · " } ?: "") + "${Isle.levelName(level)} · Stufe $level",
-                        color = Isle.Muted, fontSize = 13.sp,
-                    )
-                    Row(
-                        Modifier.clip(RoundedCornerShape(50)).clickable { naming = true }.padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AppIcon(R.drawable.ico_edit, null, tint = Isle.TealDark, size = 15.dp, modifier = Modifier.padding(end = 5.dp))
-                        Text(if (label == null) "Wie nennst du ${friend.name}?" else "Namen ändern", color = Isle.TealDark, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-                DynamicIsland(remember(level, friend.id) { IslandPlans.friend(level, friend.id) }, Modifier.width(84.dp), animate = false)
-            }
-            Spacer(Modifier.height(10.dp))
-            LinearProgressIndicator(
-                progress = { IsleLayout.progress(info) }, color = Isle.Teal, trackColor = Isle.Sand,
-                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)),
-            )
-            Text(
-                info?.nextAt?.let { "Noch ${it - info.score} Punkte bis „${Isle.levelName(level + 1)}“ · am schnellsten mit gemeinsamen Quests" }
-                    ?: "Eure Insel ist voll ausgebaut",
-                color = Isle.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
-            )
-            Spacer(Modifier.height(14.dp))
-            OutlinedButton(onClick = onVisit, Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                AppIcon(R.drawable.ico_island, null, size = 18.dp, modifier = Modifier.padding(end = 8.dp)); Text("Insel von ${friend.name} besuchen")
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = onChat, Modifier.weight(1f).heightIn(min = 48.dp)) { AppIcon(R.drawable.ico_chat, null, size = 18.dp, modifier = Modifier.padding(end = 8.dp)); Text("Chat") }
-                Button(
-                    onClick = onLetter, Modifier.weight(1f).heightIn(min = 48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Isle.Teal),
-                ) { AppIcon(R.drawable.ico_letter, null, size = 18.dp, modifier = Modifier.padding(end = 8.dp)); Text("Brief schreiben") }
-            }
-            SectionTitle("Quests mit ${friend.name}", action = "+ Neue" to onNewQuest)
-            if (quests.isEmpty()) Text("Noch keine gemeinsame Quest – plant etwas Echtes zusammen.", color = Isle.Muted, fontSize = 13.sp)
-        }
-        items(quests.take(4), key = { "q${it.id}" }) { QuestRow(it, onQuestDone, null) }
-        item {
-            val received = letters.filter { it.incoming }.sortedByDescending { it.createdAt }
-            val sent = letters.filter { !it.incoming }.sortedByDescending { it.createdAt }
-            SectionTitle("Briefe")
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LetterColumn("Empfangen", received, opened, onOpenLetter, onLockedTap, Modifier.weight(1f))
-                LetterColumn("Gesendet", sent, opened, onOpenLetter, onLockedTap, Modifier.weight(1f))
-            }
-            TextButton(onClick = onTopics, modifier = Modifier.padding(top = 6.dp).heightIn(min = 48.dp)) {
-                AppIcon(R.drawable.ico_topics, null, tint = Isle.TealDark, size = 18.dp, modifier = Modifier.padding(end = 8.dp))
-                Text("Themen mit ${friend.name}${if (topicCount > 0) " · $topicCount offen" else ""}", color = Isle.TealDark)
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-    }
-}
-
-@Composable
-private fun LetterColumn(
-    title: String, letters: List<ApiClient.Message>, opened: Map<Long, OpenedMessage>,
-    onOpen: (ApiClient.Message) -> Unit, onLocked: (ApiClient.Message) -> Unit, modifier: Modifier,
-) {
-    Column(modifier.background(Isle.Sand, RoundedCornerShape(16.dp)).padding(10.dp)) {
-        Text(title, fontWeight = FontWeight.Bold, color = Isle.Ink, fontSize = 13.sp)
-        if (letters.isEmpty()) Text("–", color = Isle.Muted, fontSize = 13.sp)
-        letters.take(4).forEach { m ->
-            val state = Conversations.letterState(m, opened[m.id] != null)
-            val boat = LetterBoat.forMode(m.mode)
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { if (state.locked) onLocked(m) else onOpen(m) },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AppIcon(if (state.locked) boat.badge else if (state == LetterState.READY) R.drawable.ico_letter_ready else R.drawable.ico_letter_open, null, tint = Isle.TealDark, size = 17.dp)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    Conversations.letterPreviewText(m), fontSize = 12.sp, color = Isle.Ink, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-                )
-                if (state.locked) AppIcon(R.drawable.ico_lock, null, size = 12.dp)
-            }
-        }
-        if (letters.size > 4) Text("+${letters.size - 4} weitere", fontSize = 11.sp, color = Isle.Muted)
-    }
-}
-
-@Composable
 internal fun QuestRow(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> Unit, onDelete: ((ApiClient.Quest) -> Unit)?) {
     val done = q.completedAt != null
     Row(
@@ -1011,7 +895,8 @@ internal fun QuestRow(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> 
             Modifier.size(40.dp).clip(CircleShape)
                 .background(if (done) Isle.Teal else Isle.Card)
                 .border(2.dp, Isle.Teal, CircleShape)
-                .clickable(onClickLabel = if (done) "Wieder öffnen" else "Als erledigt markieren") { onDone(q, !done) },
+                .clickable(onClickLabel = if (done) "Wieder öffnen" else "Als erledigt markieren") { onDone(q, !done) }
+                .semantics { contentDescription = if (done) "Wieder öffnen" else "Als erledigt markieren" },
             Alignment.Center,
         ) { if (done) AppIcon(R.drawable.ico_check, null, tint = Color.White, size = 16.dp) }
         if (onDelete != null && q.canDelete) TextButton(onClick = { onDelete(q) }, Modifier.heightIn(min = 40.dp)) {

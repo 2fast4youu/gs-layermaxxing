@@ -11,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -179,16 +180,17 @@ internal fun HarbourSticker(key: String, size: Dp, modifier: Modifier = Modifier
 /** The sticker drawer above the composer. */
 @Composable
 internal fun StickerTray(p: HarbourPalette, onPick: (String) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().background(p.paperDeep).horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ChatExtras.STICKERS.forEach { key ->
-            Box(
-                Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(p.card).clickable { onPick(key) }
-                    .semantics { role = Role.Button; contentDescription = "Sticker ${ChatExtras.stickerLabel(key)} senden" },
-                contentAlignment = Alignment.Center,
-            ) { HarbourSticker(key, 52.dp) }
+    Column(Modifier.fillMaxWidth().background(p.paperDeep).padding(horizontal = 10.dp, vertical = 8.dp)) {
+        Text("Sticker", fontSize = 12.sp, color = p.inkSoft, modifier = Modifier.padding(bottom = 6.dp))
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ChatExtras.STICKERS.forEach { key ->
+                Column(Modifier.width(72.dp).clip(RoundedCornerShape(16.dp)).background(p.card).clickable { onPick(key) }
+                    .semantics { role = Role.Button; contentDescription = "Sticker ${ChatExtras.stickerLabel(key)} senden" }.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    HarbourSticker(key, 48.dp)
+                    Text(ChatExtras.stickerLabel(key), fontSize = 10.sp, color = p.inkSoft, maxLines = 1)
+                }
+            }
         }
     }
 }
@@ -199,9 +201,9 @@ internal fun StickerTray(p: HarbourPalette, onPick: (String) -> Unit) {
 
 /** The row of quick reactions at the top of a line's action sheet. */
 @Composable
-internal fun ReactionBar(current: String?, p: HarbourPalette, onPick: (String) -> Unit) {
+internal fun ReactionBar(current: String?, p: HarbourPalette, onMore: (() -> Unit)? = null, onPick: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).horizontalScroll(rememberScrollState())
             .background(p.card, RoundedCornerShape(28.dp)).border(1.dp, p.line, RoundedCornerShape(28.dp))
             .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -215,6 +217,10 @@ internal fun ReactionBar(current: String?, p: HarbourPalette, onPick: (String) -
                 contentAlignment = Alignment.Center,
             ) { Text(emoji, fontSize = 24.sp) }
         }
+        onMore?.let { more ->
+            Box(Modifier.size(46.dp).clip(CircleShape).clickable(onClick = more).semantics { contentDescription = "Weitere Reaktionen"; role = Role.Button }, Alignment.Center) { Text("+", fontSize = 26.sp, color = p.sea) }
+        }
+
     }
 }
 
@@ -328,7 +334,8 @@ internal suspend fun preparePhoto(context: Context, uri: Uri): ByteArray? = with
 
 /** A photo line: loads and decrypts on demand, then shows the picture. */
 @Composable
-internal fun ChatPhoto(load: suspend () -> ByteArray, p: HarbourPalette, onOpen: (Bitmap) -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+internal fun ChatPhoto(load: suspend () -> ByteArray, p: HarbourPalette, onLongPress: (() -> Unit)? = null, onOpen: (Bitmap) -> Unit) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var failed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -337,7 +344,7 @@ internal fun ChatPhoto(load: suspend () -> ByteArray, p: HarbourPalette, onOpen:
     }
     Box(
         Modifier.widthIn(max = 240.dp).heightIn(min = 120.dp).clip(RoundedCornerShape(14.dp)).background(p.paperDeep)
-            .clickable(enabled = bitmap != null) { bitmap?.let(onOpen) },
+            .combinedClickable(enabled = bitmap != null, onLongClick = onLongPress, onClick = { bitmap?.let(onOpen) }),
         contentAlignment = Alignment.Center,
     ) {
         val b = bitmap
@@ -396,7 +403,8 @@ internal class BottleRecorder(private val context: Context) {
 
 /** A bottle-post line: a small bottle, play/stop and the length. */
 @Composable
-internal fun VoiceNote(label: String, load: suspend () -> ByteArray, tint: Color, p: HarbourPalette) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+internal fun VoiceNote(label: String, load: suspend () -> ByteArray, tint: Color, p: HarbourPalette, onLongPress: (() -> Unit)? = null, onSelect: (() -> Unit)? = null) {
     val context = LocalContext.current
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
     var loading by remember { mutableStateOf(false) }
@@ -426,10 +434,12 @@ internal fun VoiceNote(label: String, load: suspend () -> ByteArray, tint: Color
     }
     Row(Modifier.widthIn(min = 180.dp).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(
-            Modifier.size(40.dp).clip(CircleShape).background(p.sea).clickable {
-                val current = player
-                if (current != null) { runCatching { current.stop() }; current.release(); player = null } else if (!loading) pending = true
-            }.semantics { role = Role.Button; contentDescription = if (player != null) "Flaschenpost stoppen" else "Flaschenpost abspielen" },
+            Modifier.size(40.dp).clip(CircleShape).background(p.sea).combinedClickable(onLongClick = onLongPress, onClick = {
+                if (onSelect != null) onSelect() else {
+                    val current = player
+                    if (current != null) { runCatching { current.stop() }; current.release(); player = null } else if (!loading) pending = true
+                }
+            }).semantics { role = Role.Button; contentDescription = if (player != null) "Flaschenpost stoppen" else "Flaschenpost abspielen" },
             contentAlignment = Alignment.Center,
         ) {
             if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)

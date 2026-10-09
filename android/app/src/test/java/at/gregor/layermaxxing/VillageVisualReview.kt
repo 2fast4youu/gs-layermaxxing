@@ -1,5 +1,6 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -71,6 +72,26 @@ class VillageVisualReview {
         lockedLetters = 0, awaitingMe = 0, chatsEnabled = true, lettersEnabled = true, epEnabled = false,
     )
 
+    @Test fun actualCalmThread() = shot("53-actual-calm-thread", gesture = {
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Samstag um neun?").fetchSemanticsNodes().isNotEmpty() }
+    }) {
+        LayermaxxingTheme("light") { androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) { ChatReviewThread() } }
+    }
+    @Test fun calmFriendCard() = shot("51-calm-friend-card") {
+        LayermaxxingTheme("light") { androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
+            FriendSheet(friends[0], ApiClient.IslandInfo(2, 100, 4, 104, 3, 200), "Bester Freund", {}, emptyList(), emptyMap(),
+                listOf(ApiClient.Quest(1, "Gipfelrunde", "", "hike", 30, 1, "Gregor", "friend", "Gerfried", 2, java.time.Instant.now().epochSecond, null, null, true)),
+                0, {}, {}, {}, {}, {}, null, {}, { _, _ -> }, extra = { androidx.compose.material3.Text("Freundschaftsregeln") })
+        } }
+    }
+    @Test fun calmAttachmentMenu() = shot("52-calm-plus-menu") {
+        LayermaxxingTheme("light") { androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(20.dp)) {
+                androidx.compose.material3.Text("Anhänge und Aktionen")
+                ChatAttachmentMenu(ComposerPlan(true, true, "Nachricht", 0, null), ComposerExtras(false, false, "", {}, {}, {}, {}, {}), {}, {}, {})
+            }
+        } }
+    }
     @Test fun chatList() = shot("05-chats") {
         LayermaxxingTheme("light") {
             androidx.compose.material3.Surface {
@@ -123,7 +144,8 @@ class VillageVisualReview {
         LayermaxxingTheme("light") {
             androidx.compose.material3.Surface {
                 androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize()) {
-                    ThreadHeader(friends[0], false, 2, 3, true, {}, {}, {}, {}, {}, {}, {}, {}, {})
+                    ThreadHeader(friends[0], false, 2, 3, false, {}, {}, {}, {}, {}, {}, {}, {}, {})
+                    ChatActionHint("1 Brief bereit · 1 Quest offen", {})
                     androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f).fillMaxSize().chatWallpaper()) {
                         androidx.compose.foundation.layout.Column(
                             androidx.compose.ui.Modifier.padding(10.dp),
@@ -134,10 +156,6 @@ class VillageVisualReview {
                             ThreadChatBubble(ApiClient.ChatMessage(2, 1, 2, "Ja klar, ich bring die Schlüssel mit", now - 500, now - 400), true, {}, {})
                             ThreadChatBubble(ApiClient.ChatMessage(3, 2, 1, "> Ja klar, ich bring die Schlüssel mit\n\nPerfekt, dann um 9 beim Parkplatz", now - 300, null), false, {}, {})
                             ThreadChatBubble(ApiClient.ChatMessage(4, 1, 2, "👍", now - 60, null), true, {}, {})
-                            LetterActivityRow(
-                                ApiClient.Message(9, 2, "Gerfried", true, "Für Samstag", "", "ok", now - 3600, "timed", now - 10, null, null, true, false, null, true, true, null, null, null, emptyList(), null, null, null),
-                                LetterState.READY, now, outgoing = false, pulsing = false, onOpenRoom = {},
-                            )
                             ThreadChatBubble(ApiClient.ChatMessage(5, 2, 1, "Hast du den Brief schon gesehen? Den hab ich dir letzte Woche vom Leuchtturm geschickt 🙂", now - 30, null), false, {}, {})
                         }
                     }
