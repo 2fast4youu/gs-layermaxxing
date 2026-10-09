@@ -134,10 +134,11 @@ internal object IslandPlans {
 
     fun placedBuildings(score: Int, construction: ApiClient.IslandConstruction? = null): Map<IsleBuilding, IslandPiece> {
         val s = construction?.let { constructionScale(it.land) } ?: landScale(score)
-        return homeBuildings.mapValues { (b, p) ->
+        return homeBuildings.filter { (b, _) -> (construction?.buildings?.get(b.name) ?: if (construction == null && score >= 25) 1 else 0) > 0 }.mapValues { (b, p) ->
             val tier = if (construction != null) construction.buildings[b.name] ?: 0 else if (score >= 25) 1 else 0
-            val (x, y) = onLand(p.x, p.y, s)
-            p.copy(res = IslandArtwork.resource(b, tier), x = x, y = y, size = p.size * (if (tier == 0) 1.0f else .9f + tier * .16f),
+            val position = construction?.positions?.get(b.name)
+            val (x, y) = onLand(position?.get(0)?.div(20f) ?: p.x, position?.get(1)?.div(20f) ?: p.y, s)
+            p.copy(res = IslandArtwork.resource(b, tier), x = x, y = y, size = (p.size * (.9f + tier * .16f)).coerceAtMost(.145f),
                 primitive = b.takeIf { tier == 0 }, tier = tier)
         }
     }

@@ -124,6 +124,8 @@ internal fun HubIsland(
     onFigure: (() -> Unit)? = null,
     lifeTags: Boolean = true,
     editingPlots: Boolean = false,
+    placement: Pair<IsleBuilding,List<Int>>? = null,
+    onPosition: (List<Int>)->Unit = {},
 ) {
     val plan = androidx.compose.runtime.remember(seed, decor, life?.score, life?.construction) {
         val base = IslandPlans.home(seed, life?.score ?: 0, life?.construction ?: ApiClient.IslandConstruction())
@@ -146,7 +148,10 @@ internal fun HubIsland(
         }
         if (life != null) LifeLayer(
             places = life.places, plots = life.plots, unlocks = life.plotUnlocks, here = life.here?.plot,
-            showFigure = showFigure && onSlot == null, onPlot = if (onSlot == null) onPlot else null, onFigure = onFigure,
+            showFigure = showFigure && onSlot == null && life.let { h ->
+                val (fx,fy)=LifePlaces.figureAt(h.here?.plot,h.places).let { (x,y) -> IslandPlans.onLand(x,y,ls) }
+                IslandPlans.placedBuildings(h.score,h.construction).values.none { p -> kotlin.math.abs(p.x-fx)<p.size*.6f && fy<=p.y && fy>=p.y-p.size*IslandPlans.ASPECT }
+            }, onPlot = if (onSlot == null) onPlot else null, onFigure = onFigure,
             tags = lifeTags, landScale = ls, showEmptyPlots = editingPlots,
         )
         if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (sx, sy) ->
@@ -161,10 +166,11 @@ internal fun HubIsland(
                 Alignment.Center,
             ) { AppIcon(if (item == null) R.drawable.ico_add else R.drawable.ico_edit, null, tint = Isle.TealDark, size = 17.dp) }
         }
+        placement?.let { (b,p) -> IslandPlacementGrid(life?.construction ?: ApiClient.IslandConstruction(),b,p,life?.let(IslandLayout::obstacles).orEmpty(),onPosition) }
         val gate = LocalIslandTapGate.current
         // Signs and touch targets follow the buildings onto the grown land (not the full-size anchors).
         val placed = androidx.compose.runtime.remember(life?.score, life?.construction) { IslandPlans.placedBuildings(life?.score ?: 0, life?.construction ?: ApiClient.IslandConstruction()) }
-        if (labels && onSlot == null) placed.forEach { (b, piece) ->
+        if (labels && onSlot == null && placement == null) placed.forEach { (b, piece) ->
             val count = badges[b] ?: 0
             val box = w * piece.size
             // The whole building is the touch target; the pill sits at its foot.

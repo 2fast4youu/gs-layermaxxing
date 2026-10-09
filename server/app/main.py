@@ -628,6 +628,7 @@ class IslandAction(BaseModel):
     action: str
     building: str | None = None
     expected_revision: int = Field(ge=0)
+    position: list[int] | None = None
 
 
 class HereUpdate(BaseModel):
@@ -1645,6 +1646,16 @@ BUILD_COSTS = (25, 60, 100)
 BUILD_DAYS = (0, 2, 7)
 LAND_COSTS = (40, 80, 140, 220, 320)
 LAND_DAYS = (1, 3, 7, 14, 21)
+ISLAND_DEFAULT_POSITIONS = {"HOUSE": [10, 6], "POST": [2, 9], "LIGHTHOUSE": [18, 9], "LIBRARY": [15, 16], "CAMPFIRE": [6, 16], "HARBOUR": [10, 17]}
+ISLAND_PLOT_POSITIONS = [(10,6),(6,8),(14,8),(5,13),(15,13),(7,4),(13,4),(8,15),(12,15)]
+ISLAND_DECOR_POSITIONS = [(8,9),(12,9),(7,11),(13,11),(9,12),(11,12)]
+
+
+def island_building_blocks(state, position):
+    x,y = position
+    clearance = (3 / (.46,.58,.70,.82,.92,1.0)[state["land"]]) ** 2
+    return any((x-p[0])**2+(y-p[1])**2 < clearance for b,level in state["buildings"].items() if level>0
+               for p in [state.get("positions", {}).get(b, ISLAND_DEFAULT_POSITIONS[b])])
 
 
 def island_state(conn, user_id, mode):
@@ -1725,6 +1736,9 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
                 raise HTTPException(422, "Höchste Ausbaustufe erreicht")
             cost, day = BUILD_COSTS[level], BUILD_DAYS[level]
             state["buildings"][payload.building] = level + 1
+        elif payload.action == "move":
+            if payload.building not in ISLAND_BUILDINGS or state["buildings"].get(payload.building, 0) <= 0 or payload.position is None:
+                raise HTTPException(422, "Nur vorhandene Gebäude können verschoben werden")
         elif payload.action == "expand":
             land = state["land"]
             if land >= len(LAND_COSTS):
@@ -1737,8 +1751,35 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             state["buildings"][payload.building] = max(0, state["buildings"].get(payload.building, 0) - 1)
         elif payload.action == "shrink" and payload.mode == "creative":
             state["land"] = max(0, state["land"] - 1)
+            clearance = (3 / (.46,.58,.70,.82,.92,1.0)[state["land"]]) ** 2
+            positions = [state.get("positions", {}).get(b,ISLAND_DEFAULT_POSITIONS[b]) for b,level in state["buildings"].items() if level>0]
+            if any((p[0]-q[0])**2+(p[1]-q[1])**2 < clearance for i,p in enumerate(positions) for q in positions[i+1:]):
+                raise HTTPException(422, "Zum Verkleinern zuerst Gebäude verschieben oder zurückbauen")
         elif payload.action != "activate":
             raise HTTPException(422, "Unbekannte Ausbauaktion")
+        # Legacy upgrades retain their location; new construction and relocation must validate.
+        relocating = payload.action == "move" or (payload.action == "upgrade" and
+            (level == 0 or payload.position is not None and payload.position != state.get("positions", {}).get(payload.building, ISLAND_DEFAULT_POSITIONS[payload.building])))
+        if relocating:
+            if payload.building not in ISLAND_BUILDINGS or len(payload.position if payload.position is not None else ISLAND_DEFAULT_POSITIONS[payload.building]) != 2:
+                raise HTTPException(422, "Ungültiger Bauplatz")
+            x, y = payload.position if payload.position is not None else ISLAND_DEFAULT_POSITIONS[payload.building]
+            if not (0 <= x <= 20 and 0 <= y <= 20) or ((x / 20 - .5) / .46) ** 2 + ((y / 20 - .55) / .40) ** 2 > .95 ** 2:
+                raise HTTPException(422, "Bauplatz liegt außerhalb der Insel")
+            clearance = (3 / (.46,.58,.70,.82,.92,1.0)[state["land"]]) ** 2
+            defaults = ISLAND_DEFAULT_POSITIONS
+            for other, level in state["buildings"].items():
+                if level > 0 and other != payload.building:
+                    ox, oy = state.get("positions", {}).get(other, defaults[other])
+                    if (x - ox) ** 2 + (y - oy) ** 2 < clearance:
+                        raise HTTPException(422, "Bauplatz ist bereits belegt")
+            if payload.mode == "normal":
+                plots = ISLAND_PLOT_POSITIONS
+                slots = ISLAND_DECOR_POSITIONS
+                occupied = [plots[int(p)] for p in places_of(conn, uid)] + [slots[int(p)] for p in decor_of(conn, uid)]
+                if any((x-ox)**2+(y-oy)**2 < clearance for ox,oy in occupied):
+                    raise HTTPException(422, "Bauplatz ist durch einen Ort oder Deko belegt")
+            state.setdefault("positions", {})[payload.building] = [x, y]
         if payload.mode == "normal":
             if view["age_days"] < day:
                 raise HTTPException(403, f"Dieser Ausbau ist ab Tag {day} möglich")
@@ -1754,6 +1795,7 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
 @app.put("/api/island/places")
 def set_places(payload: PlacesUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
     with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         qp, ep = own_score(conn, user["id"])
         score = qp + EP_WEIGHT * ep
         clean: dict[int, tuple[str, str]] = {}
@@ -1764,6 +1806,8 @@ def set_places(payload: PlacesUpdate, user: sqlite3.Row = Depends(current_user))
                 raise HTTPException(403, "Bitte zuerst die Insel erweitern, um Bauland zu erhalten")
             if place.kind not in PLACE_KINDS:
                 raise HTTPException(422, "Unbekanntes Gebäude")
+            if plot not in places_of(conn, user["id"]) and island_building_blocks(island_state(conn,user["id"],"normal"),ISLAND_PLOT_POSITIONS[int(plot)]):
+                raise HTTPException(422, "Bauplatz ist durch ein Inselgebäude belegt")
             clean[int(plot)] = (place.kind, " ".join(place.name.split()))
         conn.execute("DELETE FROM island_places WHERE user_id=?", (user["id"],))
         conn.executemany("INSERT INTO island_places(user_id,plot,kind,name) VALUES (?,?,?,?)",
@@ -1796,6 +1840,7 @@ def set_here(payload: HereUpdate, user: sqlite3.Row = Depends(current_user)) -> 
 @app.put("/api/island/decor")
 def set_decor(payload: DecorUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
     with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         qp, ep = own_score(conn, user["id"])
         score = qp + EP_WEIGHT * ep
         clean: dict[int, str] = {}
@@ -1806,6 +1851,8 @@ def set_decor(payload: DecorUpdate, user: sqlite3.Row = Depends(current_user)) -
                 raise HTTPException(422, "Unbekannte Deko")
             if DECOR_ITEMS[item] > score:
                 raise HTTPException(403, "Diese Deko ist noch nicht freigeschaltet")
+            if slot not in decor_of(conn,user["id"]) and island_building_blocks(island_state(conn,user["id"],"normal"),ISLAND_DECOR_POSITIONS[int(slot)]):
+                raise HTTPException(422, "Dekoplatz ist durch ein Inselgebäude belegt")
             clean[int(slot)] = item
         conn.execute("DELETE FROM island_decor WHERE user_id=?", (user["id"],))
         conn.executemany("INSERT INTO island_decor(user_id,slot,item) VALUES (?,?,?)",

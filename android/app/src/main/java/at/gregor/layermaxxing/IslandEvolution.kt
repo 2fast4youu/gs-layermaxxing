@@ -28,7 +28,7 @@ internal object IslandEvolution {
         IsleBuilding.CAMPFIRE -> "Feuerkreis"
         IsleBuilding.HARBOUR -> "Strandtreff"
     }
-    fun levelName(b: IsleBuilding, level: Int) = if (level == 0) primitiveName(b) else when(level) {
+    fun levelName(b: IsleBuilding, level: Int) = if (level == 0) "${b.label} · noch nicht gebaut" else when(level) {
         1 -> "${b.label} · Holzbau"
         2 -> "${b.label} · ausgebaut"
         else -> "${b.label} · Meisterbau"
@@ -116,7 +116,7 @@ internal fun AnimatedIslandSea(modifier: Modifier = Modifier, oversized: Boolean
 @Composable
 internal fun IslandUpgradeContent(
     building: IsleBuilding?, island: ApiClient.HomeIsland, busy: Boolean,
-    onOpen: () -> Unit, onAction: (String) -> Unit, onDismiss: () -> Unit,
+    onMove: () -> Unit = {}, onOpen: () -> Unit, onAction: (String) -> Unit, onDismiss: () -> Unit,
 ) {
     val c=island.construction
     val level=building?.let { c.buildings[it.name] ?: 0 } ?: c.land
@@ -140,6 +140,7 @@ internal fun IslandUpgradeContent(
         }
         Text(if(building==null) "Landstufe $level / $max" else IslandEvolution.levelName(building,level),color=Isle.Ink)
         if(building!=null) Button(onClick=onOpen,modifier=Modifier.fillMaxWidth(),enabled=!busy) { Text("${building.label} öffnen") }
+        if(building!=null && level>0) OutlinedButton(onClick=onMove,enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text("Verschieben") }
         if(level<max) {
             Text(if(c.mode=="creative") "Nächster Ausbau: kostenlos" else "Nächster Ausbau: $cost Punkte · ab Tag $day. Punkte werden beim Bauen verbraucht.",color=Isle.Muted,fontSize=13.sp)
             Button(onClick={onAction(if(building==null) "expand" else "upgrade")},enabled=!busy && IslandEvolution.allowed(c,cost,day),modifier=Modifier.fillMaxWidth()) {
@@ -155,7 +156,8 @@ internal fun IslandUpgradeContent(
 @Composable
 private fun BuildingPreview(building: IsleBuilding,level: Int) {
     Column(horizontalAlignment=Alignment.CenterHorizontally) {
-        PaintedIslandPlace(building, level, IslandArtwork.resource(building, level), Modifier.size(76.dp))
-        Text(if(level==0) "Start" else "Stufe $level",color=Isle.Muted,fontSize=12.sp)
+        if (level > 0) PaintedIslandPlace(building, level, IslandArtwork.resource(building, level), Modifier.size(76.dp))
+        else Box(Modifier.size(76.dp), contentAlignment=Alignment.Center) { Text("Leer", color=Isle.Muted) }
+        Text(if(level==0) "Nicht gebaut" else "Stufe $level",color=Isle.Muted,fontSize=12.sp)
     }
 }

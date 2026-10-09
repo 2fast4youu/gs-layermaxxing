@@ -91,29 +91,13 @@ class IslandWorldTest {
         placed.values.forEach { assertTrue(IslandPlans.inside(it.x, it.y, IslandPlans.landScale(0), .95f)) }
     }
 
-    @Test fun freshIslandHasPrimitiveBasicsInsteadOfRuins() {
+    @Test fun freshIslandHasNoBuildingsOrStandIns() {
         val fresh = IslandPlans.home(1L, 500, ApiClient.IslandConstruction())
-        assertTrue(fresh.pieces.all { it.tier == 0 })
-        assertEquals(IsleBuilding.entries.toSet(), fresh.pieces.mapNotNull { it.primitive }.toSet())
-        assertTrue(fresh.pieces.none { it.res == R.drawable.lm_post_ruin })
+        assertTrue("A starter island must really be empty", fresh.pieces.isEmpty())
+        assertTrue(IslandPlans.placedBuildings(500, ApiClient.IslandConstruction()).isEmpty())
         val built = IslandPlans.home(1L, 0, ApiClient.IslandConstruction(buildings=mapOf("POST" to 3), land=4))
+        assertEquals(1, built.pieces.count { it.name != null })
         assertEquals(3, built.pieces.first { it.name == "Post" }.tier)
-        assertTrue(built.landScale > fresh.landScale)
-    }
-
-    /** The starter must reuse the painted asset family, not fall back to Canvas icons. */
-    @Test fun starterUsesPaintedNaturalPlacesInsteadOfBuildings() {
-        assertEquals(0f, IslandPlans.meadow(IslandPlans.constructionScale(0)))
-        val pieces = IslandPlans.placedBuildings(0, ApiClient.IslandConstruction())
-        val expected = mapOf(
-            IsleBuilding.HOUSE to R.drawable.decor_hammock,
-            IsleBuilding.POST to R.drawable.decor_palm,
-            IsleBuilding.LIGHTHOUSE to R.drawable.decor_palm,
-            IsleBuilding.LIBRARY to R.drawable.n_crates,
-            IsleBuilding.CAMPFIRE to R.drawable.decor_campfire,
-            IsleBuilding.HARBOUR to R.drawable.n_rowboat,
-        )
-        expected.forEach { (building, paintedAsset) -> assertEquals(building.name, paintedAsset, pieces.getValue(building).res) }
     }
 
     @Test fun firstBuildAndExpansionHaveDistinctPaintedArtwork() {
@@ -129,5 +113,32 @@ class IslandWorldTest {
         assertTrue(!IslandEvolution.allowed(earned,60,2))
         assertTrue(!IslandEvolution.allowed(earned,120,0))
         assertTrue(IslandEvolution.allowed(earned.copy(mode="creative",available=0),320,21))
+    }
+    @Test fun movedBuildingsRenderAtPersistedGridPositionWithoutChangingProgress() {
+        val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 2),land=3,spent=85,positions=mapOf("POST" to listOf(14,11)))
+        val piece=IslandPlans.placedBuildings(0,c).getValue(IsleBuilding.POST)
+        val expected=IslandPlans.onLand(.7f,.55f,IslandPlans.constructionScale(3))
+        assertEquals(expected.first,piece.x,.0001f);assertEquals(expected.second,piece.y,.0001f)
+        assertEquals(2,piece.tier);assertEquals(1,IslandPlans.placedBuildings(0,c).size)
+        assertEquals(85,c.spent)
+    }
+
+    @Test fun placementBlocksSeaBuildingsAndOccupiedDecorOrLifePlaces() {
+        val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)))
+        assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(0,0)))
+        assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(11,11)))
+        assertTrue(IslandLayout.valid(c,IsleBuilding.POST,listOf(10,11)))
+        val h=ApiClient.HomeIsland(1,mapOf(0 to "flowers"),0,emptyList(),places=mapOf(0 to ApiClient.LifePlace("home","")),construction=c)
+        assertTrue(!IslandLayout.valid(c,IsleBuilding.POST,listOf(8,9),IslandLayout.obstacles(h)))
+        assertTrue(!IslandLayout.valid(c,IsleBuilding.POST,listOf(10,6),IslandLayout.obstacles(h)))
+        assertTrue(IslandLayout.obstacles(h.copy(construction=c.copy(mode="creative"))).isEmpty())
+    }
+    @Test fun buildingFootprintsScaleWithLandSoAdjacentGridCellsDoNotOverlap() {
+        for(land in 0..5) for(tier in 1..3) {
+            val c=ApiClient.IslandConstruction(buildings=IsleBuilding.entries.associate { it.name to tier },land=land)
+            IslandPlans.placedBuildings(0,c).values.forEach { p ->
+                assertTrue(p.size <= IslandLayout.separation(c)/20f*IslandPlans.constructionScale(land))
+            }
+        }
     }
 }

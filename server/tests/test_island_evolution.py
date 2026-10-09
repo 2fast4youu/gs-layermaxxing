@@ -100,6 +100,74 @@ def test_land_expansion_creates_buildable_plots_and_persists_restart(tmp_path):
         assert c.put('/api/island/here',headers=auth(a),json={'plot':0,'status':'privat'}).status_code==200
         assert 'here' not in c.get(f"/api/island/{a['user_id']}",headers=auth(b)).json()
         m.initialize_database()
+        assert action(c,a,expanded,building='HOUSE').status_code==422  # default placement cannot bypass collision
         assert state(c,a)['construction']==expanded['construction']
         assert action(c,a,state(c,a),building='UNKNOWN').status_code==422
         assert state(c,a)['construction']['spent']==40
+
+
+def test_layout_moves_are_atomic_persistent_and_free(tmp_path):
+    m=load_app(tmp_path)
+    with TestClient(m.app) as c:
+        a,b=register(c,'A'),register(c,'B'); befriend(c,a,b); earn(c,a,b)
+        def placed(st, kind, building, position):
+            return c.post('/api/island/construction',headers=auth(a),json={
+                'mode':'normal','action':kind,'building':building,'position':position,
+                'expected_revision':st['construction']['revision']})
+        empty=state(c,a)
+        assert placed(empty,'move','HOUSE',[10,11]).status_code==422
+        built=placed(empty,'upgrade','POST',[10,11]).json()
+        assert built['construction']['positions']['POST']==[10,11]
+        assert built['construction']['spent']==25
+        assert placed(built,'upgrade','HOUSE',[11,11]).status_code==422
+        assert placed(built,'move','POST',[0,0]).status_code==422
+        assert placed(built,'move','POST',[10]).status_code==422
+        assert placed(built,'move','POST',[]).status_code==422
+        assert state(c,a)['construction']==built['construction']
+        moved=placed(built,'move','POST',[14,11]).json()
+        assert moved['construction']['spent']==25
+        assert moved['construction']['buildings']==built['construction']['buildings']
+        assert placed(built,'move','POST',[10,11]).status_code==409
+        assert c.get(f"/api/island/{a['user_id']}",headers=auth(b)).json()['construction']['positions']['POST']==[14,11]
+        assert state(c,a)['construction']['positions']['POST']==[14,11]
+        # Normal progress has no demolition endpoint.
+        assert placed(moved,'downgrade','POST',[14,11]).status_code==422
+        assert state(c,a)['construction']['spent']==25
+
+
+def test_layout_blocks_decor_and_places_in_both_directions(tmp_path):
+    m=load_app(tmp_path)
+    with TestClient(m.app) as c:
+        a,b=register(c,'A'),register(c,'B'); befriend(c,a,b);earn(c,a,b);earn(c,a,b)
+        with m.db() as conn: conn.execute('UPDATE users SET created_at=? WHERE id=?',(m.now_ts()-86400*3,a['user_id']))
+        def build(st,p):
+            return c.post('/api/island/construction',headers=auth(a),json={'action':'upgrade','building':'POST','position':p,'expected_revision':st['construction']['revision']})
+        initial=state(c,a)
+        built=build(initial,[8,9]).json()
+        assert c.put('/api/island/decor',headers=auth(a),json={'slots':{'0':'flowers'}}).status_code==422
+        assert action(c,a,built).status_code==200  # ordinary upgrade does not relocate
+        current=state(c,a)
+        moved=c.post('/api/island/construction',headers=auth(a),json={'action':'move','building':'POST','position':[10,6],'expected_revision':current['construction']['revision']}).json()
+        expanded=action(c,a,moved,action='expand',building=None).json()
+        assert c.put('/api/island/places',headers=auth(a),json={'places':{'0':{'kind':'home'}}}).status_code==422
+        assert action(c,a,expanded,building='HOUSE').status_code==422  # default placement cannot bypass collision
+        assert state(c,a)['construction']==expanded['construction']
+
+
+def test_creative_shrink_never_saves_overlapping_layout_or_loses_buildings(tmp_path):
+    m=load_app(tmp_path)
+    with TestClient(m.app) as c:
+        a=register(c,'A')
+        with m.db() as conn: conn.execute('UPDATE users SET creative_entitled=1 WHERE id=?',(a['user_id'],))
+        current=state(c,a,'creative')
+        for _ in range(5): current=action(c,a,current,action='expand',building=None,mode='creative').json()
+        for b,p in [('POST',[8,9]),('HOUSE',[12,9])]:
+            r=c.post('/api/island/construction',headers=auth(a),json={'mode':'creative','action':'upgrade','building':b,'position':p,'expected_revision':current['construction']['revision']})
+            assert r.status_code==200,r.text;current=r.json()
+        for _ in range(2): current=action(c,a,current,action='shrink',building=None,mode='creative').json()
+        assert current['construction']['land']==3
+        assert action(c,a,current,action='shrink',building=None,mode='creative').status_code==422
+        assert state(c,a,'creative')['construction']==current['construction']
+        assert current['construction']['buildings']=={'POST':1,'HOUSE':1}
+        removed=action(c,a,current,action='downgrade',building='POST',mode='creative').json()
+        assert action(c,a,removed,action='shrink',building=None,mode='creative').status_code==200
