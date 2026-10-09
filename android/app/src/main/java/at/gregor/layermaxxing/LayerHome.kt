@@ -289,6 +289,14 @@ fun LayerHome(
     val tabs = appMode.tabs()
     val creativeEligible = CreativeMode.eligible(status?.serverRole, status?.creativeEntitled == true)
     val creativeActive = creativeEligible && creativeSwitch
+    // Publish the selected island mode immediately, including switches made in Settings.
+    LaunchedEffect(token, creativeActive, status?.userId) {
+        val id = status?.userId ?: return@LaunchedEffect
+        runCatching {
+            val selected = api.island(token, id, if (creativeActive) "creative" else "normal")
+            api.islandAction(token, selected.construction, "activate", null)
+        }.onFailure { error = ApiErrors.friendly(it.message) }
+    }
     // The valley reads from the ledger of the current mode: creative builds live
     // in their own ledger and vanish from view the moment the mode goes off.
     LaunchedEffect(creativeActive, token) { castleBuilds = store.fiefBuilds(creativeActive) }
@@ -428,7 +436,9 @@ fun LayerHome(
                     onRespondFriend = { id, accept -> act { api.respondFriend(token, id, accept) } },
                     ownColor = status?.displayColor ?: "#17A2A6",
                     glossary = { GlossaryScreen(api, token) },
-                    loadIsland = { id -> api.island(token, id) },
+                    loadIsland = { id -> api.island(token, id, if (id == status?.userId) { if (creativeActive) "creative" else "normal" } else null) },
+                    creativeActive = creativeActive,
+                    changeConstruction = { state, action, building -> api.islandAction(token, state, action, building) },
                     saveDecor = { decor -> api.setDecor(token, decor) },
                     savePlaces = { places -> api.setPlaces(token, places) },
                     saveHere = { plot, status -> api.setHere(token, plot, status) },

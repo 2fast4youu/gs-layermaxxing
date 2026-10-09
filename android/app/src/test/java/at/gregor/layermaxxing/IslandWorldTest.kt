@@ -91,10 +91,21 @@ class IslandWorldTest {
         placed.values.forEach { assertTrue(IslandPlans.inside(it.x, it.y, IslandPlans.landScale(0), .95f)) }
     }
 
-    @Test fun freshIslandShowsLogRuinsAndFullIslandFinishedBuildings() {
-        val fresh = IslandPlans.home(1L, 0).pieces.map { it.res }.toSet()
-        val built = IslandPlans.home(1L, 999).pieces.map { it.res }.toSet()
-        assertTrue(R.drawable.lm_post_ruin in fresh && R.drawable.lm_post !in fresh)
-        assertTrue(R.drawable.lm_post in built && R.drawable.lm_post_ruin !in built)
+    @Test fun freshIslandHasPrimitiveBasicsInsteadOfRuins() {
+        val fresh = IslandPlans.home(1L, 500, ApiClient.IslandConstruction())
+        assertTrue(fresh.pieces.all { it.tier == 0 })
+        assertEquals(IsleBuilding.entries.toSet(), fresh.pieces.mapNotNull { it.primitive }.toSet())
+        assertTrue(fresh.pieces.none { it.res == R.drawable.lm_post_ruin })
+        val built = IslandPlans.home(1L, 0, ApiClient.IslandConstruction(buildings=mapOf("POST" to 3), land=4))
+        assertEquals(3, built.pieces.first { it.name == "Post" }.tier)
+        assertTrue(built.landScale > fresh.landScale)
+    }
+
+    @Test fun normalPreviewRequiresPointsAndTimeButCreativeIsFree() {
+        val earned = ApiClient.IslandConstruction(available=100,ageDays=1)
+        assertTrue(IslandEvolution.allowed(earned,60,0))
+        assertTrue(!IslandEvolution.allowed(earned,60,2))
+        assertTrue(!IslandEvolution.allowed(earned,120,0))
+        assertTrue(IslandEvolution.allowed(earned.copy(mode="creative",available=0),320,21))
     }
 }

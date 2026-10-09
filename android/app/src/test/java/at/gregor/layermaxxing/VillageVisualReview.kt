@@ -1,5 +1,8 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 
@@ -46,7 +49,7 @@ class VillageVisualReview {
     @get:Rule val rule = androidx.compose.ui.test.junit4.createAndroidComposeRule<androidx.activity.ComponentActivity>()
     private val out = System.getenv("VILLAGE_SHOTS")?.let(::File)
 
-    private fun shot(name: String, gesture: (() -> Unit)? = null, content: @Composable () -> Unit) {
+    private fun shot(name: String, gesture: (() -> Unit)? = null, captureDialogs: Boolean = false, content: @Composable () -> Unit) {
         assumeTrue(out != null)
         rule.setContent(content)
         rule.mainClock.autoAdvance = false
@@ -55,7 +58,21 @@ class VillageVisualReview {
         org.robolectric.shadows.ShadowLooper.idleMainLooper()
         val view = rule.activity.window.decorView
         val bmp = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
-        view.draw(android.graphics.Canvas(bmp))
+        val canvas = android.graphics.Canvas(bmp)
+        view.draw(canvas)
+        if (captureDialogs) {
+            // ModalBottomSheet owns a second real Android window; the activity decor alone omits it.
+            val globalClass = Class.forName("android.view.WindowManagerGlobal")
+            val global = globalClass.getMethod("getInstance").invoke(null)
+            val viewsField = globalClass.getDeclaredField("mViews").apply { isAccessible = true }
+            @Suppress("UNCHECKED_CAST")
+            val windows = viewsField.get(global) as List<android.view.View>
+            windows.filter { it !== view && it.visibility == android.view.View.VISIBLE }.forEach { window ->
+                val location = IntArray(2); window.getLocationOnScreen(location)
+                canvas.save(); canvas.translate(location[0].toFloat(), location[1].toFloat())
+                window.draw(canvas); canvas.restore()
+            }
+        }
         out!!.mkdirs()
         File(out, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
@@ -422,6 +439,51 @@ class VillageVisualReview {
     @Test fun islandPlaceLibrary() = shot("33-bibliothek") { Isles(start = "home", placeKey = "LIBRARY") }
     @Test fun islandPlaceHall() = shot("34-gemeindehaus") { Isles(start = "home", placeKey = "CAMPFIRE") }
     @Test fun islandPlaceHouse() = shot("35-haus") { Isles(start = "home", placeKey = "HOUSE") }
+    @Composable private fun EvolutionIsland(creative: Boolean = false, grown: Boolean = false, start: String = "home", startingPoints: Int = 500) {
+        var state by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(ApiClient.IslandConstruction(
+            mode=if(creative) "creative" else "normal", available=startingPoints, ageDays=if(startingPoints==0) 0 else 21,
+            buildings=if(grown) IsleBuilding.entries.associate { it.name to 3 } else emptyMap(),land=if(grown) 5 else 0)) }
+        val home=ApiClient.HomeIsland(1,emptyMap(),startingPoints,emptyList(),construction=state)
+        val friendHome=ApiClient.HomeIsland(2,emptyMap(),500,emptyList(),construction=ApiClient.IslandConstruction(buildings=mapOf("POST" to 2,"LIGHTHOUSE" to 3),land=3))
+        VillageTheme(true) { IslandWorld(
+            ownName="Gregor",ownEmoji="🦉",friends=friends,groups=emptyList(),
+            islands=ApiClient.Islands(startingPoints,listOf(ApiClient.IslandInfo(2,0,0,0,1,40,friendHome))),
+            quests=emptyList(),letters=emptyList(),topics=emptyList(),opened=emptyMap(),onBack={},onChat={},onComposeLetter={},onOpenLetter={},
+            onLockedTap={},onTopics={},onAllTopics={},onGlossary={},onPeople={},onCreateQuest={_,_,_,_,_,_->},onQuestDone={_,_->},onQuestDelete={},
+            ownId=1, startView=start, creativeActive=creative,
+            loadIsland={id->if(id==1L) home.copy(construction=state) else friendHome},
+            changeConstruction={c,action,b->
+                state=when(action) {
+                    "upgrade"->c.copy(buildings=c.buildings+(b!! to ((c.buildings[b]?:0)+1)),revision=c.revision+1)
+                    "expand"->c.copy(land=c.land+1,revision=c.revision+1)
+                    "downgrade"->c.copy(buildings=c.buildings+(b!! to ((c.buildings[b]?:0)-1)),revision=c.revision+1)
+                    else->c
+                }; home.copy(construction=state)
+            }
+        ) }
+    }
+    @Test fun islandNewSandStart() = shot("61-sandhaufen-start") { EvolutionIsland(startingPoints=0) }
+    @Test fun islandEarnedGrowth() = shot("62-insel-meisterbau") { EvolutionIsland(grown=true) }
+    @Test fun islandBuildingPreviewInteraction() = shot("63-briefbaum-ausbau-vorschau",captureDialogs=true,gesture={
+        rule.onAllNodesWithContentDescription("Post")[0].performClick()
+        rule.mainClock.advanceTimeBy(600)
+        rule.onAllNodesWithText("Gebäude bauen")[0].assertExists()
+    }) { EvolutionIsland() }
+    @Test fun islandCreativeBuildInteraction() = shot("64-kreativ-holzbau",captureDialogs=true,gesture={
+        rule.onAllNodesWithContentDescription("Post")[0].performClick()
+        rule.mainClock.advanceTimeBy(600)
+        rule.onAllNodesWithText("Gebäude bauen")[0].performClick()
+        rule.mainClock.advanceTimeBy(600)
+        rule.onAllNodesWithText("Kostenlos zurückbauen")[0].assertExists()
+    }) { EvolutionIsland(creative=true) }
+    @Test fun islandExpansionPreviewInteraction() = shot("65-land-vorschau",captureDialogs=true,gesture={
+        rule.onAllNodesWithText("Land erweitern")[0].performClick()
+        rule.mainClock.advanceTimeBy(600)
+        rule.onAllNodesWithText("Insel vergrößern")[0].assertExists()
+    }) { EvolutionIsland() }
+    @Test fun islandActualFriendOverview() = shot("66-freunde-echter-ausbau") { EvolutionIsland(start="map") }
+    @Test fun islandActualFriendVisit() = shot("67-freund-besuch") { EvolutionIsland(start="visit:2") }
+
     @Test fun islandsMapDebug() = shot("26-inseln-debug") {
         androidx.compose.runtime.CompositionLocalProvider(LocalHitboxDebug provides true) { Isles() }
     }

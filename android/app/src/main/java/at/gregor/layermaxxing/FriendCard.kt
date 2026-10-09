@@ -150,7 +150,7 @@ internal fun FriendSheet(
                         androidx.compose.material3.DropdownMenuItem(text = { Text("Eigenen Namen ändern") }, onClick = { profileMenu = false; naming = true })
                     }
                 }
-                DynamicIsland(remember(level, friend.id) { IslandPlans.friend(level, friend.id) }, Modifier.width(84.dp), animate = false)
+                HubIsland(info?.island?.decor.orEmpty(), Modifier.width(84.dp), labels = false, seed = friend.id, animate = false, life = info?.island, lifeTags = false)
             }
             Spacer(Modifier.height(10.dp))
             if (info != null) {

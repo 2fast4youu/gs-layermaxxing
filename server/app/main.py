@@ -26,7 +26,7 @@ APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
-SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places"]
+SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction"]
 # One-time creative entitlement for the accounts that already exist on the test
 # server when this version first starts. The marker row makes the migration
 # idempotent: later restarts and newly registered accounts stay unentitled.
@@ -250,6 +250,16 @@ def initialize_database() -> None:
             name TEXT NOT NULL DEFAULT '',
             PRIMARY KEY(user_id,plot),
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS island_construction (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            mode TEXT NOT NULL CHECK(mode IN ('normal','creative')),
+            state TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY(user_id,mode)
+        );
+        CREATE TABLE IF NOT EXISTS island_mode (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            mode TEXT NOT NULL DEFAULT 'normal'
         );
         CREATE TABLE IF NOT EXISTS island_here (
             user_id INTEGER PRIMARY KEY,
@@ -611,6 +621,13 @@ class PlaceIn(BaseModel):
 class PlacesUpdate(BaseModel):
     # plot index ("0".."8") -> building; missing plots stay empty
     places: dict[str, PlaceIn] = Field(default_factory=dict)
+
+
+class IslandAction(BaseModel):
+    mode: str = "normal"
+    action: str
+    building: str | None = None
+    expected_revision: int = Field(ge=0)
 
 
 class HereUpdate(BaseModel):
@@ -1597,7 +1614,7 @@ def decor_of(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
 PLACE_KINDS = ("home", "bude", "uni", "hut", "club", "station", "city", "desk", "work", "cafe")
 # Plot n becomes buildable at PLOT_UNLOCKS[n] points (plot 0 = the home island's house).
 PLOT_UNLOCKS = (0, 0, 0, 40, 80, 120, 200, 300, 450)
-DEFAULT_PLACES = {0: ("home", "Zuhause")}
+DEFAULT_PLACES = {}  # A new island is a sand mound, never a prebuilt house.
 
 
 def places_of(conn: sqlite3.Connection, user_id: int) -> dict[str, dict]:
@@ -1611,7 +1628,8 @@ def places_of(conn: sqlite3.Connection, user_id: int) -> dict[str, dict]:
 def life_island(conn: sqlite3.Connection, user_id: int, score: int, own: bool) -> dict:
     out = {
         "places": places_of(conn, user_id),
-        "plots": sum(1 for at in PLOT_UNLOCKS if score >= at),
+        "plots": max((0, 3, 5, 7, 8, 9)[island_state(conn, user_id, "normal")["land"]],
+                     max((int(p) + 1 for p in places_of(conn, user_id)), default=0)),
         "plot_unlocks": list(PLOT_UNLOCKS),
         "place_kinds": list(PLACE_KINDS),
     }
@@ -1621,19 +1639,116 @@ def life_island(conn: sqlite3.Connection, user_id: int, score: int, own: bool) -
     return out
 
 
-@app.get("/api/island/{user_id}")
-def island_of(user_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
-    with db() as conn:
-        if user_id != user["id"] and (blocked(conn, user["id"], user_id) or not are_friends(conn, user["id"], user_id)):
-            raise HTTPException(404, "Insel nicht gefunden")
-        qp, ep = own_score(conn, user_id)
-        score = qp + EP_WEIGHT * ep
-        return {
-            "user_id": user_id, "decor": decor_of(conn, user_id), "score": score,
+# Separate ledgers prevent free creative upgrades leaking into earned progress.
+ISLAND_BUILDINGS = ("HOUSE", "POST", "LIGHTHOUSE", "LIBRARY", "CAMPFIRE", "HARBOUR")
+BUILD_COSTS = (25, 60, 100)
+BUILD_DAYS = (0, 2, 7)
+LAND_COSTS = (40, 80, 140, 220, 320)
+LAND_DAYS = (1, 3, 7, 14, 21)
+
+
+def island_state(conn, user_id, mode):
+    row = conn.execute("SELECT state FROM island_construction WHERE user_id=? AND mode=?", (user_id, mode)).fetchone()
+    return json.loads(row[0]) if row else {"buildings": {}, "land": 0, "spent": 0, "revision": 0}
+
+
+def check_island_mode(conn, user_id, mode):
+    if mode not in ("normal", "creative"):
+        raise HTTPException(422, "Unbekannter Inselmodus")
+    entitlement = conn.execute("SELECT creative_entitled FROM users WHERE id=?", (user_id,)).fetchone()
+    if mode == "creative" and (SERVER_ROLE != "test" or not entitlement or not entitlement[0]):
+        raise HTTPException(403, "Kreativmodus ist für dieses Konto nicht freigeschaltet")
+
+
+def construction_view(conn, user_id, mode, score):
+    state = island_state(conn, user_id, mode)
+    created = conn.execute("SELECT created_at FROM users WHERE id=?", (user_id,)).fetchone()[0]
+    return {**state, "mode": mode, "available": max(0, score - state["spent"]),
+            "age_days": max(0, (now_ts() - created) // 86400),
+            "build_costs": list(BUILD_COSTS), "build_days": list(BUILD_DAYS),
+            "land_costs": list(LAND_COSTS), "land_days": list(LAND_DAYS)}
+
+
+def island_view(conn, user_id, own, mode=None):
+    if mode is None:
+        row = conn.execute("SELECT mode FROM island_mode WHERE user_id=?", (user_id,)).fetchone()
+        mode = row[0] if row else "normal"
+        # Entitlement revocation never exposes a stale creative world.
+        if mode == "creative":
+            entitlement = conn.execute("SELECT creative_entitled FROM users WHERE id=?", (user_id,)).fetchone()
+            if SERVER_ROLE != "test" or not entitlement[0]:
+                mode = "normal"
+    qp, ep = own_score(conn, user_id)
+    score = qp + EP_WEIGHT * ep
+    return {"user_id": user_id, "decor": decor_of(conn, user_id) if mode == "normal" else {}, "score": score,
             "items": [{"key": k, "unlock_at": v, "unlocked": score >= v} for k, v in DECOR_ITEMS.items()],
-            # Where the owner's figure stands is private: only the owner gets "here".
-            **life_island(conn, user_id, score, own=user_id == user["id"]),
-        }
+            **life_island(conn, user_id, score, own=own),
+            "construction": construction_view(conn, user_id, mode, score),
+            **({"places": {}, "plots": 0, **({"here": None} if own else {})} if mode == "creative" else {})}
+
+
+@app.get("/api/island/{user_id}")
+def island_of(user_id: int, mode: str | None = None, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        own = user_id == user["id"]
+        if not own and (blocked(conn, user["id"], user_id) or not are_friends(conn, user["id"], user_id)):
+            raise HTTPException(404, "Insel nicht gefunden")
+        if mode is not None:
+            if not own:
+                raise HTTPException(403, "Nur der Besitzer kann den Inselmodus wählen")
+            check_island_mode(conn, user_id, mode)
+        return island_view(conn, user_id, own, mode)
+
+
+@app.post("/api/island/construction")
+def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        # Reserve the SQLite writer before reading revision/balance (atomic retry protection).
+        conn.execute("BEGIN IMMEDIATE")
+        uid = user["id"]
+        check_island_mode(conn, uid, payload.mode)
+        state = island_state(conn, uid, payload.mode)
+        if payload.action == "activate":
+            # Switching views is idempotent and cannot invalidate a concurrent build revision.
+            conn.execute("INSERT INTO island_mode(user_id,mode) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET mode=excluded.mode", (uid, payload.mode))
+            return island_view(conn, uid, True, payload.mode)
+        if state["revision"] != payload.expected_revision:
+            raise HTTPException(409, "Die Insel wurde inzwischen geändert. Bitte neu laden.")
+        view = construction_view(conn, uid, payload.mode, sum(v * w for v, w in zip(own_score(conn, uid), (1, EP_WEIGHT))))
+        cost = 0
+        day = 0
+        if payload.action == "upgrade":
+            if payload.building not in ISLAND_BUILDINGS:
+                raise HTTPException(422, "Unbekannter Funktionsort")
+            level = state["buildings"].get(payload.building, 0)
+            if level >= 3:
+                raise HTTPException(422, "Höchste Ausbaustufe erreicht")
+            cost, day = BUILD_COSTS[level], BUILD_DAYS[level]
+            state["buildings"][payload.building] = level + 1
+        elif payload.action == "expand":
+            land = state["land"]
+            if land >= len(LAND_COSTS):
+                raise HTTPException(422, "Die Insel ist bereits vollständig erweitert")
+            cost, day = LAND_COSTS[land], LAND_DAYS[land]
+            state["land"] += 1
+        elif payload.action == "downgrade" and payload.mode == "creative":
+            if payload.building not in ISLAND_BUILDINGS:
+                raise HTTPException(422, "Unbekannter Funktionsort")
+            state["buildings"][payload.building] = max(0, state["buildings"].get(payload.building, 0) - 1)
+        elif payload.action == "shrink" and payload.mode == "creative":
+            state["land"] = max(0, state["land"] - 1)
+        elif payload.action != "activate":
+            raise HTTPException(422, "Unbekannte Ausbauaktion")
+        if payload.mode == "normal":
+            if view["age_days"] < day:
+                raise HTTPException(403, f"Dieser Ausbau ist ab Tag {day} möglich")
+            if view["available"] < cost:
+                raise HTTPException(403, f"Für diesen Ausbau fehlen {cost - view['available']} Punkte")
+            state["spent"] += cost
+        state["revision"] += 1
+        conn.execute("INSERT INTO island_construction(user_id,mode,state) VALUES (?,?,?) ON CONFLICT(user_id,mode) DO UPDATE SET state=excluded.state", (uid, payload.mode, json.dumps(state)))
+        # Builds alter only their ledger; a late response must not republish an old mode.
+        return island_view(conn, uid, True, payload.mode)
 
 
 @app.put("/api/island/places")
@@ -1645,8 +1760,8 @@ def set_places(payload: PlacesUpdate, user: sqlite3.Row = Depends(current_user))
         for plot, place in payload.places.items():
             if not plot.isdigit() or not 0 <= int(plot) < len(PLOT_UNLOCKS):
                 raise HTTPException(422, "Unbekannter Bauplatz")
-            if PLOT_UNLOCKS[int(plot)] > score:
-                raise HTTPException(403, "Dieses Bauland ist noch nicht frei")
+            if int(plot) >= life_island(conn, user["id"], score, own=True)["plots"]:
+                raise HTTPException(403, "Bitte zuerst die Insel erweitern, um Bauland zu erhalten")
             if place.kind not in PLACE_KINDS:
                 raise HTTPException(422, "Unbekanntes Gebäude")
             clean[int(plot)] = (place.kind, " ".join(place.name.split()))
@@ -1715,7 +1830,7 @@ def islands(user: sqlite3.Row = Depends(current_user)) -> dict:
             score = qp + EP_WEIGHT * ep + chat
             level = island_level(score)
             nxt = ISLAND_THRESHOLDS[level] if level < len(ISLAND_THRESHOLDS) else None
-            result.append({"friend_id": f["id"], "qp": qp, "ep": ep, "chat": chat, "score": score, "level": level, "next_at": nxt})
+            result.append({"friend_id": f["id"], "qp": qp, "ep": ep, "chat": chat, "score": score, "level": level, "next_at": nxt, "island": island_view(conn, f["id"], False)})
         own_qp = int(conn.execute("""SELECT COALESCE(SUM(q.points),0) FROM quests q WHERE q.completed_at IS NOT NULL AND
                                   ((q.peer_user_id IS NOT NULL AND (q.creator_id=? OR q.peer_user_id=?)) OR EXISTS(
                                   SELECT 1 FROM group_members gm WHERE gm.group_id=q.group_id AND gm.user_id=?))""",

@@ -123,9 +123,10 @@ internal fun HubIsland(
     onPlot: ((Int) -> Unit)? = null,
     onFigure: (() -> Unit)? = null,
     lifeTags: Boolean = true,
+    editingPlots: Boolean = false,
 ) {
-    val plan = androidx.compose.runtime.remember(seed, decor, life?.score) {
-        val base = IslandPlans.home(seed, life?.score ?: Int.MAX_VALUE)
+    val plan = androidx.compose.runtime.remember(seed, decor, life?.score, life?.construction) {
+        val base = IslandPlans.home(seed, life?.score ?: 0, life?.construction ?: ApiClient.IslandConstruction())
         val decorPieces = IslandPlans.homeSlots.mapIndexedNotNull { i, (sx, sy) ->
             val key = decor[i] ?: return@mapIndexedNotNull null
             val (x, y) = IslandPlans.onLand(sx, sy, base.landScale)
@@ -136,7 +137,7 @@ internal fun HubIsland(
     DynamicIsland(plan, modifier, animate = animate) {
         val w = maxWidth; val h = maxHeight
         val ls = plan.landScale
-        if (labels) androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        if (labels && (life?.construction?.land ?: 0) > 0) androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
             val (ix, iy) = IslandPlans.onLand(.51f, .77f, ls)
             val (tx, ty) = IslandPlans.onLand(.51f, .93f, ls)
             val inland = androidx.compose.ui.geometry.Offset(size.width * ix, size.height * iy)
@@ -146,7 +147,7 @@ internal fun HubIsland(
         if (life != null) LifeLayer(
             places = life.places, plots = life.plots, unlocks = life.plotUnlocks, here = life.here?.plot,
             showFigure = showFigure && onSlot == null, onPlot = if (onSlot == null) onPlot else null, onFigure = onFigure,
-            tags = lifeTags, landScale = ls,
+            tags = lifeTags, landScale = ls, showEmptyPlots = editingPlots,
         )
         if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (sx, sy) ->
             val (x, y) = IslandPlans.onLand(sx, sy, ls)
@@ -162,7 +163,7 @@ internal fun HubIsland(
         }
         val gate = LocalIslandTapGate.current
         // Signs and touch targets follow the buildings onto the grown land (not the full-size anchors).
-        val placed = androidx.compose.runtime.remember(life?.score) { IslandPlans.placedBuildings(life?.score ?: Int.MAX_VALUE) }
+        val placed = androidx.compose.runtime.remember(life?.score, life?.construction) { IslandPlans.placedBuildings(life?.score ?: 0, life?.construction ?: ApiClient.IslandConstruction()) }
         if (labels && onSlot == null) placed.forEach { (b, piece) ->
             val count = badges[b] ?: 0
             val box = w * piece.size
@@ -172,9 +173,10 @@ internal fun HubIsland(
                     .worldTap("${b.label} öffnen") { gate { onBuilding(b) } },
             )
             val zoom = LocalIslandZoom.current
-            val (nx, ny) = IslandPlans.tagNudge(b, plan.landScale)
+            val (nx, ny) = 0f to 0f
+            val tagWidth = if (plan.landScale < .7f) 64.dp else 100.dp
             Row(
-                Modifier.offset(x = w * (piece.x + nx) - 50.dp, y = h * (piece.y + ny) - 2.dp).width(100.dp)
+                Modifier.offset(x = w * (piece.x + nx) - tagWidth / 2, y = h * (piece.y + ny) - 2.dp).width(tagWidth)
                     // Counter-scale: when the island is zoomed, the sign keeps its on-screen size.
                     .graphicsLayer { val k = 1f / zoom().coerceAtLeast(1f); scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f) }
                     .then(if (onBuilding != null) Modifier.worldTap("${b.label} öffnen") { gate { onBuilding(b) } } else Modifier)
@@ -182,7 +184,11 @@ internal fun HubIsland(
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Box {
-                    PlaceTag(b.label)
+                    PlaceTag(if (piece.primitive != null) when (b) {
+                        IsleBuilding.HOUSE -> "Zuhause"
+                        IsleBuilding.LIBRARY -> "Wörter"
+                        else -> b.label
+                    } else b.label)
                     if (count > 0) Box(
                         Modifier.align(Alignment.TopEnd).offset(x = 7.dp, y = (-7).dp).size(16.dp)
                             .background(Color(0xFFA4533F), CircleShape).border(1.dp, Color(0xFFFFF3DC), CircleShape),

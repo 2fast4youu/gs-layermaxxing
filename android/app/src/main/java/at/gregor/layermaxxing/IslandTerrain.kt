@@ -55,6 +55,8 @@ internal data class IslandPiece(
     val size: Float,
     val sway: Boolean = false,
     val name: String? = null,
+    val primitive: IsleBuilding? = null,
+    val tier: Int = 0,
 )
 
 internal data class IslandPlan(
@@ -123,27 +125,12 @@ internal object IslandPlans {
     /** Home: the menu buildings around a plaza. Anchors were picked so paths and lawns never cross. */
     /** The app's own places sit at the coast; the inland plots belong to the player's real life (LifePlaces). */
     val homeBuildings = linkedMapOf(
+        IsleBuilding.HOUSE to IslandPiece(R.drawable.b_house, .50f, .28f, .11f, name = "Mein Haus"),
         IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.lm_lighthouse, .88f, .44f, .105f, name = "Freunde"),
         IsleBuilding.POST to IslandPiece(R.drawable.lm_post, .12f, .47f, .105f, name = "Post"),
         IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.lm_campfire, .28f, .80f, .10f, name = "Gruppen"),
         IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library, .74f, .79f, .10f, name = "Wörterbuch"),
         IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty, .51f, .85f, .115f, name = "Hafen"),
-    )
-    /** Stufe-1-Ruinen: unter diesem Punktestand steht die primitive Baumstamm-Version. */
-    val ruinCosts = mapOf(
-        IsleBuilding.CAMPFIRE to 25,   // Feuerstelle zuerst – die günstige Keimzelle
-        IsleBuilding.POST to 60,
-        IsleBuilding.HARBOUR to 100,
-        IsleBuilding.LIBRARY to 160,
-        IsleBuilding.LIGHTHOUSE to 240,
-    )
-    /** The same buildings as level-1 ruins; anchors and sizes are identical. */
-    private val homeRuins = linkedMapOf(
-        IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.lm_lighthouse_ruin, .88f, .44f, .105f, name = "Freunde"),
-        IsleBuilding.POST to IslandPiece(R.drawable.lm_post_ruin, .12f, .47f, .105f, name = "Post"),
-        IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.lm_campfire_ruin, .28f, .80f, .10f, name = "Gruppen"),
-        IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library_ruin, .74f, .79f, .10f, name = "Wörterbuch"),
-        IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty_ruin, .51f, .85f, .115f, name = "Hafen"),
     )
     val plaza = Offset(.5f, .55f)
     /** Small decoration lawns ringing the plaza, clear of the building plots. */
@@ -153,34 +140,27 @@ internal object IslandPlans {
      * Where each app building stands for a score: ruin or finished sprite, moved onto the
      * grown land and sized for it. Sprites, signs and touch targets all read from here.
      */
-    fun placedBuildings(score: Int): Map<IsleBuilding, IslandPiece> {
-        val s = landScale(score)
-        val ps = pieceScale(s)
-        return homeBuildings.mapValues { (b, piece) ->
-            // Insel-Ausbau Scheibe 1: below its price a building shows its primitive log-hut look.
-            val p = if (score < (ruinCosts[b] ?: 0)) homeRuins[b] ?: piece else piece
-            val (lx, ly) = onLand(p.x, p.y, s)
-            p.copy(x = lx, y = ly, size = p.size * ps)
+    fun constructionScale(land: Int): Float = listOf(.46f, .58f, .70f, .82f, .92f, 1f)[land.coerceIn(0, 5)]
+
+    fun placedBuildings(score: Int, construction: ApiClient.IslandConstruction? = null): Map<IsleBuilding, IslandPiece> {
+        val s = construction?.let { constructionScale(it.land) } ?: landScale(score)
+        return homeBuildings.mapValues { (b, p) ->
+            val tier = if (construction != null) construction.buildings[b.name] ?: 0 else if (score >= 25) 1 else 0
+            val (x, y) = onLand(p.x, p.y, s)
+            p.copy(x = x, y = y, size = p.size * (if (tier == 0) 1.0f else .9f + tier * .16f),
+                primitive = b.takeIf { tier == 0 }, tier = tier)
         }
     }
 
-    fun home(seed: Long, score: Int = Int.MAX_VALUE): IslandPlan {
-        // The painted base already carries coast, rocks and bushes; a few calm trees frame the plots.
-        val nature = listOf(
+    fun home(seed: Long, score: Int = 0, construction: ApiClient.IslandConstruction? = null): IslandPlan {
+        val s = construction?.let { constructionScale(it.land) } ?: landScale(score)
+        val nature = if (s < .7f) emptyList() else listOf(
             IslandPiece(R.drawable.n_pine, .17f, .30f, .07f, sway = true),
             IslandPiece(R.drawable.n_pine, .83f, .29f, .065f, sway = true),
             IslandPiece(R.drawable.n_tree, .14f, .66f, .07f, sway = true),
             IslandPiece(R.drawable.n_cypress, .88f, .66f, .06f, sway = true),
-        )
-        val s = landScale(score)
-        val ps = pieceScale(s)
-        val buildings = placedBuildings(score).values.toList()
-        // A bare sand bank carries no trees yet; they return once the meadow has grown in.
-        val grown = if (meadow(s) < .3f) emptyList() else nature.map { n ->
-            val (lx, ly) = onLand(n.x, n.y, s)
-            n.copy(x = lx, y = ly, size = n.size * ps)
-        }
-        return IslandPlan(seed, 1f, buildings + grown, emptyList(), landScale = s)
+        ).map { n -> val (x,y) = onLand(n.x,n.y,s); n.copy(x=x,y=y) }
+        return IslandPlan(seed, 1f, placedBuildings(score, construction).values.toList() + nature, emptyList(), landScale = s)
     }
 
     /** What a friendship island holds at each level, placed on the painted clearings. */
@@ -247,11 +227,31 @@ internal fun DynamicIsland(
             transformOrigin = TransformOrigin(IslandPlans.LAND_CX, IslandPlans.LAND_CY)
         }
         val green = IslandPlans.meadow(ls)
-        if (green < 1f) Image(painterResource(R.drawable.terrain_sand), null, landLayer, contentScale = ContentScale.FillBounds)
-        if (green > 0f) Image(
-            painterResource(R.drawable.terrain_home), null, landLayer.graphicsLayer { alpha = green },
-            contentScale = ContentScale.FillBounds,
-        )
+        // A genuinely new dune silhouette: no scaled-down village, ruins, lawns or paths.
+        Canvas(Modifier.fillMaxSize()) {
+            val cx = size.width * IslandPlans.LAND_CX
+            val cy = size.height * IslandPlans.LAND_CY
+            val rx = size.width * .46f * ls
+            val ry = size.height * .36f * ls
+            val dune = Path().apply {
+                moveTo(cx-rx, cy)
+                cubicTo(cx-rx*.96f,cy-ry*.78f,cx-rx*.3f,cy-ry*1.08f,cx+rx*.1f,cy-ry)
+                cubicTo(cx+rx*.78f,cy-ry*.98f,cx+rx*1.06f,cy-ry*.3f,cx+rx,cy+ry*.08f)
+                cubicTo(cx+rx*.98f,cy+ry*.87f,cx+rx*.23f,cy+ry*1.08f,cx-rx*.22f,cy+ry*.9f)
+                cubicTo(cx-rx*.87f,cy+ry*.72f,cx-rx*1.05f,cy+ry*.38f,cx-rx,cy); close()
+            }
+            drawPath(dune, Color(0x44365456), style = Stroke(size.width*.04f))
+            drawPath(dune, Color(0xCCDFEEDD), style = Stroke(size.width*.018f))
+            drawPath(dune, Brush.verticalGradient(listOf(Color(0xFFF2D497), Color(0xFFDDAF69))))
+            drawOval(Color(0x55FFF1C2), Offset(cx-rx*.65f,cy-ry*.7f), androidx.compose.ui.geometry.Size(rx*1.2f,ry*1.35f))
+            repeat(35) { i ->
+                val a = i * 2.399f
+                val r = kotlin.math.sqrt((i+.5f)/35f)
+                drawCircle(Color(0x33986B38), 1.3f, Offset(cx+cos(a)*rx*.8f*r,cy+sin(a)*ry*.75f*r))
+            }
+        }
+        if (green > .35f) Image(painterResource(R.drawable.terrain_home), null,
+            landLayer.graphicsLayer { alpha = ((green-.35f)/.65f).coerceIn(0f,1f) }, contentScale = ContentScale.FillBounds)
         Canvas(Modifier.fillMaxSize()) {
             // Soft contact shadows ground every part on the grass.
             plan.pieces.forEach { pc ->
@@ -266,7 +266,11 @@ internal fun DynamicIsland(
         }
         plan.pieces.sortedBy { it.y }.forEachIndexed { i, p ->
             val box: Dp = w * p.size
-            Image(
+            if (p.primitive != null) Canvas(Modifier.offset(x = w * p.x - box / 2, y = h * p.y - box).size(box)) {
+                drawPrimitivePlace(p.primitive, time)
+            } else if (p.tier == 1) Canvas(Modifier.offset(x = w * p.x - box / 2, y = h * p.y - box).size(box)) {
+                p.name?.let { name -> IsleBuilding.entries.firstOrNull { it.label == name } }?.let { drawTimberPlace(it) }
+            } else Image(
                 painterResource(p.res), p.name, contentScale = ContentScale.Fit, alignment = Alignment.BottomCenter,
                 modifier = Modifier.offset(x = w * (if (plan.mirror) 1f - p.x else p.x) - box / 2, y = h * p.y - box).size(box)
                     .then(
@@ -276,6 +280,13 @@ internal fun DynamicIsland(
                         } else Modifier,
                     ),
             )
+        }
+        plan.pieces.filter { it.tier == 3 }.forEach { p ->
+            Canvas(Modifier.offset(x=w*p.x,y=h*p.y-w*p.size).size(w*p.size*.36f)) {
+                drawLine(Color(0xFF66513A),Offset(size.width*.2f,size.height),Offset(size.width*.2f,0f),2f)
+                val flag=Path().apply { moveTo(size.width*.2f,0f);lineTo(size.width,size.height*.2f);lineTo(size.width*.2f,size.height*.45f);close() }
+                drawPath(flag,Color(0xFFE8BD5B))
+            }
         }
         overlay()
     }
