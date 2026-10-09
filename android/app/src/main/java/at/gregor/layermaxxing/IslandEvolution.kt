@@ -13,14 +13,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.sin
-import kotlin.math.cos
 
 internal object IslandEvolution {
     fun primitiveName(b: IsleBuilding) = when(b) {
@@ -39,71 +36,60 @@ internal object IslandEvolution {
     fun allowed(c: ApiClient.IslandConstruction, cost: Int, days: Int) = c.mode == "creative" || c.available >= cost && c.ageDays >= days
 }
 
-/** Native starter artwork, deliberately no building-shaped ruins. */
-internal fun DrawScope.drawPrimitivePlace(b: IsleBuilding, phase: Float = 0f) {
-    val w = size.width; val h = size.height
-    val wood = Color(0xFF805331); val light = Color(0xFFDBB77D)
-    fun palm(post: Boolean) {
-        val sway = sin(phase * 6.28f) * w * .035f
-        drawLine(wood, Offset(w*.5f,h*.95f), Offset(w*.57f+sway,h*.27f), w*.11f, StrokeCap.Round)
-        for (i in 0..4) {
-            val a = (i * .7f + 3.0f)
-            val p = Path().apply { moveTo(w*.57f+sway,h*.27f); quadraticTo(w*(.57f+cos(a)*.25f),h*(.27f+sin(a)*.25f), w*(.57f+cos(a)*.43f),h*(.36f+sin(a)*.3f)) }
-            drawPath(p, Color(0xFF538850), style=androidx.compose.ui.graphics.drawscope.Stroke(w*.075f, cap=StrokeCap.Round))
+/** Reuse Gregor's painted sprite family at EVERY stage, including the natural starter. */
+internal object IslandArtwork {
+    fun resource(building: IsleBuilding, tier: Int): Int = when (tier.coerceIn(0, 3)) {
+        0 -> when (building) {
+            IsleBuilding.HOUSE -> R.drawable.decor_hammock
+            IsleBuilding.POST, IsleBuilding.LIGHTHOUSE -> R.drawable.decor_palm
+            IsleBuilding.LIBRARY -> R.drawable.n_crates
+            IsleBuilding.CAMPFIRE -> R.drawable.decor_campfire
+            IsleBuilding.HARBOUR -> R.drawable.n_rowboat
         }
-        if(post) {
-            drawRect(Color(0xFFFFF4D5), Offset(w*.20f,h*.55f), Size(w*.4f,h*.24f))
-            drawLine(wood,Offset(w*.2f,h*.55f),Offset(w*.4f,h*.70f),w*.015f)
-            drawLine(wood,Offset(w*.6f,h*.55f),Offset(w*.4f,h*.70f),w*.015f)
-        } else {
-            repeat(3) { i -> drawLine(light,Offset(w*.45f,h*(.43f+i*.14f)),Offset(w*.66f,h*(.43f+i*.14f)),w*.04f) }
+        1 -> when (building) {
+            IsleBuilding.HOUSE -> R.drawable.fief_hut_stage1
+            IsleBuilding.POST -> R.drawable.lm_post
+            IsleBuilding.LIGHTHOUSE -> R.drawable.decor_lantern
+            IsleBuilding.LIBRARY -> R.drawable.lm_library
+            IsleBuilding.CAMPFIRE -> R.drawable.b_workshop
+            IsleBuilding.HARBOUR -> R.drawable.b_jetty
         }
-    }
-    when(b) {
-        IsleBuilding.POST -> palm(true)
-        IsleBuilding.LIGHTHOUSE -> palm(false)
-        IsleBuilding.HOUSE -> {
-            drawOval(Color(0xFFCD7956),Offset(w*.12f,h*.54f),Size(w*.77f,h*.34f))
-            repeat(4) { i -> drawLine(light,Offset(w*(.2f+i*.18f),h*.57f),Offset(w*(.2f+i*.18f),h*.85f),w*.03f) }
-            drawOval(Color(0xFFF6DCAE),Offset(w*.15f,h*.52f),Size(w*.23f,h*.21f))
+        2 -> when (building) {
+            IsleBuilding.HOUSE -> R.drawable.b_house
+            IsleBuilding.POST -> R.drawable.b_post
+            IsleBuilding.LIGHTHOUSE -> R.drawable.lm_lighthouse
+            IsleBuilding.LIBRARY -> R.drawable.b_library
+            IsleBuilding.CAMPFIRE -> R.drawable.b_hall
+            IsleBuilding.HARBOUR -> R.drawable.lm_jetty
         }
-        IsleBuilding.LIBRARY -> {
-            drawLine(wood,Offset(w*.12f,h*.77f),Offset(w*.9f,h*.65f),w*.23f,StrokeCap.Round)
-            drawRect(Color(0xFFFAE5B0),Offset(w*.30f,h*.35f),Size(w*.48f,h*.33f))
-            repeat(3) { i -> drawLine(wood,Offset(w*.37f,h*(.42f+i*.08f)),Offset(w*.7f,h*(.42f+i*.08f)),w*.025f) }
-        }
-        IsleBuilding.CAMPFIRE -> {
-            for(i in 0..7) { val a=i*.785f; drawOval(Color(0xFF8A8E80),Offset(w*(.45f+cos(a)*.32f),h*(.65f+sin(a)*.18f)),Size(w*.14f,h*.13f)) }
-            drawLine(wood,Offset(w*.27f,h*.84f),Offset(w*.72f,h*.7f),w*.08f,StrokeCap.Round)
-            val fire=Path().apply { moveTo(w*.36f,h*.76f); quadraticTo(w*.23f,h*.56f,w*.52f,h*.28f); quadraticTo(w*.5f,h*.54f,w*.68f,h*.63f); quadraticTo(w*.75f,h*.86f,w*.36f,h*.76f) }
-            drawPath(fire,Color(0xFFEAA04F))
-        }
-        IsleBuilding.HARBOUR -> {
-            drawLine(wood,Offset(w*.15f,h*.8f),Offset(w*.87f,h*.64f),w*.13f,StrokeCap.Round)
-            drawLine(wood,Offset(w*.55f,h*.65f),Offset(w*.55f,h*.25f),w*.06f)
-            val flag=Path().apply { moveTo(w*.55f,h*.25f); lineTo(w*.87f,h*.38f); lineTo(w*.55f,h*.48f);close() }
-            drawPath(flag,Color(0xFFF2D397))
-            drawOval(Color(0xFFBCA476),Offset(w*.08f,h*.84f),Size(w*.28f,h*.12f))
+        else -> when (building) {
+            IsleBuilding.HOUSE -> R.drawable.fief_hut_stage3
+            IsleBuilding.POST -> R.drawable.b_post
+            IsleBuilding.LIGHTHOUSE -> R.drawable.b_lighthouse
+            IsleBuilding.LIBRARY -> R.drawable.b_library
+            IsleBuilding.CAMPFIRE -> R.drawable.b_hall
+            IsleBuilding.HARBOUR -> R.drawable.lm_jetty
         }
     }
+
+    fun accent(building: IsleBuilding, tier: Int): Int? = if (tier == 0) when (building) {
+        IsleBuilding.POST -> R.drawable.p_env
+        IsleBuilding.LIBRARY -> R.drawable.p_book
+        IsleBuilding.HARBOUR -> R.drawable.decor_flag
+        else -> null
+    } else null
 }
 
-/** First construction is a light timber shelter; later tiers use the painted stone building. */
-internal fun DrawScope.drawTimberPlace(b: IsleBuilding) {
-    val w=size.width; val h=size.height
-    val wood=Color(0xFFBE8652)
-    drawRect(wood,Offset(w*.18f,h*.43f),Size(w*.64f,h*.48f))
-    for(i in 0..4) drawLine(Color(0xFF946139),Offset(w*(.22f+i*.13f),h*.45f),Offset(w*(.22f+i*.13f),h*.9f),w*.025f)
-    val roof=Path().apply {moveTo(w*.08f,h*.46f);lineTo(w*.48f,h*.12f);lineTo(w*.93f,h*.46f);close()}
-    drawPath(roof,Color(0xFFDABB75))
-    drawRect(Color(0xFF654C35),Offset(w*.42f,h*.64f),Size(w*.20f,h*.27f))
-    when(b) {
-        IsleBuilding.POST -> { drawRect(Color(0xFFFFF1CF),Offset(w*.26f,h*.52f),Size(w*.25f,h*.13f)); drawLine(Color(0xFFA8743E),Offset(w*.26f,h*.52f),Offset(w*.39f,h*.61f),w*.02f) }
-        IsleBuilding.LIGHTHOUSE -> { drawLine(Color(0xFF75532D),Offset(w*.50f,h*.18f),Offset(w*.50f,h*.04f),w*.04f); drawCircle(Color(0xFFFFE9A0),w*.07f,Offset(w*.5f,h*.10f)) }
-        IsleBuilding.LIBRARY -> drawRect(Color(0xFF617E6C),Offset(w*.23f,h*.52f),Size(w*.22f,h*.19f))
-        IsleBuilding.CAMPFIRE -> drawCircle(Color(0xFFE89B45),w*.08f,Offset(w*.29f,h*.72f))
-        IsleBuilding.HARBOUR -> drawLine(Color(0xFF658D8D),Offset(w*.15f,h*.9f),Offset(w*.85f,h*.9f),w*.08f)
-        else -> Unit
+/** Same production artwork for the island and its upgrade preview. */
+@Composable
+internal fun PaintedIslandPlace(building: IsleBuilding?, tier: Int, resource: Int, modifier: Modifier = Modifier, description: String? = null) {
+    Box(modifier, contentAlignment = Alignment.BottomCenter) {
+        Image(painterResource(resource), description, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit, alignment = Alignment.BottomCenter)
+        building?.let { IslandArtwork.accent(it, tier) }?.let { accent ->
+            Image(painterResource(accent), null, Modifier.fillMaxSize(.38f).align(if (building == IsleBuilding.LIBRARY) Alignment.TopCenter else Alignment.CenterEnd), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+        }
+        if (tier == 3 && building != null) Image(painterResource(R.drawable.decor_flag), null,
+            Modifier.fillMaxSize(.30f).align(Alignment.TopEnd), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
     }
 }
 
@@ -169,11 +155,7 @@ internal fun IslandUpgradeContent(
 @Composable
 private fun BuildingPreview(building: IsleBuilding,level: Int) {
     Column(horizontalAlignment=Alignment.CenterHorizontally) {
-        if(level<=1) Canvas(Modifier.size(76.dp)) { if(level==0) drawPrimitivePlace(building) else drawTimberPlace(building) }
-        else Box(Modifier.size(76.dp),contentAlignment=Alignment.BottomCenter) {
-            Image(painterResource(IslandPlans.homeBuildings.getValue(building).res),null,Modifier.size((48+level*8).dp))
-            if(level>1) Text(if(level==2) "✦" else "✦✦",color=Isle.Star,modifier=Modifier.align(Alignment.TopEnd))
-        }
+        PaintedIslandPlace(building, level, IslandArtwork.resource(building, level), Modifier.size(76.dp))
         Text(if(level==0) "Start" else "Stufe $level",color=Isle.Muted,fontSize=12.sp)
     }
 }

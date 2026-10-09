@@ -101,6 +101,28 @@ class IslandWorldTest {
         assertTrue(built.landScale > fresh.landScale)
     }
 
+    /** The starter must reuse the painted asset family, not fall back to Canvas icons. */
+    @Test fun starterUsesPaintedNaturalPlacesInsteadOfBuildings() {
+        assertEquals(0f, IslandPlans.meadow(IslandPlans.constructionScale(0)))
+        val pieces = IslandPlans.placedBuildings(0, ApiClient.IslandConstruction())
+        val expected = mapOf(
+            IsleBuilding.HOUSE to R.drawable.decor_hammock,
+            IsleBuilding.POST to R.drawable.decor_palm,
+            IsleBuilding.LIGHTHOUSE to R.drawable.decor_palm,
+            IsleBuilding.LIBRARY to R.drawable.n_crates,
+            IsleBuilding.CAMPFIRE to R.drawable.decor_campfire,
+            IsleBuilding.HARBOUR to R.drawable.n_rowboat,
+        )
+        expected.forEach { (building, paintedAsset) -> assertEquals(building.name, paintedAsset, pieces.getValue(building).res) }
+    }
+
+    @Test fun firstBuildAndExpansionHaveDistinctPaintedArtwork() {
+        IsleBuilding.entries.forEach { building ->
+            org.junit.Assert.assertNotEquals(building.name, IslandArtwork.resource(building, 0), IslandArtwork.resource(building, 1))
+            org.junit.Assert.assertNotEquals(building.name, IslandArtwork.resource(building, 1), IslandArtwork.resource(building, 2))
+        }
+    }
+
     @Test fun normalPreviewRequiresPointsAndTimeButCreativeIsFree() {
         val earned = ApiClient.IslandConstruction(available=100,ageDays=1)
         assertTrue(IslandEvolution.allowed(earned,60,0))

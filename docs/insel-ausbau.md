@@ -24,3 +24,7 @@ Besucher und die Freundeskarte zeigen den tatsächlichen aktiven Ausbau des Besi
 Wasserströmungen sind animiert und werden in der Nahansicht zusammen mit der Insel durch dieselbe Kamera transformiert. Reduzierte Systemanimationen lassen die Wasserströmung stillstehen. Die eigene Insel lädt Zeitfreischaltungen spätestens alle 60 Sekunden neu; verspätete Antworten werden gegen aktuellen Besitzer/Modus geprüft.
 
 Backend-Regressionsfälle stehen in `test_island_evolution.py`; Produktionsansichten und echte Interaktionen in `VillageVisualReview` (61–67). JVM-Render sind Simulationen, keine Handy-Aufnahmen; sie beweisen keine flüssige Animation auf dem Gerät. Der Server muss mit der neuen Migration/API aktualisiert sein, bevor APK-Ausbauaktionen funktionieren.
+
+## Grafikfamilie
+
+Alle Ausbaustufen verwenden die vorhandenen gemalten WebP-Assets (terrain_sand, terrain_home, Deko, Hütten und Gebäude) — keine flachen Ersatzzeichnungen. Der Start zeigt reine Sandfläche, Hängematte, Palmen/Brief, Bücher am Treibgut, Feuerkreis und Ruderboot; keine Startgebäude oder Ruinen. Insel und Ausbauvorschau teilen dieselbe Produktionskomponente `PaintedIslandPlace`.

@@ -20,22 +20,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * Islands are assembled at runtime: one painted, EMPTY terrain base (coast,
@@ -98,7 +88,7 @@ internal object IslandPlans {
         else -> .3f
     }
     /** How green the land is (0 = bare sand bank, 1 = full meadow) for a land scale. */
-    fun meadow(landScale: Float): Float = ((landScale - .3f) / .7f).coerceIn(0f, 1f)
+    fun meadow(landScale: Float): Float = ((landScale - .46f) / (1f - .46f)).coerceIn(0f, 1f)
     /** Things on a small island shrink a little so the sand bank is not crammed. */
     fun pieceScale(landScale: Float): Float = .6f + .4f * landScale
     /**
@@ -147,7 +137,7 @@ internal object IslandPlans {
         return homeBuildings.mapValues { (b, p) ->
             val tier = if (construction != null) construction.buildings[b.name] ?: 0 else if (score >= 25) 1 else 0
             val (x, y) = onLand(p.x, p.y, s)
-            p.copy(x = x, y = y, size = p.size * (if (tier == 0) 1.0f else .9f + tier * .16f),
+            p.copy(res = IslandArtwork.resource(b, tier), x = x, y = y, size = p.size * (if (tier == 0) 1.0f else .9f + tier * .16f),
                 primitive = b.takeIf { tier == 0 }, tier = tier)
         }
     }
@@ -204,8 +194,6 @@ internal fun DynamicIsland(
     overlay: @Composable BoxWithConstraintsScope.() -> Unit = {},
 ) {
     val t = rememberInfiniteTransition(label = "isle")
-    val time by if (animate) t.animateFloat(0f, 1f, infiniteRepeatable(tween(6000, easing = LinearEasing), RepeatMode.Restart), label = "time")
-    else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val sway by if (animate) t.animateFloat(-1f, 1f, infiniteRepeatable(tween(5200), RepeatMode.Reverse), label = "sway")
     else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     BoxWithConstraints(modifier.aspectRatio(IslandPlans.ASPECT)) {
@@ -227,31 +215,11 @@ internal fun DynamicIsland(
             transformOrigin = TransformOrigin(IslandPlans.LAND_CX, IslandPlans.LAND_CY)
         }
         val green = IslandPlans.meadow(ls)
-        // A genuinely new dune silhouette: no scaled-down village, ruins, lawns or paths.
-        Canvas(Modifier.fillMaxSize()) {
-            val cx = size.width * IslandPlans.LAND_CX
-            val cy = size.height * IslandPlans.LAND_CY
-            val rx = size.width * .46f * ls
-            val ry = size.height * .36f * ls
-            val dune = Path().apply {
-                moveTo(cx-rx, cy)
-                cubicTo(cx-rx*.96f,cy-ry*.78f,cx-rx*.3f,cy-ry*1.08f,cx+rx*.1f,cy-ry)
-                cubicTo(cx+rx*.78f,cy-ry*.98f,cx+rx*1.06f,cy-ry*.3f,cx+rx,cy+ry*.08f)
-                cubicTo(cx+rx*.98f,cy+ry*.87f,cx+rx*.23f,cy+ry*1.08f,cx-rx*.22f,cy+ry*.9f)
-                cubicTo(cx-rx*.87f,cy+ry*.72f,cx-rx*1.05f,cy+ry*.38f,cx-rx,cy); close()
-            }
-            drawPath(dune, Color(0x44365456), style = Stroke(size.width*.04f))
-            drawPath(dune, Color(0xCCDFEEDD), style = Stroke(size.width*.018f))
-            drawPath(dune, Brush.verticalGradient(listOf(Color(0xFFF2D497), Color(0xFFDDAF69))))
-            drawOval(Color(0x55FFF1C2), Offset(cx-rx*.65f,cy-ry*.7f), androidx.compose.ui.geometry.Size(rx*1.2f,ry*1.35f))
-            repeat(35) { i ->
-                val a = i * 2.399f
-                val r = kotlin.math.sqrt((i+.5f)/35f)
-                drawCircle(Color(0x33986B38), 1.3f, Offset(cx+cos(a)*rx*.8f*r,cy+sin(a)*ry*.75f*r))
-            }
-        }
-        if (green > .35f) Image(painterResource(R.drawable.terrain_home), null,
-            landLayer.graphicsLayer { alpha = ((green-.35f)/.65f).coerceIn(0f,1f) }, contentScale = ContentScale.FillBounds)
+        // Painted bare sand and painted meadow share the app's existing coast/detail style.
+        // Do not replace these with geometric Canvas terrain: it breaks the visual family.
+        if (green < 1f) Image(painterResource(R.drawable.terrain_sand), null, landLayer, contentScale = ContentScale.FillBounds)
+        if (green > 0f) Image(painterResource(R.drawable.terrain_home), null,
+            landLayer.graphicsLayer { alpha = green }, contentScale = ContentScale.FillBounds)
         Canvas(Modifier.fillMaxSize()) {
             // Soft contact shadows ground every part on the grass.
             plan.pieces.forEach { pc ->
@@ -266,27 +234,16 @@ internal fun DynamicIsland(
         }
         plan.pieces.sortedBy { it.y }.forEachIndexed { i, p ->
             val box: Dp = w * p.size
-            if (p.primitive != null) Canvas(Modifier.offset(x = w * p.x - box / 2, y = h * p.y - box).size(box)) {
-                drawPrimitivePlace(p.primitive, time)
-            } else if (p.tier == 1) Canvas(Modifier.offset(x = w * p.x - box / 2, y = h * p.y - box).size(box)) {
-                p.name?.let { name -> IsleBuilding.entries.firstOrNull { it.label == name } }?.let { drawTimberPlace(it) }
-            } else Image(
-                painterResource(p.res), p.name, contentScale = ContentScale.Fit, alignment = Alignment.BottomCenter,
+            val building = p.name?.let { name -> IsleBuilding.entries.firstOrNull { it.label == name } }
+            PaintedIslandPlace(building, p.tier, p.res, description = p.name,
                 modifier = Modifier.offset(x = w * (if (plan.mirror) 1f - p.x else p.x) - box / 2, y = h * p.y - box).size(box)
                     .then(
-                        if (p.sway) Modifier.graphicsLayer {
+                        if (p.sway || p.primitive == IsleBuilding.POST || p.primitive == IsleBuilding.LIGHTHOUSE) Modifier.graphicsLayer {
                             rotationZ = sway * (1.4f + (i % 3) * .5f)
                             transformOrigin = TransformOrigin(.5f, 1f)
                         } else Modifier,
                     ),
             )
-        }
-        plan.pieces.filter { it.tier == 3 }.forEach { p ->
-            Canvas(Modifier.offset(x=w*p.x,y=h*p.y-w*p.size).size(w*p.size*.36f)) {
-                drawLine(Color(0xFF66513A),Offset(size.width*.2f,size.height),Offset(size.width*.2f,0f),2f)
-                val flag=Path().apply { moveTo(size.width*.2f,0f);lineTo(size.width,size.height*.2f);lineTo(size.width*.2f,size.height*.45f);close() }
-                drawPath(flag,Color(0xFFE8BD5B))
-            }
         }
         overlay()
     }
