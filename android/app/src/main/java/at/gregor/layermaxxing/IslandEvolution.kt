@@ -126,7 +126,7 @@ internal fun IslandUpgradeContent(
     val cost=costs.getOrElse(level) { 0 }; val day=days.getOrElse(level) { 0 }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=24.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text(building?.label ?: "Insel vergrößern",fontSize=22.sp,color=Isle.Ink)
-        Text(if(c.mode=="creative") "Kreativinsel · kostenlos und unabhängig von deinem Fortschritt" else "${c.available} Punkte verfügbar · Tag ${c.ageDays}",color=Isle.Muted,fontSize=13.sp)
+        Text(if(c.mode=="creative") "Kreativmodus · kostenlos auf deiner echten Insel" else "${c.available} Punkte verfügbar · Tag ${c.ageDays}",color=Isle.Muted,fontSize=13.sp)
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
             if(building!=null) {
                 BuildingPreview(building,level)

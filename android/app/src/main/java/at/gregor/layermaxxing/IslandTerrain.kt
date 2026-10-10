@@ -47,6 +47,8 @@ internal data class IslandPiece(
     val name: String? = null,
     val primitive: IsleBuilding? = null,
     val tier: Int = 0,
+    /** Picked up for moving (long press / placement): drawn raised above its footprint. */
+    val lifted: Boolean = false,
 )
 
 internal data class IslandPlan(
@@ -224,10 +226,10 @@ internal fun DynamicIsland(
         Canvas(Modifier.fillMaxSize()) {
             // Soft contact shadows ground every part on the grass.
             plan.pieces.forEach { pc ->
-                val sw = size.width * pc.size * .62f
+                val sw = size.width * pc.size * (if (pc.lifted) .82f else .62f)
                 val px = (if (plan.mirror) 1f - pc.x else pc.x) * size.width
                 drawOval(
-                    Color(0x26000000),
+                    if (pc.lifted) Color(0x44000000) else Color(0x26000000),
                     topLeft = Offset(px - sw / 2, pc.y * size.height - sw * .12f),
                     size = androidx.compose.ui.geometry.Size(sw, sw * .24f),
                 )
@@ -239,7 +241,11 @@ internal fun DynamicIsland(
             PaintedIslandPlace(building, p.tier, p.res, description = p.name,
                 modifier = Modifier.offset(x = w * (if (plan.mirror) 1f - p.x else p.x) - box / 2, y = h * p.y - box).size(box)
                     .then(
-                        if (p.sway || p.primitive == IsleBuilding.POST || p.primitive == IsleBuilding.LIGHTHOUSE) Modifier.graphicsLayer {
+                        if (p.lifted) Modifier.graphicsLayer {
+                            // Picked up: rises off the ground a little and grows, like a held game piece.
+                            translationY = -box.toPx() * .16f; scaleX = 1.08f; scaleY = 1.08f
+                            transformOrigin = TransformOrigin(.5f, 1f)
+                        } else if (p.sway || p.primitive == IsleBuilding.POST || p.primitive == IsleBuilding.LIGHTHOUSE) Modifier.graphicsLayer {
                             rotationZ = sway * (1.4f + (i % 3) * .5f)
                             transformOrigin = TransformOrigin(.5f, 1f)
                         } else Modifier,

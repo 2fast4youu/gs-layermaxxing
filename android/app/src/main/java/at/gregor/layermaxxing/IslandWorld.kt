@@ -214,7 +214,10 @@ internal fun IslandWorld(
     /** Unread count of the messenger, shown on the bar's way out to the chats. */
     chatsBadge: Int = 0,
     creativeActive: Boolean = false,
-    changeConstruction: suspend (ApiClient.IslandConstruction, String, String?) -> ApiClient.HomeIsland? = { _, _, _ -> null },
+    changeConstruction: suspend (ApiClient.IslandConstruction, ApiClient.IslandRequest) -> ApiClient.HomeIsland? = { _, _ -> null },
+    /** The app's own bottom navigation, drawn unchanged below the island's second row. */
+    mainNavigation: (@Composable () -> Unit)? = null,
+    onSettings: () -> Unit = { onPlace(IsleBuilding.HOUSE) },
 ) {
     val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
@@ -224,30 +227,37 @@ internal fun IslandWorld(
     // "map" = archipelago, "home" = my island up close, "visit:<id>" = a friend's island.
     var view by rememberSaveable { mutableStateOf(startView) }
     var editing by rememberSaveable { mutableStateOf(false) }
-    var decorEditing by remember { mutableStateOf(false) }
     // A building's own place, drawn natively on top of the island (null = none open).
     var place by rememberSaveable { mutableStateOf(startPlace) }
     var home by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
     var visited by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
-    var slotPick by remember { mutableStateOf<Int?>(null) }
     var plotPick by remember { mutableStateOf<Int?>(null) }
     var upgradePick by remember { mutableStateOf<IsleBuilding?>(null) }
-    var shopOpen by remember { mutableStateOf(false) }
     var functionMenu by remember { mutableStateOf(false) }
-    var placement by remember { mutableStateOf<Pair<IsleBuilding,List<Int>>?>(null) }
-    var buildingInfo by remember { mutableStateOf(false) }
+    var buildBar by remember { mutableStateOf(false) }
+    var buildTab by remember { mutableStateOf("Gebäude") }
+    var placement by remember { mutableStateOf<IslandDraft?>(null) }
+    var selection by remember { mutableStateOf<IslandTarget?>(null) }
+    var demolishTarget by remember { mutableStateOf<IslandTarget?>(null) }
+    var demolishPlot by remember { mutableStateOf<Int?>(null) }
     var landPick by remember { mutableStateOf(false) }
     var constructionBusy by remember { mutableStateOf(false) }
     var buildPick by remember { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
-    val currentIslandIdentity by androidx.compose.runtime.rememberUpdatedState(ownId to if (creativeActive) "creative" else "normal")
-    fun currentResponse(response: ApiClient.HomeIsland) = response.userId == currentIslandIdentity.first && response.construction.mode == currentIslandIdentity.second
-    LaunchedEffect(ownId, islands?.score, creativeActive) {
-        val mode = if (creativeActive) "creative" else "normal"
-        if (home?.userId != ownId || home?.construction?.mode != mode) {
+    val mode = if (creativeActive) "creative" else "normal"
+    val currentOwner by androidx.compose.runtime.rememberUpdatedState(ownId)
+    // Creative mode builds on the same real island. Late answers are only checked against the
+    // owner: 7.9.3 also compared the ledger mode, so a server answering "normal" (or without a
+    // construction block) was discarded forever and the island went dead (CreativeIslandRegressionTest).
+    fun currentResponse(response: ApiClient.HomeIsland) = response.userId == currentOwner
+    val island = home?.let { it.copy(construction = it.construction.copy(mode = mode)) }
+    LaunchedEffect(ownId) {
+        if (home?.userId != ownId) {
             home = null
-            placement=null; buildingInfo=false; shopOpen=false; functionMenu=false; slotPick = null; plotPick = null; buildPick = null; upgradePick = null; landPick = false; decorEditing = false
+            placement = null; selection = null; buildBar = false; functionMenu = false; plotPick = null; buildPick = null; upgradePick = null; landPick = false; demolishTarget = null; demolishPlot = null
         }
+    }
+    LaunchedEffect(ownId, islands?.score, creativeActive) {
         ownId?.let { id ->
             while (true) {
                 if (!constructionBusy) runCatching { loadIsland(id) }
@@ -260,44 +270,106 @@ internal fun IslandWorld(
     }
     val visitId = view.removePrefix("visit:").toLongOrNull()
     LaunchedEffect(visitId) { visited = null; visitId?.let { id -> visited = runCatching { loadIsland(id) }.getOrNull() } }
-    BackHandler(enabled = view != "map" || editing || place != null || placement!=null || shopOpen) {
-        when { constructionBusy -> Unit; placement != null -> placement=null; shopOpen -> shopOpen=false; place != null -> place = null; editing -> { editing = false; decorEditing = false }; else -> view = "map" }
+    BackHandler(enabled = view != "map" || editing || place != null || placement != null || buildBar || selection != null) {
+        when { constructionBusy -> Unit; placement != null -> placement = null; selection != null -> selection = null; buildBar -> buildBar = false
+            place != null -> place = null; editing -> editing = false; else -> view = "map" }
     }
     val homeBadges = mapOf(
         IsleBuilding.HARBOUR to openQuests,
         IsleBuilding.POST to letters.count { it.incoming && it.unlocked && it.readAt == null && opened[it.id] == null },
         IsleBuilding.LIGHTHOUSE to incoming.size,
     )
+    fun construct(request: ApiClient.IslandRequest, after: () -> Unit = {}) {
+        val original = island ?: return
+        if (constructionBusy) return
+        if (!original.construction.supported) { onError("Dieser Server kann Inselbauten noch nicht speichern."); return }
+        constructionBusy = true
+        scope.launch {
+            try {
+                val response = changeConstruction(original.construction, request)
+                if (response != null && currentResponse(response)) { home = response; after() }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                if (currentResponse(original)) {
+                    onError(ApiErrors.friendly(e.message))
+                    // Invalid or stale writes never save: reload, keep the local draft for a retry.
+                    ownId?.let { id -> runCatching { loadIsland(id) }.getOrNull()?.let { fresh -> if (currentResponse(fresh)) home = fresh } }
+                }
+            } finally { constructionBusy = false }
+        }
+    }
+    fun startBuilding(b: IsleBuilding, lifted: Boolean) {
+        val h = island ?: return
+        selection = null; buildBar = false; upgradePick = null; landPick = false
+        val start = h.construction.positions[b.name] ?: IslandLayout.defaultPosition(b)
+        val pos = if ((h.construction.buildings[b.name] ?: 0) > 0) start
+            else IslandLayout.freeCell(start) { IslandLayout.valid(h.construction, b, it, IslandLayout.obstacles(h)) }
+        placement = IslandDraft(IslandTarget.Building(b), pos, lifted)
+    }
+    fun startDecor(item: String, existing: ApiClient.IslandDecor?) {
+        val h = island ?: return
+        selection = null; buildBar = false
+        val start = existing?.position ?: listOf(10, 12)
+        val pos = existing?.position ?: IslandLayout.freeCell(start) { IslandLayout.validDecor(h.construction, it, IslandLayout.obstacles(h)) }
+        placement = IslandDraft(IslandTarget.Decor(item, existing?.id), pos, existing != null)
+    }
+    fun confirmDraft() {
+        val d = placement ?: return
+        val h = island ?: return
+        val request = when (val t = d.target) {
+            is IslandTarget.Building -> ApiClient.IslandRequest(if ((h.construction.buildings[t.building.name] ?: 0) > 0) "move" else "upgrade", t.building.name, position = d.position)
+            is IslandTarget.Decor -> if (t.id == null) ApiClient.IslandRequest("decor_place", item = t.item, position = d.position)
+                else ApiClient.IslandRequest("decor_move", decorId = t.id, position = d.position)
+        }
+        construct(request) { placement = null }
+    }
 
     IsleTypography {
     val sea = rememberSeaBrush()
     Box(Modifier.fillMaxSize().background(sea)) {
         AnimatedIslandSea(Modifier.fillMaxSize())
         when {
-            view == "home" -> CloseIsland(
-                placementActive=placement!=null,
-                title = if (editing) "Insel bearbeiten" else "Meine Insel",
-                subtitle = when {
-                        placement != null -> "Ziehen oder tippen · Grün = frei, Rot = belegt"
-                        editing -> "Gebäude auswählen und verschieben"
-                        else -> if (creativeActive) "Kreativinsel · frei ausbauen und zurückbauen" else home?.construction?.let { "Landstufe ${it.land} · ${it.available} Punkte zum Bauen" } ?: "Insel wird geladen…"
+            view == "home" -> {
+                val land = island?.construction?.land ?: 0
+                // Own island opens zoomed in; zooming out stops well before overview size.
+                val initialZoom = (.82f / IslandPlans.constructionScale(land)).coerceIn(1.15f, 1.85f)
+                CloseIsland(
+                    title = "Meine Insel", subtitle = "",
+                    placementActive = placement != null,
+                    zoom = IslandZoom(initialZoom, (initialZoom * .82f).coerceAtLeast(1f), 3f),
+                    bottomReserve = 196.dp,
+                    header = {
+                        MyIslandHeader(
+                            if (editing && placement == null) "Insel bearbeiten" else "Meine Insel",
+                            when {
+                                placement != null -> "Ziehen oder tippen · Grün = frei, Rot = belegt"
+                                editing -> "Gebäude antippen zum Verschieben · Bauplätze für Lebensorte"
+                                creativeActive -> "Kreativmodus · bauen, ausbauen, abreißen gratis"
+                                else -> island?.construction?.let { "Landstufe ${it.land} · ${it.available} Punkte zum Bauen" } ?: "Insel wird geladen…"
+                            },
+                            creativeActive,
+                        )
                     },
-            ) {
-                HubIsland(
-                    decor = home?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), seed = ownId ?: 1L,
-                    badges = homeBadges,
-                    onBuilding = { b -> upgradePick = b; buildingInfo=false },
-                    onSlot = if (decorEditing) ({ slotPick = it }) else null,
-                    life = placement?.let { (b,p) -> home?.let { h -> h.copy(construction=h.construction.copy(buildings=h.construction.buildings+(b.name to (h.construction.buildings[b.name] ?: 0).coerceAtLeast(1)),positions=h.construction.positions+(b.name to p))) } } ?: home,
-                    showFigure = placement==null, editingPlots = editing && placement==null,
-                    placement = placement, onPosition = { p -> if(!constructionBusy) placement=placement?.copy(second=p) },
-                    onPlot = { i -> if (home?.places?.containsKey(i) == true) plotPick = i else buildPick = i },
-                    onFigure = { functionMenu=true },
-                )
+                ) {
+                    HubIsland(
+                        decor = island?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), seed = ownId ?: 1L,
+                        badges = homeBadges,
+                        onBuilding = { b -> if (editing) startBuilding(b, true) else { selection = IslandTarget.Building(b); buildBar = false } },
+                        onBuildingLongPress = { b -> startBuilding(b, true) },
+                        onDecor = if (island?.construction?.supported == true) ({ d -> selection = IslandTarget.Decor(d.item, d.id); buildBar = false }) else null,
+                        onDecorLongPress = { d -> startDecor(d.item, d) },
+                        life = island?.let { IslandLayout.preview(it, placement) },
+                        placementValid = placement?.let { d -> island?.let { IslandLayout.valid(it, d) } } ?: true,
+                        showFigure = placement == null, editingPlots = editing && placement == null,
+                        placement = placement, onPosition = { p -> if (!constructionBusy) placement = placement?.copy(position = p) },
+                        onPlot = { i -> if (home?.places?.containsKey(i) == true) plotPick = i else buildPick = i },
+                        onFigure = { functionMenu = true },
+                    )
+                }
             }
             visitId != null -> {
                 val friend = pals.firstOrNull { it.id == visitId }
-                CloseIsland(title = "Insel von ${friend?.name ?: "…"}", subtitle = "Du bist zu Besuch") {
+                CloseIsland(title = "Insel von ${friend?.name ?: "…"}", subtitle = "Du bist zu Besuch", bottomReserve = 150.dp) {
                     HubIsland(decor = visited?.decor.orEmpty(), modifier = Modifier.fillMaxWidth(), labels = false, seed = visitId, life = visited)
                 }
             }
@@ -315,7 +387,14 @@ internal fun IslandWorld(
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Pill(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Zurück") { if (!constructionBusy) { if(placement!=null) placement=null else if (editing) { editing = false;decorEditing=false } else if (view != "map") { upgradePick=null; view = "map" } else onBack() } }.semantics { contentDescription="Zurück" }) { AppIcon(R.drawable.ico_back, null, tint = Color(0xFFFFF8E6), size = 22.dp) }
+            Pill(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = if (view == "map") "Zurück" else "Zurück zur Übersicht") {
+                if (!constructionBusy) { if (placement != null) placement = null else if (selection != null) selection = null else if (editing) editing = false else if (view != "map") { upgradePick = null; buildBar = false; view = "map" } else onBack() }
+            }.semantics { contentDescription = "Zurück" }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(R.drawable.ico_back, null, tint = Color(0xFFFFF8E6), size = 22.dp)
+                    if (view != "map" && placement == null) Text(" Übersicht", color = Color(0xFFFFF8E6), fontSize = 14.sp)
+                }
+            }
             Spacer(Modifier.width(8.dp))
             // On the map the HUD's middle is the "what now?" hint; without one, it says who I am.
             if (step != null) NextStepCard(step, Modifier.weight(1f)) { place = step.building.name }
@@ -338,9 +417,12 @@ internal fun IslandWorld(
                 }
             }
         }
+        // The overview is labelled as such, so it never reads like the own island.
+        if (view == "map" && place == null) WorldText("Übersicht · alle Inseln", 13.sp, display = false, fill = Color(0xFFE6D3A3),
+            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 68.dp))
         if (pals.isEmpty() && view == "map") {
             Column(
-                Modifier.align(Alignment.BottomCenter).padding(24.dp).padding(bottom = 76.dp)
+                Modifier.align(Alignment.Center).padding(24.dp).padding(top = 260.dp)
                     .shadow(6.dp, RoundedCornerShape(22.dp)).background(Isle.Card, RoundedCornerShape(22.dp)).padding(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -350,11 +432,12 @@ internal fun IslandWorld(
                 IsleButton("Freunde finden", onPeople)
             }
         }
-        // One fixed bar everywhere: map · my island · harbour. Context actions float above it.
+        // Bottom: context (placement / selection / build shelf), the island's own second row,
+        // and below it the app's unchanged main navigation.
         Column(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (visitId != null) {
                 var writeMenu by remember(visitId) { mutableStateOf(false) }
@@ -366,65 +449,82 @@ internal fun IslandWorld(
                     }
                 }
             }
-            if (view == "home" && place == null && home != null) {
-                val draft=placement
-                if(draft!=null) {
-                    val (b,p)=draft; val c=home!!.construction
-                    Text(b.label + if(IslandLayout.valid(c,b,p,IslandLayout.obstacles(home!!))) " · Platz frei" else " · Nicht platzierbar",color=Color.White)
-                    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                        Button(onClick={if(!constructionBusy) placement=null},enabled=!constructionBusy) { Text("Abbrechen") }
-                        Button(onClick={
-                            if(!constructionBusy) {
-                            val original=home!!; constructionBusy=true
-                            scope.launch {
-                                try {
-                                    val request=original.construction.copy(positions=original.construction.positions+(b.name to p))
-                                    val action=if((request.buildings[b.name] ?: 0)>0) "move" else "upgrade"
-                                    val response=changeConstruction(request,action,b.name)
-                                    if(response!=null && currentResponse(response)) { home=response; placement=null }
-                                } catch(e: Exception) {
-                                    if(e is kotlinx.coroutines.CancellationException) throw e
-                                    if(currentResponse(original)) {
-                                        onError(ApiErrors.friendly(e.message))
-                                        ownId?.let { id -> runCatching { loadIsland(id) }.getOrNull()?.let { fresh -> if(currentResponse(fresh)) home=fresh } }
-                                    }
-                                } finally { constructionBusy=false }
-                            }
-                            }
-                        },enabled=!constructionBusy && IslandLayout.valid(c,b,p,IslandLayout.obstacles(home!!))) { Text(if(constructionBusy) "Speichert…" else "Bestätigen") }
+            if (view == "home" && place == null && island != null) {
+                val h = island
+                val draft = placement
+                val sel = selection
+                when {
+                    draft != null -> {
+                        val name = when (val t = draft.target) { is IslandTarget.Building -> t.building.label; is IslandTarget.Decor -> IsleDecor.labels[t.item] ?: t.item }
+                        PlacementControls(name, IslandLayout.valid(h, draft), constructionBusy, "Bestätigen",
+                            onCancel = { if (!constructionBusy) placement = null }, onConfirm = { confirmDraft() })
                     }
-                } else if(upgradePick!=null) {
-                    val b=upgradePick!!; val c=home!!.construction; val level=c.buildings[b.name] ?: 0
-                    Column(Modifier.fillMaxWidth().padding(horizontal=12.dp).background(Isle.Card,RoundedCornerShape(18.dp)).padding(12.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                        Text("${b.label} · Stufe $level",color=Isle.Ink,fontSize=17.sp,fontWeight=FontWeight.Bold)
-                        Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                            TextButton(onClick={upgradePick=null;place=b.name}) { Text("Öffnen") }
-                            TextButton(onClick={upgradePick=null;placement=b to (c.positions[b.name] ?: IslandLayout.defaultPosition(b))}) { Text("Verschieben") }
-                            Button(onClick={buildingInfo=true}) { Text(if(level<3) "Ausbauen" else "Info") }
-                            TextButton(onClick={upgradePick=null}) { Text("×") }
+                    sel is IslandTarget.Building -> {
+                        val b = sel.building; val level = h.construction.buildings[b.name] ?: 0
+                        SelectionBar(b.label, "${IslandEvolution.levelName(b, level).substringAfter(" · ")} · ${IslandBuild.subtitle(b)}",
+                            art = { PaintedIslandPlace(b, level, IslandArtwork.resource(b, level), Modifier.fillMaxSize()) },
+                            actions = listOf(
+                                Triple("Öffnen", AppIcons.building(b), { selection = null; place = b.name }),
+                                Triple(if (level < 3) "Ausbauen" else "Info", R.drawable.ico_growth, { selection = null; upgradePick = b }),
+                                Triple("Verschieben", R.drawable.ico_pin_place, { startBuilding(b, true) }),
+                                Triple("Abreißen", R.drawable.ico_delete, { demolishTarget = sel }),
+                            ), onClose = { selection = null })
+                    }
+                    sel is IslandTarget.Decor -> {
+                        val d = h.construction.decor.firstOrNull { it.id == sel.id }
+                        val name = IsleDecor.labels[sel.item] ?: sel.item
+                        SelectionBar(name, "Deko · lange drücken zum Verschieben",
+                            art = { IsleDecor.res(sel.item)?.let { Image(painterResource(it), null, Modifier.fillMaxSize()) } },
+                            actions = listOf(
+                                Triple("Verschieben", R.drawable.ico_pin_place, { startDecor(sel.item, d) }),
+                                Triple("Entfernen", R.drawable.ico_delete, { demolishTarget = sel }),
+                            ), onClose = { selection = null })
+                    }
+                    buildBar -> IslandBuildBar(h, buildTab, { buildTab = it },
+                        onBuilding = { b ->
+                            val level = h.construction.buildings[b.name] ?: 0
+                            when {
+                                level > 0 -> { buildBar = false; selection = IslandTarget.Building(b) }
+                                IslandBuild.buildable(h.construction, b) -> startBuilding(b, false)
+                                h.construction.ageDays < h.construction.buildDays.getOrElse(0) { 0 } -> onError("${b.label} kannst du ab Tag ${h.construction.buildDays.getOrElse(0) { 0 }} bauen")
+                                else -> onError("Für ${b.label} fehlen ${h.construction.buildCosts.getOrElse(0) { 0 } - h.construction.available} Punkte")
+                            }
+                        },
+                        onDecor = { item ->
+                            when {
+                                !h.construction.supported -> onError("Dieser Server kann Deko noch nicht frei platzieren.")
+                                IslandBuild.decorFull(h) -> onError("Für mehr Deko zuerst die Insel erweitern")
+                                !IslandBuild.decorUnlocked(h, item) -> onError("${IsleDecor.labels[item] ?: item} wird mit Punkten freigeschaltet")
+                                else -> startDecor(item, null)
+                            }
+                        },
+                        onLand = { buildBar = false; landPick = true },
+                        onPlaces = { buildBar = false; editing = true },
+                        onClose = { buildBar = false })
+                }
+            }
+            if (placement == null) IslandActionRow {
+                when {
+                    view == "home" -> {
+                        IslandRowItem(R.drawable.ico_map, "Übersicht") { place = null; selection = null; buildBar = false; editing = false; view = "map" }
+                        if (island != null) {
+                            IslandRowItem(R.drawable.ico_build, "Bauen", selected = buildBar) { place = null; selection = null; editing = false; buildBar = !buildBar }
+                            IslandRowItem(R.drawable.ico_edit, if (editing) "Fertig" else "Bearbeiten", selected = editing) { place = null; selection = null; buildBar = false; editing = !editing }
                         }
+                        IslandRowItem(R.drawable.ico_menu, "Menü") { functionMenu = true }
                     }
-                } else Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    GoldAction("Menü", R.drawable.ico_home) { functionMenu=true }
-                    if(editing) GoldAction("Layout fertig",R.drawable.ico_edit) { editing=false;decorEditing=false }
-                    GoldAction("Bauen",R.drawable.ico_add) { shopOpen=true }
+                    visitId != null -> {
+                        IslandRowItem(R.drawable.ico_map, "Übersicht") { view = "map" }
+                        IslandRowItem(R.drawable.ico_island, "Meine Insel") { view = "home" }
+                    }
+                    else -> {
+                        IslandRowItem(R.drawable.ico_island, "Meine Insel", badge = incoming.size) { place = null; view = "home" }
+                        IslandRowItem(R.drawable.ico_harbour, "Hafen", selected = place == IsleBuilding.HARBOUR.name, badge = openQuests) { place = IsleBuilding.HARBOUR.name }
+                        IslandRowItem(R.drawable.ico_menu, "Menü") { functionMenu = true }
+                    }
                 }
             }
-            Row(
-                Modifier.background(Color(0xD9243A3F), RoundedCornerShape(30.dp)).padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (placement != null) { /* Placement toolbar owns navigation until confirm/cancel. */ }
-                else if (editing) BarItem("done", "Fertig") { editing = false; decorEditing = false }
-                else {
-                    BarItem("chats", "Chats", badge = chatsBadge) { place = null; onBack() }
-                    // Long-press on the map is the shortcut out to the messenger's main menu.
-                    BarItem("map", "Karte", selected = view == "map" && place == null, onLongClick = onBack) { place = null; view = "map" }
-                    BarItem("home", "Meine Insel", selected = view == "home" && place == null, badge = incoming.size) { place = null; view = "home" }
-                    BarItem("harbour", "Hafen", selected = place == IsleBuilding.HARBOUR.name, badge = openQuests) { place = IsleBuilding.HARBOUR.name }
-
-                }
-            }
+            if (mainNavigation != null) mainNavigation() else Spacer(Modifier.navigationBarsPadding().height(8.dp))
         }
         val openPlace = place?.let { key -> IsleBuilding.entries.firstOrNull { it.name == key } }
         androidx.compose.animation.AnimatedVisibility(
@@ -462,19 +562,12 @@ internal fun IslandWorld(
         }
     }
 
-    if(functionMenu) ModalBottomSheet(onDismissRequest={functionMenu=false},containerColor=Isle.Card) {
-        Column(Modifier.padding(20.dp)) {
-            Text("Inselmenü",fontSize=24.sp,color=Isle.Ink)
-            IsleBuilding.entries.forEach { b -> TextButton(onClick={functionMenu=false;place=b.name},modifier=Modifier.fillMaxWidth()) { Text(b.label) } }
-            Spacer(Modifier.navigationBarsPadding())
-        }
-    }
-    if(shopOpen && home!=null) ModalBottomSheet(onDismissRequest={shopOpen=false},containerColor=Isle.Card,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
-        IslandBuildShop(home!!.construction,onPick={ b ->
-            shopOpen=false
-            if((home!!.construction.buildings[b.name] ?: 0)>0) { upgradePick=b;buildingInfo=false }
-            else placement=b to (home!!.construction.positions[b.name] ?: IslandLayout.defaultPosition(b))
-        },onLand={shopOpen=false;landPick=true},onLayout={shopOpen=false;editing=true},onDecor={shopOpen=false;editing=true;decorEditing=true})
+    if (functionMenu) ModalBottomSheet(onDismissRequest = { functionMenu = false }, containerColor = Isle.Card,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        IslandMenuContent(island,
+            onOpen = { b -> functionMenu = false; place = b.name },
+            onSettings = { functionMenu = false; onSettings() },
+            onBuild = { functionMenu = false; place = null; view = "home"; selection = null; buildBar = true })
     }
     selectedFriend?.let { id ->
         val friend = pals.firstOrNull { it.id == id }
@@ -499,49 +592,29 @@ internal fun IslandWorld(
             )
         }
     }
-    slotPick?.let { slot ->
-        val island = home
-        if (island == null) slotPick = null else DecorPicker(
-            current = island.decor[slot], items = island.items, score = island.score,
-            onPick = { item ->
-                val before = island
-                val next = island.decor.toMutableMap().apply { if (item == null) remove(slot) else put(slot, item) }
-                home = island.copy(decor = next); slotPick = null
-                scope.launch {
-                    runCatching { saveDecor(next) }.onFailure { if (currentResponse(before)) { home = before; onError(ApiErrors.friendly(it.message)) } }
-                }
-            },
-            onDismiss = { slotPick = null },
-        )
-    }
-    if ((upgradePick != null && buildingInfo || landPick) && home != null) {
-        val island = home!!
+    if ((upgradePick != null || landPick) && island != null) {
+        val h = island
         val building = upgradePick
         ModalBottomSheet(onDismissRequest = { if (!constructionBusy) { upgradePick = null; landPick = false } },
             containerColor = Isle.Card, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-            IslandUpgradeContent(building, island, constructionBusy,
-                onMove = { building?.let { b -> upgradePick=null;landPick=false;placement=b to (island.construction.positions[b.name] ?: IslandLayout.defaultPosition(b)) } },
+            IslandUpgradeContent(building, h, constructionBusy,
+                onMove = { building?.let { b -> startBuilding(b, true) } },
                 onOpen = { upgradePick = null; landPick = false; place = building?.name },
                 onAction = { action ->
-                    if (action=="upgrade" && building!=null && (island.construction.buildings[building.name] ?: 0)==0) {
-                        upgradePick=null;placement=building to (island.construction.positions[building.name] ?: IslandLayout.defaultPosition(building))
-                    } else if (!constructionBusy) {
-                        constructionBusy = true
-                        scope.launch {
-                            try {
-                                runCatching { changeConstruction(island.construction, action, building?.name) }
-                                    .onSuccess { if (it != null && currentResponse(it)) home = it }
-                                    .onFailure {
-                                        if (it is kotlinx.coroutines.CancellationException) throw it
-                                        if (currentResponse(island)) {
-                                            onError(ApiErrors.friendly(it.message))
-                                            ownId?.let { id -> runCatching { loadIsland(id) }.getOrNull()?.let { fresh -> if (currentResponse(fresh)) home = fresh } }
-                                        }
-                                    }
-                            } finally { constructionBusy = false }
-                        }
-                    }
+                    if (action == "upgrade" && building != null && (h.construction.buildings[building.name] ?: 0) == 0) startBuilding(building, false)
+                    else construct(ApiClient.IslandRequest(action, building?.name))
                 }, onDismiss = { if (!constructionBusy) { upgradePick = null; landPick = false } })
+        }
+    }
+    demolishTarget?.let { target ->
+        val h = island
+        if (h == null) demolishTarget = null else when (target) {
+            is IslandTarget.Building -> DemolishDialog(target.building.label, creativeActive, "Das Gebäude",
+                onConfirm = { demolishTarget = null; selection = null; construct(ApiClient.IslandRequest("demolish", target.building.name)) },
+                onDismiss = { demolishTarget = null })
+            is IslandTarget.Decor -> DemolishDialog(IsleDecor.labels[target.item] ?: target.item, creativeActive, "Die Deko",
+                onConfirm = { demolishTarget = null; selection = null; construct(ApiClient.IslandRequest("decor_remove", decorId = target.id)) },
+                onDismiss = { demolishTarget = null })
         }
     }
     fun commitPlaces(next: Map<Int, ApiClient.LifePlace>) {
@@ -583,8 +656,16 @@ internal fun IslandWorld(
                     scope.launch { runCatching { saveHere(target, if (stay) status else "") }.onFailure { if (currentResponse(before)) { home = before; onError(ApiErrors.friendly(it.message)) } } }
                 },
                 onRebuild = { plotPick = null; buildPick = plot },
+                onDemolish = { plotPick = null; demolishPlot = plot },
             )
         }
+    }
+    demolishPlot?.let { plot ->
+        val h = home
+        val p = h?.places?.get(plot)
+        if (h == null || p == null) demolishPlot = null
+        else DemolishDialog(LifePlaces.label(p), creativeActive, "Der Ort",
+            onConfirm = { demolishPlot = null; commitPlaces(h.places - plot) }, onDismiss = { demolishPlot = null })
     }
     newQuestFor?.let { (peer, group) ->
         NewQuestSheet(
@@ -862,12 +943,20 @@ private class Voyage(
     }
 }
 
+internal data class IslandZoom(val initial: Float = 1f, val min: Float = 1f, val max: Float = 2.6f)
+
 /** Close-up of one island: calm sea, title card, the island filling the width. */
 @Composable
-private fun CloseIsland(title: String, subtitle: String, placementActive: Boolean = false, content: @Composable () -> Unit) {
-    // Pinch (1×–2.6×), drag and double-tap zoom happen in a clipped viewport below the title,
-    // so the zoomed island never slides over the title or out of reach of the fingers.
-    var z by remember { mutableFloatStateOf(1f) }
+private fun CloseIsland(
+    title: String, subtitle: String, placementActive: Boolean = false,
+    zoom: IslandZoom = IslandZoom(), bottomReserve: Dp = 96.dp,
+    header: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    // Pinch, drag and double-tap zoom happen in a viewport below the title, so the zoomed
+    // island never slides over the title or out of reach of the fingers. The own island
+    // starts zoomed in and cannot be zoomed out to overview size (see [IslandZoom]).
+    var z by remember(zoom.initial) { mutableFloatStateOf(zoom.initial) }
     var off by remember { mutableStateOf(Offset.Zero) }
     var view by remember { mutableStateOf(androidx.compose.ui.geometry.Size(1f, 1f)) }
     var isle by remember { mutableStateOf(androidx.compose.ui.geometry.Size(1f, 1f)) }
@@ -893,16 +982,18 @@ private fun CloseIsland(title: String, subtitle: String, placementActive: Boolea
             }
         }
     }
-    BackHandler(enabled = z > 1.05f && !placementActive) { animateTo(1f, Offset.Zero) }
+    BackHandler(enabled = kotlin.math.abs(z - zoom.initial) > .05f && !placementActive) { animateTo(zoom.initial, Offset.Zero) }
     Column(
-        Modifier.fillMaxSize().statusBarsPadding().padding(top = 64.dp, bottom = 96.dp),
+        Modifier.fillMaxSize().statusBarsPadding().padding(top = 64.dp, bottom = bottomReserve),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Title cards draw above the island (zIndex), so a zoomed island can slide under them
         // instead of being cut off at a hard edge.
-        WorldText(title, 20.sp, modifier = Modifier.zIndex(1f).padding(top = 2.dp))
-        Spacer(Modifier.height(3.dp))
-        WorldText(subtitle, 11.sp, fill = Color(0xFFE6D3A3), display = false, modifier = Modifier.zIndex(1f))
+        if (header != null) Box(Modifier.zIndex(1f)) { header() } else {
+            WorldText(title, 20.sp, modifier = Modifier.zIndex(1f).padding(top = 2.dp))
+            Spacer(Modifier.height(3.dp))
+            WorldText(subtitle, 11.sp, fill = Color(0xFFE6D3A3), display = false, modifier = Modifier.zIndex(1f))
+        }
         Spacer(Modifier.height(8.dp))
         // No clipToBounds: the island lies on the same full-screen sea, so panning/zooming
         // never shows a straight cut between the moving island and the static water.
@@ -912,7 +1003,7 @@ private fun CloseIsland(title: String, subtitle: String, placementActive: Boolea
                 .pointerInput(placementActive) {
                     if(placementActive) return@pointerInput
                     detectTransformGestures { centroid, pan, zoomBy, _ ->
-                        val nz = (z * zoomBy).coerceIn(1f, 2.6f)
+                        val nz = (z * zoomBy).coerceIn(zoom.min, zoom.max)
                         val c = Offset(view.width / 2f, view.height / 2f)
                         val r = nz / z
                         val o = Offset(off.x + (centroid.x - c.x - off.x) * (1f - r), off.y + (centroid.y - c.y - off.y) * (1f - r)) + pan
@@ -937,9 +1028,10 @@ private fun CloseIsland(title: String, subtitle: String, placementActive: Boolea
                             } while (e.changes.any { it.pressed })
                             lastUp = 0L
                             val at = down.position
-                            val tz = if (z > 1.3f) 1f else 2f
+                            val near = (zoom.initial * 1.6f).coerceAtMost(zoom.max)
+                            val tz = if (z > zoom.initial * 1.25f) zoom.initial else near
                             val c = Offset(view.width / 2f, view.height / 2f)
-                            animateTo(tz, if (tz == 1f) Offset.Zero else clamp(Offset((c.x - at.x) * (tz - 1f), (c.y - at.y) * (tz - 1f)), tz))
+                            animateTo(tz, if (tz == zoom.initial) Offset.Zero else clamp(Offset((c.x - at.x) * (tz - 1f), (c.y - at.y) * (tz - 1f)), tz))
                         } else {
                             var multi = false
                             var up: androidx.compose.ui.input.pointer.PointerInputChange? = null
@@ -959,6 +1051,8 @@ private fun CloseIsland(title: String, subtitle: String, placementActive: Boolea
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp)
                     .onSizeChanged { isle = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
                     .graphicsLayer { scaleX = z; scaleY = z; translationX = off.x; translationY = off.y },
+                // The sea fills the whole viewport; the island itself sits in its middle.
+                contentAlignment = Alignment.Center,
             ) {
                 AnimatedIslandSea(Modifier.fillMaxSize(), oversized = true)
                 // Signs read the zoom lazily and stay the same size on screen.

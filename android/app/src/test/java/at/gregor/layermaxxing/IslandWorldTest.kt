@@ -128,10 +128,28 @@ class IslandWorldTest {
         assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(0,0)))
         assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(11,11)))
         assertTrue(IslandLayout.valid(c,IsleBuilding.POST,listOf(10,11)))
-        val h=ApiClient.HomeIsland(1,mapOf(0 to "flowers"),0,emptyList(),places=mapOf(0 to ApiClient.LifePlace("home","")),construction=c)
-        assertTrue(!IslandLayout.valid(c,IsleBuilding.POST,listOf(8,9),IslandLayout.obstacles(h)))
-        assertTrue(!IslandLayout.valid(c,IsleBuilding.POST,listOf(10,6),IslandLayout.obstacles(h)))
-        assertTrue(IslandLayout.obstacles(h.copy(construction=c.copy(mode="creative"))).isEmpty())
+        val withDecor=c.copy(decor=listOf(ApiClient.IslandDecor(0,"flowers",listOf(8,9),0)))
+        val h=ApiClient.HomeIsland(1,mapOf(0 to "flowers"),0,emptyList(),places=mapOf(0 to ApiClient.LifePlace("home","")),construction=withDecor)
+        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(8,9),IslandLayout.obstacles(h)))
+        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(10,6),IslandLayout.obstacles(h)))
+        // Creative mode builds on the same island: places and decoration still block.
+        val creative=h.copy(construction=withDecor.copy(mode="creative"))
+        assertEquals(IslandLayout.obstacles(h),IslandLayout.obstacles(creative))
+        assertTrue(!IslandLayout.valid(creative.construction,IsleBuilding.POST,listOf(8,9),IslandLayout.obstacles(creative)))
+    }
+    @Test fun freeDecorationFollowsTheSameGridRulesAsTheServer() {
+        val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)),land=5,
+            decor=listOf(ApiClient.IslandDecor(100,"bench",listOf(12,14))))
+        assertTrue(!IslandLayout.validDecor(c,listOf(0,0)))              // sea
+        assertTrue(!IslandLayout.validDecor(c,listOf(11,12)))            // on the building
+        assertTrue(!IslandLayout.validDecor(c,listOf(12,15)))            // on other decor
+        assertTrue(IslandLayout.validDecor(c,listOf(12,15),ignoreId=100)) // moving itself
+        assertTrue(IslandLayout.validDecor(c,listOf(6,14)))
+        val draft=IslandDraft(IslandTarget.Decor("palm"),listOf(6,14))
+        val preview=IslandLayout.preview(ApiClient.HomeIsland(1,emptyMap(),0,emptyList(),construction=c),draft)
+        assertEquals(2,preview.construction.decor.size)
+        val free=IslandLayout.freeCell(listOf(11,12)) { IslandLayout.validDecor(c,it) }
+        assertTrue(IslandLayout.validDecor(c,free))
     }
     @Test fun buildingFootprintsScaleWithLandSoAdjacentGridCellsDoNotOverlap() {
         for(land in 0..5) for(tier in 1..3) {

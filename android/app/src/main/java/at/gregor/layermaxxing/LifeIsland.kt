@@ -216,6 +216,7 @@ internal fun PlaceSheetContent(
     status: String,
     onHere: (Boolean, String) -> Unit,
     onRebuild: () -> Unit,
+    onDemolish: (() -> Unit)? = null,
 ) {
     var text by remember(imHere) { mutableStateOf(if (imHere) status else "") }
     val k = LifePlaces.kind(place.kind)
@@ -234,7 +235,10 @@ internal fun PlaceSheetContent(
             colors = ButtonDefaults.buttonColors(containerColor = Isle.TealDark),
         ) { Text(if (imHere) "Status speichern" else "Ich bin hier", fontWeight = FontWeight.Bold) }
         if (imHere) TextButton(onClick = { onHere(false, "") }) { Text("Ich bin nicht mehr hier") }
-        TextButton(onClick = onRebuild) { Text("Umbauen oder umbenennen") }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(onClick = onRebuild) { Text("Umbauen oder umbenennen") }
+            if (onDemolish != null) TextButton(onClick = onDemolish) { Text("Abreißen", color = Color(0xFFB3412E)) }
+        }
         Text("Nur du siehst, wo deine Figur steht.", color = Isle.Muted, fontSize = 12.sp)
         Spacer(Modifier.height(16.dp))
     }

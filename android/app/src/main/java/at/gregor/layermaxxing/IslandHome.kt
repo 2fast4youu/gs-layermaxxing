@@ -103,10 +103,20 @@ internal object IsleDecor {
     }
 }
 
+/** Decoration sprites on the island: free objects from the construction ledger, legacy slots as fallback. */
+internal fun decorPieces(decor: Map<Int, String>, life: ApiClient.HomeIsland?, landScale: Float, lifted: Int? = null): List<Pair<ApiClient.IslandDecor, IslandPiece>> {
+    val objects = if (life?.construction?.supported == true) life.construction.decor
+        else IslandPlans.homeSlots.mapIndexedNotNull { i, (sx, sy) -> decor[i]?.let { ApiClient.IslandDecor(i, it, listOf((sx * 20).toInt(), (sy * 20).toInt()), i) } }
+    return objects.mapNotNull { d ->
+        val (x, y) = IslandPlans.onLand(d.position[0] / 20f, d.position[1] / 20f, landScale)
+        IsleDecor.res(d.item)?.let { d to IslandPiece(it, x, y, IsleDecor.share(d.item) * IslandPlans.pieceScale(landScale) / IslandPlans.pieceScale(1f),
+            sway = d.item == "palm" || d.item == "flag", name = IsleDecor.labels[d.item], lifted = d.id == lifted) }
+    }
+}
+
 /**
- * Draws the hub island with its decoration. [onBuilding] null = visitor view:
- * labels stay, but nothing opens. [onSlot] non-null = edit mode: every lawn
- * shows a round "+" (or the item to swap).
+ * Draws the hub island with its buildings, decoration and life places. [onBuilding] null = visitor
+ * view: labels stay, but nothing opens. A [placement] draft shows the grid and lifts its sprite.
  */
 @Composable
 internal fun HubIsland(
@@ -117,24 +127,26 @@ internal fun HubIsland(
     seed: Long = 1L,
     animate: Boolean = true,
     onBuilding: ((IsleBuilding) -> Unit)? = null,
-    onSlot: ((Int) -> Unit)? = null,
     life: ApiClient.HomeIsland? = null,
     showFigure: Boolean = false,
     onPlot: ((Int) -> Unit)? = null,
     onFigure: (() -> Unit)? = null,
     lifeTags: Boolean = true,
     editingPlots: Boolean = false,
-    placement: Pair<IsleBuilding,List<Int>>? = null,
+    placement: IslandDraft? = null,
+    placementValid: Boolean = true,
     onPosition: (List<Int>)->Unit = {},
+    onBuildingLongPress: ((IsleBuilding) -> Unit)? = null,
+    onDecor: ((ApiClient.IslandDecor) -> Unit)? = null,
+    onDecorLongPress: ((ApiClient.IslandDecor) -> Unit)? = null,
 ) {
-    val plan = androidx.compose.runtime.remember(seed, decor, life?.score, life?.construction) {
+    val liftedBuilding = (placement?.target as? IslandTarget.Building)?.building
+    val liftedDecor = (placement?.target as? IslandTarget.Decor)?.let { it.id ?: IslandLayout.DRAFT_DECOR_ID }
+    val plan = androidx.compose.runtime.remember(seed, decor, life?.score, life?.construction, liftedBuilding, liftedDecor) {
         val base = IslandPlans.home(seed, life?.score ?: 0, life?.construction ?: ApiClient.IslandConstruction())
-        val decorPieces = IslandPlans.homeSlots.mapIndexedNotNull { i, (sx, sy) ->
-            val key = decor[i] ?: return@mapIndexedNotNull null
-            val (x, y) = IslandPlans.onLand(sx, sy, base.landScale)
-            IsleDecor.res(key)?.let { IslandPiece(it, x, y, IsleDecor.share(key), sway = key == "palm" || key == "flag", name = IsleDecor.labels[key]) }
-        }
-        base.copy(pieces = base.pieces + decorPieces)
+        val lifted = liftedBuilding?.let { IslandPlans.homeBuildings[it]?.name }
+        base.copy(pieces = base.pieces.map { if (lifted != null && it.name == lifted) it.copy(lifted = true) else it } +
+            decorPieces(decor, life, base.landScale, liftedDecor).map { it.second })
     }
     DynamicIsland(plan, modifier, animate = animate) {
         val w = maxWidth; val h = maxHeight
@@ -148,44 +160,46 @@ internal fun HubIsland(
         }
         if (life != null) LifeLayer(
             places = life.places, plots = life.plots, unlocks = life.plotUnlocks, here = life.here?.plot,
-            showFigure = showFigure && onSlot == null && life.let { h ->
-                val (fx,fy)=LifePlaces.figureAt(h.here?.plot,h.places).let { (x,y) -> IslandPlans.onLand(x,y,ls) }
-                IslandPlans.placedBuildings(h.score,h.construction).values.none { p -> kotlin.math.abs(p.x-fx)<p.size*.6f && fy<=p.y && fy>=p.y-p.size*IslandPlans.ASPECT }
-            }, onPlot = if (onSlot == null) onPlot else null, onFigure = onFigure,
+            showFigure = showFigure && life.let { hh ->
+                val (fx,fy)=LifePlaces.figureAt(hh.here?.plot,hh.places).let { (x,y) -> IslandPlans.onLand(x,y,ls) }
+                IslandPlans.placedBuildings(hh.score,hh.construction).values.none { p -> kotlin.math.abs(p.x-fx)<p.size*.6f && fy<=p.y && fy>=p.y-p.size*IslandPlans.ASPECT }
+            }, onPlot = if (placement == null) onPlot else null, onFigure = if (placement == null) onFigure else null,
             tags = lifeTags, landScale = ls, showEmptyPlots = editingPlots,
         )
-        if (onSlot != null) IslandPlans.homeSlots.forEachIndexed { i, (sx, sy) ->
-            val (x, y) = IslandPlans.onLand(sx, sy, ls)
-            val item = decor[i]
-            val s = 44.dp
-            Box(
-                Modifier.offset(x = w * x - s / 2, y = h * y - s / 2).size(s).clip(CircleShape)
-                    .background(Color.White.copy(alpha = if (item == null) .85f else .55f))
-                    .border(2.dp, Isle.Teal, CircleShape)
-                    .clickable(onClickLabel = if (item == null) "Deko setzen" else "Deko ändern") { onSlot(i) },
-                Alignment.Center,
-            ) { AppIcon(if (item == null) R.drawable.ico_add else R.drawable.ico_edit, null, tint = Isle.TealDark, size = 17.dp) }
-        }
-        placement?.let { (b,p) -> IslandPlacementGrid(life?.construction ?: ApiClient.IslandConstruction(),b,p,life?.let(IslandLayout::obstacles).orEmpty(),onPosition) }
         val gate = LocalIslandTapGate.current
+        // Decoration is tappable (short = actions, long = move) like any building.
+        if (placement == null && onDecor != null) decorPieces(decor, life, ls).forEach { (d, piece) ->
+            val box = w * piece.size
+            Box(
+                Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box)
+                    .worldPress("${piece.name} bearbeiten", "${piece.name} verschieben", onDecorLongPress?.let { { it(d) } }) { gate { onDecor(d) } }
+                    .semantics { contentDescription = piece.name ?: "Deko" },
+            )
+        }
+        placement?.let { draft ->
+            val footprint = when (val t = draft.target) {
+                is IslandTarget.Building -> IslandPlans.placedBuildings(0, life?.construction).get(t.building)?.size ?: .12f
+                is IslandTarget.Decor -> IsleDecor.share(t.item) * 1.1f
+            }
+            IslandPlacementGrid(life?.construction?.land ?: 0, draft.position, placementValid, footprint, onPosition)
+        }
         // Signs and touch targets follow the buildings onto the grown land (not the full-size anchors).
         val placed = androidx.compose.runtime.remember(life?.score, life?.construction) { IslandPlans.placedBuildings(life?.score ?: 0, life?.construction ?: ApiClient.IslandConstruction()) }
-        if (labels && onSlot == null && placement == null) placed.forEach { (b, piece) ->
+        if (labels && placement == null) placed.forEach { (b, piece) ->
             val count = badges[b] ?: 0
             val box = w * piece.size
             // The whole building is the touch target; the pill sits at its foot.
             if (onBuilding != null) Box(
                 Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box)
-                    .worldTap("${b.label} öffnen") { gate { onBuilding(b) } },
+                    .worldPress("${b.label} öffnen", "${b.label} verschieben", onBuildingLongPress?.let { { it(b) } }) { gate { onBuilding(b) } },
             )
             val zoom = LocalIslandZoom.current
-            val (nx, ny) = 0f to 0f
             val tagWidth = if (plan.landScale < .7f) 64.dp else 100.dp
             Row(
-                Modifier.offset(x = w * (piece.x + nx) - tagWidth / 2, y = h * (piece.y + ny) - 2.dp).width(tagWidth)
+                Modifier.offset(x = w * piece.x - tagWidth / 2, y = h * piece.y - 2.dp).width(tagWidth)
                     // Counter-scale: when the island is zoomed, the sign keeps its on-screen size.
                     .graphicsLayer { val k = 1f / zoom().coerceAtLeast(1f); scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f) }
-                    .then(if (onBuilding != null) Modifier.worldTap("${b.label} öffnen") { gate { onBuilding(b) } } else Modifier)
+                    .then(if (onBuilding != null) Modifier.worldPress("${b.label} öffnen", "${b.label} verschieben", onBuildingLongPress?.let { { it(b) } }) { gate { onBuilding(b) } } else Modifier)
                     .semantics { contentDescription = b.label; if (onBuilding != null) role = Role.Button },
                 horizontalArrangement = Arrangement.Center,
             ) {

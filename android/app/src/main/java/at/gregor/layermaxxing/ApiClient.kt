@@ -131,6 +131,17 @@ class ApiClient(
         val buildCosts: List<Int> = listOf(25, 60, 100), val buildDays: List<Int> = listOf(0, 2, 7),
         val landCosts: List<Int> = listOf(40, 80, 140, 220, 320), val landDays: List<Int> = listOf(1, 3, 7, 14, 21),
         val positions: Map<String, List<Int>> = emptyMap(),
+        /** Freely placed decoration on the real island (old slot decor migrated server-side). */
+        val decor: List<IslandDecor> = emptyList(),
+        val decorLimits: List<Int> = listOf(6, 8, 10, 12, 14, 16),
+        /** False when the server answers without a construction block (no island building yet). */
+        val supported: Boolean = true,
+    )
+    data class IslandDecor(val id: Int, val item: String, val position: List<Int>, val slot: Int? = null)
+    /** One construction write: building, land or free decoration. */
+    data class IslandRequest(
+        val action: String, val building: String? = null, val item: String? = null,
+        val decorId: Int? = null, val position: List<Int>? = null,
     )
     data class LifePlace(val kind: String, val name: String)
     data class Here(val plot: Int?, val status: String)
@@ -494,12 +505,16 @@ class ApiClient(
     suspend fun island(token: String, userId: Long, mode: String? = null): HomeIsland = io {
         parseHomeIsland(execute(authorized(token, "api/island/$userId" + (mode?.let { "?mode=$it" } ?: "")).get().build()))
     }
-    suspend fun islandAction(token: String, state: IslandConstruction, action: String, building: String?): HomeIsland = io {
+    suspend fun islandAction(token: String, state: IslandConstruction, action: String, building: String?): HomeIsland =
+        islandAction(token, state, IslandRequest(action, building))
+    suspend fun islandAction(token: String, state: IslandConstruction, request: IslandRequest): HomeIsland = io {
+        val position = request.position ?: request.building?.let { state.positions[it] }
         parseHomeIsland(execute(authorized(token, "api/island/construction").post(
-            JSONObject().put("mode", state.mode).put("action", action).put("building", building ?: JSONObject.NULL)
-                .put("expected_revision", state.revision).put("position", building?.let { state.positions[it] }?.let { org.json.JSONArray(it) } ?: JSONObject.NULL).body()).build()))
+            JSONObject().put("mode", state.mode).put("action", request.action).put("building", request.building ?: JSONObject.NULL)
+                .put("item", request.item ?: JSONObject.NULL).put("decor_id", request.decorId ?: JSONObject.NULL)
+                .put("expected_revision", state.revision).put("position", position?.let { org.json.JSONArray(it) } ?: JSONObject.NULL).body()).build()))
     }
-    private fun parseHomeIsland(j: JSONObject): HomeIsland {
+    internal fun parseHomeIsland(j: JSONObject): HomeIsland {
         val d = j.getJSONObject("decor")
         val items = j.getJSONArray("items")
         return HomeIsland(
@@ -516,8 +531,13 @@ class ApiClient(
                 IslandConstruction(c.optString("mode", "normal"), c.optJSONObject("buildings")?.let { b -> b.keys().asSequence().associateWith { b.getInt(it) } }.orEmpty(),
                     c.optInt("land"), c.optInt("spent"), c.optInt("revision"), c.optInt("available"), c.optInt("age_days"),
                     ints("build_costs", listOf(25,60,100)), ints("build_days", listOf(0,2,7)), ints("land_costs", listOf(40,80,140,220,320)), ints("land_days", listOf(1,3,7,14,21)),
-                    c.optJSONObject("positions")?.let { p -> p.keys().asSequence().associateWith { k -> p.getJSONArray(k).let { listOf(it.getInt(0),it.getInt(1)) } } }.orEmpty())
-            } ?: IslandConstruction(),
+                    c.optJSONObject("positions")?.let { p -> p.keys().asSequence().associateWith { k -> p.getJSONArray(k).let { listOf(it.getInt(0),it.getInt(1)) } } }.orEmpty(),
+                    decor = c.optJSONArray("decor")?.let { a -> (0 until a.length()).map { i -> a.getJSONObject(i).let { d ->
+                        IslandDecor(d.getInt("id"), d.getString("item"), d.getJSONArray("position").let { listOf(it.getInt(0), it.getInt(1)) },
+                            if (d.isNull("slot") || !d.has("slot")) null else d.getInt("slot"))
+                    } } }.orEmpty(),
+                    decorLimits = ints("decor_limits", listOf(6, 8, 10, 12, 14, 16)))
+            } ?: IslandConstruction(supported = false),
         )
     }
     suspend fun setPlaces(token: String, places: Map<Int, LifePlace>) = unitCall(
