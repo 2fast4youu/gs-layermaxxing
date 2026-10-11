@@ -9,7 +9,7 @@ Die Insel beginnt als neu gezeichnete Sanddüne ohne Gebäude/Ruinen. Alle Grund
 - Land hat Stufen 0–5, Kosten 40 / 80 / 140 / 220 / 320 Punkte, Mindestalter 1 / 3 / 7 / 14 / 21 Tage.
 - Punkte stammen weiterhin ausschließlich aus bestehenden bestätigten Quests/EP. Ausbau verbraucht den verfügbaren Anteil, nicht die ursprünglichen Quests/EP. Ein später wieder geöffnetes Quest kann den verfügbaren Rest reduzieren, aber gebaute Inseln werden nicht zerstört.
 - Neue persönliche Bauplätze werden durch erworbene Landstufen freigegeben. Die persönlichen Orte sind kosmetische Gestaltung dieser gekauften Flächen; sie umgehen keine funktionalen Gebäudeausbaukosten. Existierende gespeicherte Orte bleiben erhalten.
-- Deko wird wie Gebäude in der Bauleiste (Reiter „Deko“) gebaut und frei platziert; die festen „+“-Plätze gibt es nicht mehr (siehe `island-layout.md`). Leere Lebensort-Bauplätze erscheinen nur im Bearbeitungsmodus.
+- Deko wird wie Gebäude in der Bauleiste (Shop-Button „Bauen“, Reiter „Deko“) gebaut und frei platziert; die festen „+“-Plätze gibt es nicht mehr (siehe `island-layout.md`). Leere Lebensort-Bauplätze erscheinen nur im Bearbeitungsmodus.
 - Gebäude, Deko und Lebensorte können abgerissen werden (Bestätigungsdialog, keine Punkte-Rückerstattung).
 
 ## Kreativmodus

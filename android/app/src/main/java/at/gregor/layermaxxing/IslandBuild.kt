@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -84,36 +85,77 @@ internal object IslandBuild {
         decorUnlocked(h, item) -> "freigeschaltet"
         else -> "ab ${h.items.firstOrNull { it.key == item }?.unlockAt ?: 0} P"
     }
+    /** What the next upgrade costs, for the info bar: "gratis" in creative mode, points otherwise. */
+    fun upgradeCost(c: ApiClient.IslandConstruction, level: Int): String? = when {
+        level >= 3 -> null
+        c.mode == "creative" -> "gratis"
+        else -> "${c.buildCosts.getOrElse(level) { 0 }} P"
+    }
+    /** The line under the building's name: next stage, price, day gate, missing points. */
+    fun upgradeLine(c: ApiClient.IslandConstruction, level: Int): String {
+        if (level >= 3) return "Meisterbau erreicht · voll ausgebaut"
+        val cost = c.buildCosts.getOrElse(level) { 0 }; val day = c.buildDays.getOrElse(level) { 0 }
+        if (c.mode == "creative") return "Nächste Stufe ${level + 1}: gratis"
+        return when {
+            c.ageDays < day -> "Stufe ${level + 1}: $cost Punkte · ab Tag $day"
+            c.available < cost -> "Stufe ${level + 1}: $cost Punkte · es fehlen ${cost - c.available}"
+            else -> "Stufe ${level + 1}: $cost Punkte"
+        }
+    }
     fun decorFull(h: ApiClient.HomeIsland) = h.construction.mode != "creative" &&
         h.construction.decor.size >= h.construction.decorLimits.getOrElse(h.construction.land) { 6 }
 }
 
-/** One entry of the island's second row (above the unchanged app navigation). */
+/**
+ * One entry of the island's second row, Clash-of-Clans style: a round painted button with a label
+ * under it (above the unchanged app navigation).
+ */
 @Composable
 internal fun IslandRowItem(icon: Int, label: String, selected: Boolean = false, badge: Int = 0, onClick: () -> Unit) {
     Column(
-        Modifier.clip(RoundedCornerShape(20.dp)).background(if (selected) Color(0x40E6D3A3) else Color.Transparent)
-            .clickable(onClickLabel = label, onClick = onClick).heightIn(min = 52.dp).widthIn(min = 64.dp)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+        Modifier.clip(RoundedCornerShape(22.dp)).clickable(onClickLabel = label, onClick = onClick).widthIn(min = 62.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
             .semantics { if (selected) this.selected = true },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box {
-            AppIcon(icon, null, tint = if (selected) IslandBuild.Gold else IslandBuild.Cream, size = 22.dp, modifier = Modifier.padding(3.dp))
+            Box(
+                Modifier.size(46.dp).shadow(5.dp, CircleShape)
+                    .background(Brush.verticalGradient(if (selected) listOf(Color(0xFFF6E3AE), Color(0xFFD9B05A)) else listOf(Color(0xFF45666B), Color(0xFF253D42))), CircleShape)
+                    .border(2.dp, if (selected) Color(0xFFFFF3DC) else Color(0xAAE6D3A3), CircleShape),
+                Alignment.Center,
+            ) { AppIcon(icon, null, tint = if (selected) Color(0xFF3B2410) else IslandBuild.Cream, size = 23.dp) }
             if (badge > 0) Text("$badge", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-2).dp).background(Isle.Teal, CircleShape).padding(horizontal = 4.dp))
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp).background(Isle.Teal, CircleShape).padding(horizontal = 4.dp))
         }
-        WorldText(label, 11.sp, plaque = false, fill = if (selected) IslandBuild.Gold else IslandBuild.Cream)
+        WorldText(label, 11.sp, plaque = false, display = false, fill = if (selected) IslandBuild.Gold else IslandBuild.Cream)
     }
 }
 
 @Composable
 internal fun IslandActionRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Row(
-        modifier.shadow(6.dp, RoundedCornerShape(26.dp)).background(IslandBuild.Wood, RoundedCornerShape(26.dp))
-            .border(1.dp, Color(0x55E6D3A3), RoundedCornerShape(26.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically,
+        modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top,
     ) { content() }
+}
+
+/** The big round "Shop" button at the bottom right: opens the picture shelf of buildings, decoration and land. */
+@Composable
+internal fun ShopButton(onClick: () -> Unit) {
+    Column(
+        Modifier.clip(RoundedCornerShape(26.dp)).clickable(onClickLabel = "Bauleiste öffnen", onClick = onClick).padding(4.dp)
+            .semantics { contentDescription = "Bauen – Bauleiste öffnen"; role = Role.Button },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier.size(66.dp).shadow(9.dp, CircleShape)
+                .background(Brush.verticalGradient(listOf(Color(0xFFFFE9A8), Color(0xFFE2A93C))), CircleShape)
+                .border(3.dp, Color(0xFFFFF3DC), CircleShape),
+            Alignment.Center,
+        ) { AppIcon(R.drawable.ico_build, null, tint = Color(0xFF4A2A0C), size = 34.dp) }
+        WorldText("Bauen", 13.sp, plaque = false)
+    }
 }
 
 /** The shelf: painted pieces side by side, scroll sideways, tap = place on the island. */
@@ -208,68 +250,81 @@ private fun BuildCard(name: String, price: String, enabled: Boolean, description
     }
 }
 
-/** ✓ / ✗ under the placement preview. Round, labelled, large enough for thumbs. */
+/**
+ * Round ✗ / ✓ bubbles that hang right at the held piece and follow it (Clash of Clans). ✓ saves,
+ * ✗ discards; on an impossible spot ✓ is greyed out.
+ */
 @Composable
-internal fun PlacementControls(title: String, valid: Boolean, busy: Boolean, confirmLabel: String, onCancel: () -> Unit, onConfirm: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        WorldText(title + if (valid) " · Platz frei" else " · hier nicht möglich", 14.sp, display = false,
-            fill = if (valid) Color(0xFFBFF0CF) else Color(0xFFFFC9C1))
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-            RoundChoice("Abbrechen", R.drawable.ico_close, IslandBuild.No, !busy, onCancel)
-            RoundChoice(if (busy) "Speichert…" else confirmLabel, R.drawable.ico_check, IslandBuild.Ok, !busy && valid, onConfirm)
-        }
+internal fun PlacementBubbleRow(valid: Boolean, busy: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        PlacementBubble("Abbrechen", R.drawable.ico_close, IslandBuild.No, !busy, null, onCancel)
+        PlacementBubble("Bestätigen", R.drawable.ico_check, IslandBuild.Ok, !busy && valid, if (busy) "Speichert…" else if (!valid) "Hier nicht möglich" else null, onConfirm)
     }
 }
 
 @Composable
-private fun RoundChoice(label: String, icon: Int, color: Color, enabled: Boolean, onClick: () -> Unit) {
-    Column(
-        Modifier.clip(RoundedCornerShape(20.dp)).clickable(enabled = enabled, onClickLabel = label, onClick = onClick).padding(4.dp)
-            .semantics { role = Role.Button },
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(Modifier.size(58.dp).shadow(6.dp, CircleShape).background(if (enabled) color else Color(0xFF7D8A8C), CircleShape)
-            .border(3.dp, Color(0xFFFFF3DC), CircleShape), Alignment.Center) {
-            AppIcon(icon, null, tint = Color.White, size = 28.dp)
-        }
-        WorldText(label, 12.sp, display = false, modifier = Modifier.padding(top = 4.dp))
-    }
+private fun PlacementBubble(label: String, icon: Int, color: Color, enabled: Boolean, state: String?, onClick: () -> Unit) {
+    Box(
+        Modifier.size(PlacementBubbleSize).shadow(7.dp, CircleShape).clip(CircleShape)
+            .background(if (enabled) color else Color(0xFF8B9799), CircleShape)
+            .border(3.dp, Color(0xFFFFF3DC), CircleShape)
+            .clickable(enabled = enabled, onClickLabel = label, onClick = onClick)
+            .semantics { contentDescription = label; role = Role.Button; if (state != null) stateDescription = state },
+        Alignment.Center,
+    ) { AppIcon(icon, null, tint = Color.White.copy(alpha = if (enabled) 1f else .75f), size = 28.dp) }
 }
 
-/** Compact bar for a tapped building/decoration: thumbnail, name and the few things one can do. */
+internal val PlacementBubbleSize = 52.dp
+
+/** One big round action of the info bar. */
+internal data class SelectionAction(val label: String, val icon: Int, val detail: String? = null, val tone: Color = Color(0xFF3F7C78), val dark: Boolean = false, val onClick: () -> Unit)
+
+/**
+ * The info bar of a tapped building/decoration (Clash of Clans): who it is, what it can become, and
+ * big round buttons for the few things one can do. A tap on empty ground closes it.
+ */
 @Composable
 internal fun SelectionBar(
     title: String, subtitle: String, art: @Composable () -> Unit,
-    actions: List<Triple<String, Int, () -> Unit>>, onClose: () -> Unit,
+    actions: List<SelectionAction>, onClose: () -> Unit, info: String? = null,
 ) {
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 10.dp).shadow(8.dp, RoundedCornerShape(22.dp))
-            .background(Isle.Card, RoundedCornerShape(22.dp)).border(1.5.dp, Color(0xFFC9B892), RoundedCornerShape(22.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp).shadow(10.dp, RoundedCornerShape(24.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xF22B4449), Color(0xF21E3236))), RoundedCornerShape(24.dp))
+            .border(1.5.dp, Color(0x88E6D3A3), RoundedCornerShape(24.dp))
+            .padding(horizontal = 14.dp, vertical = 8.dp).semantics { contentDescription = "Info-Leiste" },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(48.dp), Alignment.BottomCenter) { art() }
+            Box(Modifier.size(48.dp).background(Brush.radialGradient(listOf(Color(0x66FFF8E6), Color.Transparent)), CircleShape), Alignment.BottomCenter) { art() }
             Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                Text(title, color = Isle.Ink, fontFamily = Kit.Display, fontSize = 17.sp, maxLines = 1)
-                Text(subtitle, color = Isle.Muted, fontSize = 12.sp, fontFamily = Kit.Body, maxLines = 1)
+                Text(title, color = IslandBuild.Cream, fontFamily = Kit.Display, fontSize = 19.sp, maxLines = 1)
+                Text(subtitle, color = IslandBuild.Gold, fontSize = 12.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, maxLines = 1)
+                if (info != null) Text(info, color = Color(0xCCFFF8E6), fontSize = 11.5.sp, fontFamily = Kit.Body, maxLines = 2)
             }
-            Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClickLabel = "Schließen", onClick = onClose).semantics { contentDescription = "Auswahl schließen" }, Alignment.Center) {
-                AppIcon(R.drawable.ico_close, null, tint = Isle.Muted, size = 20.dp)
+            Box(Modifier.size(38.dp).clip(CircleShape).background(Color(0x33FFF8E6)).clickable(onClickLabel = "Schließen", onClick = onClose)
+                .semantics { contentDescription = "Auswahl schließen" }, Alignment.Center) {
+                AppIcon(R.drawable.ico_close, null, tint = IslandBuild.Cream, size = 20.dp)
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            actions.forEach { (label, icon, run) ->
-                val danger = label == "Abreißen" || label == "Entfernen"
+            actions.forEach { a ->
                 Column(
-                    Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = label, onClick = run).heightIn(min = 52.dp).padding(horizontal = 8.dp, vertical = 4.dp)
-                        .semantics { role = Role.Button },
+                    Modifier.clip(RoundedCornerShape(18.dp)).clickable(onClickLabel = a.label, onClick = a.onClick).widthIn(min = 72.dp)
+                        .padding(horizontal = 4.dp, vertical = 2.dp).semantics { role = Role.Button },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Box(Modifier.size(34.dp).background(if (danger) Color(0x22B3412E) else Color(0x223F7C78), CircleShape), Alignment.Center) {
-                        AppIcon(icon, null, tint = if (danger) IslandBuild.No else Isle.TealDark, size = 19.dp)
+                    Box(contentAlignment = Alignment.BottomCenter) {
+                        Box(
+                            Modifier.size(46.dp).shadow(5.dp, CircleShape).background(Brush.verticalGradient(listOf(a.tone.copy(alpha = .92f), a.tone)), CircleShape)
+                                .border(2.dp, Color(0xFFFFF3DC), CircleShape),
+                            Alignment.Center,
+                        ) { AppIcon(a.icon, null, tint = if (a.dark) Color(0xFF3B2410) else Color.White, size = 24.dp) }
+                        // The price sits on the button itself, like the cost on a base-builder's upgrade button.
+                        if (a.detail != null) Text(a.detail, color = Color(0xFF3B2410), fontSize = 10.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold, maxLines = 1,
+                            modifier = Modifier.offset(y = 11.dp).background(Color(0xFFFFF3DC), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp))
                     }
-                    Text(label, color = if (danger) IslandBuild.No else Isle.Ink, fontSize = 12.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold)
+                    Text(a.label, color = IslandBuild.Cream, fontSize = 12.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, maxLines = 1,
+                        modifier = Modifier.padding(top = if (a.detail != null) 12.dp else 3.dp))
                 }
             }
         }

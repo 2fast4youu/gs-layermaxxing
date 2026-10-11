@@ -1,6 +1,7 @@
 package at.gregor.layermaxxing
 
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.getValue
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -116,7 +117,10 @@ internal fun decorPieces(decor: Map<Int, String>, life: ApiClient.HomeIsland?, l
 
 /**
  * Draws the hub island with its buildings, decoration and life places. [onBuilding] null = visitor
- * view: labels stay, but nothing opens. A [placement] draft shows the grid and lifts its sprite.
+ * view: labels stay, but nothing opens. A [placement] draft shows the isometric grid and lifts its
+ * sprite; its check/cross bubbles hang at the piece. [editing] wiggles the pieces and lets a touch lift
+ * them; [selected] outlines the footprint of the piece whose info bar is open; [onGround] is a tap on
+ * empty ground.
  */
 @Composable
 internal fun HubIsland(
@@ -139,6 +143,13 @@ internal fun HubIsland(
     onBuildingLongPress: ((IsleBuilding) -> Unit)? = null,
     onDecor: ((ApiClient.IslandDecor) -> Unit)? = null,
     onDecorLongPress: ((ApiClient.IslandDecor) -> Unit)? = null,
+    placementBusy: Boolean = false,
+    onConfirm: () -> Unit = {},
+    onCancel: () -> Unit = {},
+    editing: Boolean = false,
+    onLift: ((IslandTarget) -> Unit)? = null,
+    selected: IslandTarget? = null,
+    onGround: (() -> Unit)? = null,
 ) {
     val liftedBuilding = (placement?.target as? IslandTarget.Building)?.building
     val liftedDecor = (placement?.target as? IslandTarget.Decor)?.let { it.id ?: IslandLayout.DRAFT_DECOR_ID }
@@ -148,15 +159,51 @@ internal fun HubIsland(
         base.copy(pieces = base.pieces.map { if (lifted != null && it.name == lifted) it.copy(lifted = true) else it } +
             decorPieces(decor, life, base.landScale, liftedDecor).map { it.second })
     }
-    DynamicIsland(plan, modifier, animate = animate) {
+    val land = life?.construction?.land ?: 0
+    // Signs and touch targets follow the buildings onto the grown land (not the full-size anchors).
+    val placed = androidx.compose.runtime.remember(life?.score, life?.construction) { IslandPlans.placedBuildings(life?.score ?: 0, life?.construction ?: ApiClient.IslandConstruction()) }
+    val decorObjects = if (onDecor != null) decorPieces(decor, life, plan.landScale) else emptyList()
+    fun sizeOf(t: IslandTarget): Float = when (t) {
+        is IslandTarget.Building -> placed[t.building]?.size ?: .12f
+        is IslandTarget.Decor -> IsleDecor.share(t.item) * IslandPlans.pieceScale(plan.landScale) / IslandPlans.pieceScale(1f)
+    }
+    val surfaceActive = placement != null || (editing && onLift != null)
+    val lift by androidx.compose.animation.core.animateFloatAsState(if (placement != null) 1f else 0f, androidx.compose.animation.core.tween(180), label = "lift")
+    DynamicIsland(plan, modifier, animate = animate, wobble = editing, lift = lift,
+        underlay = {
+            if (onBuilding != null) {
+                val outline = selected?.takeIf { placement == null }?.let { t ->
+                    val piece = when (t) {
+                        is IslandTarget.Building -> placed[t.building]
+                        is IslandTarget.Decor -> decorObjects.firstOrNull { it.first.id == t.id }?.second
+                    }
+                    piece?.let { Triple(it.x, it.y, IslandGrid.radiusFor(it.size, land)) }
+                }
+                IslandGridUnderlay(land, showGrid = editing || placement != null, focus = placement?.position,
+                    focusRadius = placement?.let { IslandGrid.radiusFor(sizeOf(it.target), land) } ?: 1, valid = placementValid, selection = outline)
+            }
+        },
+    ) {
         val w = maxWidth; val h = maxHeight
         val ls = plan.landScale
+        val gate = LocalIslandTapGate.current
         if (labels && (life?.construction?.land ?: 0) > 0) androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
             val (ix, iy) = IslandPlans.onLand(.51f, .77f, ls)
             val (tx, ty) = IslandPlans.onLand(.51f, .93f, ls)
             val inland = androidx.compose.ui.geometry.Offset(size.width * ix, size.height * iy)
             val tip = androidx.compose.ui.geometry.Offset(size.width * tx, size.height * ty)
             drawIslandJetty(tip, inland, size.width * .035f * IslandPlans.pieceScale(ls))
+        }
+        // A tap on empty ground closes the info bar (buildings and places above it take their own taps first).
+        if (onGround != null && placement == null) Box(
+            Modifier.fillMaxSize().clickable(interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { gate { onGround() } },
+        )
+        if (surfaceActive) {
+            val targets = if (placement == null && onLift != null) buildList {
+                placed.forEach { (b, piece) -> add(EditTarget(IslandTarget.Building(b), life?.construction?.positions?.get(b.name) ?: IslandLayout.defaultPosition(b), piece.x, piece.y, piece.size)) }
+                decorObjects.forEach { (d, piece) -> add(EditTarget(IslandTarget.Decor(d.item, d.id), d.position, piece.x, piece.y, piece.size)) }
+            } else emptyList()
+            IslandEditSurface(land, placement, placement?.let { IslandGrid.radiusFor(sizeOf(it.target), land) } ?: 1, targets, onLift ?: {}, onPosition)
         }
         if (life != null) LifeLayer(
             places = life.places, plots = life.plots, unlocks = life.plotUnlocks, here = life.here?.plot,
@@ -166,9 +213,8 @@ internal fun HubIsland(
             }, onPlot = if (placement == null) onPlot else null, onFigure = if (placement == null) onFigure else null,
             tags = lifeTags, landScale = ls, showEmptyPlots = editingPlots,
         )
-        val gate = LocalIslandTapGate.current
         // Decoration is tappable (short = actions, long = move) like any building.
-        if (placement == null && onDecor != null) decorPieces(decor, life, ls).forEach { (d, piece) ->
+        if (placement == null && !surfaceActive && onDecor != null) decorObjects.forEach { (d, piece) ->
             val box = w * piece.size
             Box(
                 Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box)
@@ -176,20 +222,11 @@ internal fun HubIsland(
                     .semantics { contentDescription = piece.name ?: "Deko" },
             )
         }
-        placement?.let { draft ->
-            val footprint = when (val t = draft.target) {
-                is IslandTarget.Building -> IslandPlans.placedBuildings(0, life?.construction).get(t.building)?.size ?: .12f
-                is IslandTarget.Decor -> IsleDecor.share(t.item) * 1.1f
-            }
-            IslandPlacementGrid(life?.construction?.land ?: 0, draft.position, placementValid, footprint, onPosition)
-        }
-        // Signs and touch targets follow the buildings onto the grown land (not the full-size anchors).
-        val placed = androidx.compose.runtime.remember(life?.score, life?.construction) { IslandPlans.placedBuildings(life?.score ?: 0, life?.construction ?: ApiClient.IslandConstruction()) }
         if (labels && placement == null) placed.forEach { (b, piece) ->
             val count = badges[b] ?: 0
             val box = w * piece.size
             // The whole building is the touch target; the pill sits at its foot.
-            if (onBuilding != null) Box(
+            if (onBuilding != null && !surfaceActive) Box(
                 Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box)
                     .worldPress("${b.label} öffnen", "${b.label} verschieben", onBuildingLongPress?.let { { it(b) } }) { gate { onBuilding(b) } },
             )
@@ -199,7 +236,7 @@ internal fun HubIsland(
                 Modifier.offset(x = w * piece.x - tagWidth / 2, y = h * piece.y - 2.dp).width(tagWidth)
                     // Counter-scale: when the island is zoomed, the sign keeps its on-screen size.
                     .graphicsLayer { val k = 1f / zoom().coerceAtLeast(1f); scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f) }
-                    .then(if (onBuilding != null) Modifier.worldPress("${b.label} öffnen", "${b.label} verschieben", onBuildingLongPress?.let { { it(b) } }) { gate { onBuilding(b) } } else Modifier)
+                    .then(if (onBuilding != null && !surfaceActive) Modifier.worldPress("${b.label} öffnen", "${b.label} verschieben", onBuildingLongPress?.let { { it(b) } }) { gate { onBuilding(b) } } else Modifier)
                     .semantics { contentDescription = b.label; if (onBuilding != null) role = Role.Button },
                 horizontalArrangement = Arrangement.Center,
             ) {
@@ -216,6 +253,22 @@ internal fun HubIsland(
                     ) { Text(if (count > 9) "9+" else "$count", fontSize = 9.sp, lineHeight = 9.sp, color = Color.White, fontWeight = FontWeight.Bold) }
                 }
             }
+        }
+        // Check / cross hang right at the held piece and follow it: under its footprint, above it near the shore.
+        placement?.let { draft ->
+            val (ax, ay) = IslandGrid.project(draft.position, land)
+            val size = sizeOf(draft.target)
+            val z = LocalIslandZoom.current().coerceAtLeast(1f)
+            val rowW = 120.dp; val rowH = PlacementBubbleSize
+            val bottom = ay + IslandGrid.step(land) * IslandGrid.radiusFor(size, land)
+            val flip = PlacementBubbles.flipAbove(bottom, (rowH / z) / h)
+            val cx = (w * ax).coerceIn(rowW / z / 2, w - rowW / z / 2)
+            val top = if (!flip) h * bottom + 2.dp else h * ay - w * size * 1.3f - rowH / z - 2.dp
+            Box(
+                Modifier.offset(x = cx - rowW / 2, y = top).width(rowW)
+                    .graphicsLayer { val k = 1f / z; scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, if (flip) 1f else 0f) },
+                Alignment.TopCenter,
+            ) { PlacementBubbleRow(placementValid, placementBusy, onCancel, onConfirm) }
         }
     }
 }

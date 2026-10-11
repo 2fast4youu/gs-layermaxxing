@@ -298,18 +298,25 @@ internal fun IslandWorld(
             } finally { constructionBusy = false }
         }
     }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // A new piece appears in the middle of what the player sees, not at a fixed corner of the island.
+    var cameraRef by remember { mutableStateOf<IslandCamera?>(null) }
+    fun screenCentreCell(land: Int): List<Int>? = cameraRef?.viewCenter()?.let { IslandGrid.unproject(it.x, it.y, land) }
     fun startBuilding(b: IsleBuilding, lifted: Boolean) {
         val h = island ?: return
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         selection = null; buildBar = false; upgradePick = null; landPick = false
-        val start = h.construction.positions[b.name] ?: IslandLayout.defaultPosition(b)
-        val pos = if ((h.construction.buildings[b.name] ?: 0) > 0) start
+        val built = (h.construction.buildings[b.name] ?: 0) > 0
+        val start = h.construction.positions[b.name] ?: if (built) IslandLayout.defaultPosition(b) else screenCentreCell(h.construction.land) ?: IslandLayout.defaultPosition(b)
+        val pos = if (built) start
             else IslandLayout.freeCell(start) { IslandLayout.valid(h.construction, b, it, IslandLayout.obstacles(h)) }
         placement = IslandDraft(IslandTarget.Building(b), pos, lifted)
     }
     fun startDecor(item: String, existing: ApiClient.IslandDecor?) {
         val h = island ?: return
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         selection = null; buildBar = false
-        val start = existing?.position ?: listOf(10, 12)
+        val start = existing?.position ?: screenCentreCell(h.construction.land) ?: listOf(10, 12)
         val pos = existing?.position ?: IslandLayout.freeCell(start) { IslandLayout.validDecor(h.construction, it, IslandLayout.obstacles(h)) }
         placement = IslandDraft(IslandTarget.Decor(item, existing?.id), pos, existing != null)
     }
@@ -338,12 +345,20 @@ internal fun IslandWorld(
                     placementActive = placement != null,
                     zoom = IslandZoom(initialZoom, (initialZoom * .82f).coerceAtLeast(1f), 3f),
                     bottomReserve = 196.dp,
+                    focus = selection?.let { t ->
+                        when (t) {
+                            is IslandTarget.Building -> IslandPlans.placedBuildings(0, island?.construction).get(t.building)?.let { Offset(it.x, it.y) }
+                            is IslandTarget.Decor -> island?.construction?.decor?.firstOrNull { it.id == t.id }?.let { d -> IslandGrid.project(d.position, land).let { (x, y) -> Offset(x, y) } }
+                        }
+                    },
+                    cover = if (selection != null) 140.dp else 0.dp,
+                    onCamera = { cameraRef = it },
                     header = {
                         MyIslandHeader(
                             if (editing && placement == null) "Insel bearbeiten" else "Meine Insel",
                             when {
                                 placement != null -> "Ziehen oder tippen · Grün = frei, Rot = belegt"
-                                editing -> "Gebäude antippen zum Verschieben · Bauplätze für Lebensorte"
+                                editing -> "Antippen und ziehen zum Verschieben · Bauplätze für Lebensorte"
                                 creativeActive -> "Kreativmodus · bauen, ausbauen, abreißen gratis"
                                 else -> island?.construction?.let { "Landstufe ${it.land} · ${it.available} Punkte zum Bauen" } ?: "Insel wird geladen…"
                             },
@@ -362,6 +377,14 @@ internal fun IslandWorld(
                         placementValid = placement?.let { d -> island?.let { IslandLayout.valid(it, d) } } ?: true,
                         showFigure = placement == null, editingPlots = editing && placement == null,
                         placement = placement, onPosition = { p -> if (!constructionBusy) placement = placement?.copy(position = p) },
+                        placementBusy = constructionBusy, onConfirm = { confirmDraft() }, onCancel = { if (!constructionBusy) placement = null },
+                        editing = editing, selected = selection, onGround = if (selection != null) ({ selection = null }) else null,
+                        onLift = if (editing && placement == null) ({ t ->
+                            when (t) {
+                                is IslandTarget.Building -> startBuilding(t.building, true)
+                                is IslandTarget.Decor -> startDecor(t.item, island?.construction?.decor?.firstOrNull { it.id == t.id })
+                            }
+                        }) else null,
                         onPlot = { i -> if (home?.places?.containsKey(i) == true) plotPick = i else buildPick = i },
                         onFigure = { functionMenu = true },
                     )
@@ -454,30 +477,28 @@ internal fun IslandWorld(
                 val draft = placement
                 val sel = selection
                 when {
-                    draft != null -> {
-                        val name = when (val t = draft.target) { is IslandTarget.Building -> t.building.label; is IslandTarget.Decor -> IsleDecor.labels[t.item] ?: t.item }
-                        PlacementControls(name, IslandLayout.valid(h, draft), constructionBusy, "Bestätigen",
-                            onCancel = { if (!constructionBusy) placement = null }, onConfirm = { confirmDraft() })
-                    }
+                    draft != null -> Unit // ✓ / ✗ hang at the held piece itself (HubIsland)
                     sel is IslandTarget.Building -> {
                         val b = sel.building; val level = h.construction.buildings[b.name] ?: 0
                         SelectionBar(b.label, "${IslandEvolution.levelName(b, level).substringAfter(" · ")} · ${IslandBuild.subtitle(b)}",
                             art = { PaintedIslandPlace(b, level, IslandArtwork.resource(b, level), Modifier.fillMaxSize()) },
+                            info = IslandBuild.upgradeLine(h.construction, level),
                             actions = listOf(
-                                Triple("Öffnen", AppIcons.building(b), { selection = null; place = b.name }),
-                                Triple(if (level < 3) "Ausbauen" else "Info", R.drawable.ico_growth, { selection = null; upgradePick = b }),
-                                Triple("Verschieben", R.drawable.ico_pin_place, { startBuilding(b, true) }),
-                                Triple("Abreißen", R.drawable.ico_delete, { demolishTarget = sel }),
+                                SelectionAction("Öffnen", AppIcons.building(b), tone = Color(0xFF3F7C78)) { selection = null; place = b.name },
+                                SelectionAction(if (level < 3) "Ausbauen" else "Info", if (level < 3) R.drawable.ico_growth else R.drawable.ico_info,
+                                    detail = IslandBuild.upgradeCost(h.construction, level), tone = Color(0xFFE2A93C), dark = true) { selection = null; upgradePick = b },
+                                SelectionAction("Verschieben", R.drawable.ico_pin_place, tone = Color(0xFF5E8A5C)) { startBuilding(b, true) },
+                                SelectionAction("Abreißen", R.drawable.ico_delete, tone = IslandBuild.No) { demolishTarget = sel },
                             ), onClose = { selection = null })
                     }
                     sel is IslandTarget.Decor -> {
                         val d = h.construction.decor.firstOrNull { it.id == sel.id }
                         val name = IsleDecor.labels[sel.item] ?: sel.item
-                        SelectionBar(name, "Deko · lange drücken zum Verschieben",
+                        SelectionBar(name, "Deko", info = "Lange drücken oder „Verschieben“, dann ziehen",
                             art = { IsleDecor.res(sel.item)?.let { Image(painterResource(it), null, Modifier.fillMaxSize()) } },
                             actions = listOf(
-                                Triple("Verschieben", R.drawable.ico_pin_place, { startDecor(sel.item, d) }),
-                                Triple("Entfernen", R.drawable.ico_delete, { demolishTarget = sel }),
+                                SelectionAction("Verschieben", R.drawable.ico_pin_place, tone = Color(0xFF5E8A5C)) { startDecor(sel.item, d) },
+                                SelectionAction("Entfernen", R.drawable.ico_delete, tone = IslandBuild.No) { demolishTarget = sel },
                             ), onClose = { selection = null })
                     }
                     buildBar -> IslandBuildBar(h, buildTab, { buildTab = it },
@@ -503,12 +524,17 @@ internal fun IslandWorld(
                         onClose = { buildBar = false })
                 }
             }
+            // The round "Shop" button: bottom right, like the shop of a base-builder. It steps aside while
+            // a shelf, an info bar or the edit mode is in charge of the bottom.
+            if (view == "home" && place == null && island != null && placement == null && !buildBar && selection == null && !editing)
+                Box(Modifier.fillMaxWidth().padding(end = 12.dp), contentAlignment = Alignment.CenterEnd) {
+                    ShopButton { place = null; selection = null; editing = false; buildBar = true }
+                }
             if (placement == null) IslandActionRow {
                 when {
                     view == "home" -> {
                         IslandRowItem(R.drawable.ico_map, "Übersicht") { place = null; selection = null; buildBar = false; editing = false; view = "map" }
                         if (island != null) {
-                            IslandRowItem(R.drawable.ico_build, "Bauen", selected = buildBar) { place = null; selection = null; editing = false; buildBar = !buildBar }
                             IslandRowItem(R.drawable.ico_edit, if (editing) "Fertig" else "Bearbeiten", selected = editing) { place = null; selection = null; buildBar = false; editing = !editing }
                         }
                         IslandRowItem(R.drawable.ico_menu, "Menü") { functionMenu = true }
@@ -950,6 +976,9 @@ internal data class IslandZoom(val initial: Float = 1f, val min: Float = 1f, val
 private fun CloseIsland(
     title: String, subtitle: String, placementActive: Boolean = false,
     zoom: IslandZoom = IslandZoom(), bottomReserve: Dp = 96.dp,
+    /** Anchor (island-box fraction) the camera keeps above the bottom bar, and how tall that bar is. */
+    focus: Offset? = null, cover: Dp = 0.dp,
+    onCamera: (IslandCamera) -> Unit = {},
     header: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
@@ -968,9 +997,11 @@ private fun CloseIsland(
             pendingTap = scope.launch { kotlinx.coroutines.delay(260); pendingTap = null; action() }
         }
     }
+    // While an info bar covers the bottom, the island may be pushed up by that much so the selection stays in sight.
+    var extraY by remember { mutableFloatStateOf(0f) }
     fun clamp(o: Offset, zz: Float): Offset {
         val mx = ((isle.width * zz - view.width) / 2f).coerceAtLeast(0f)
-        val my = ((isle.height * zz - view.height) / 2f).coerceAtLeast(0f)
+        val my = ((isle.height * zz - view.height) / 2f).coerceAtLeast(0f) + extraY
         return Offset(o.x.coerceIn(-mx, mx), o.y.coerceIn(-my, my))
     }
     fun animateTo(tz: Float, to: Offset) {
@@ -983,6 +1014,45 @@ private fun CloseIsland(
         }
     }
     BackHandler(enabled = kotlin.math.abs(z - zoom.initial) > .05f && !placementActive) { animateTo(zoom.initial, Offset.Zero) }
+    val coverDensity = androidx.compose.ui.platform.LocalDensity.current.density
+    LaunchedEffect(focus, cover) {
+        if (focus != null) {
+            val footY = off.y + z * (focus.y * isle.height - isle.height / 2f)
+            val shift = (footY - (view.height / 2f - cover.value * coverDensity - 24f * coverDensity)).coerceAtLeast(0f)
+            if (shift > 0f) { extraY = shift; animateTo(z, Offset(off.x, off.y - shift)) }
+        } else if (extraY != 0f) {
+            extraY = 0f; animateTo(z, clamp(off, z))
+        }
+    }
+    // Held piece near the screen edge: the camera scrolls on its own and the piece stays under the finger.
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    var edge by remember { mutableStateOf(Offset.Zero) }
+    val camera = remember {
+        object : IslandCamera {
+            override val offset get() = off
+            override val zoom get() = z
+            private fun centre() = Offset(isle.width / 2f, isle.height / 2f)
+            override fun viewCenter(): Offset {
+                val p = centre() - off / z
+                return Offset(p.x / isle.width, p.y / isle.height)
+            }
+            override fun track(finger: Offset?) {
+                edge = if (finger == null) Offset.Zero
+                else EdgeScroll.velocity(off + (finger - centre()) * z, view, 56f * density, 720f * density)
+            }
+            override fun fingerNow(finger: Offset, offsetThen: Offset, zoomThen: Float): Offset =
+                centre() + (offsetThen + (finger - centre()) * zoomThen - off) / z
+        }
+    }
+    androidx.compose.runtime.SideEffect { onCamera(camera) }
+    LaunchedEffect(edge != Offset.Zero) {
+        var last = androidx.compose.runtime.withFrameNanos { it }
+        while (edge != Offset.Zero) {
+            val now = androidx.compose.runtime.withFrameNanos { it }
+            val dt = ((now - last) / 1e9f).coerceAtMost(.05f); last = now
+            off = clamp(off + edge * dt, z)
+        }
+    }
     Column(
         Modifier.fillMaxSize().statusBarsPadding().padding(top = 64.dp, bottom = bottomReserve),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1056,7 +1126,7 @@ private fun CloseIsland(
             ) {
                 AnimatedIslandSea(Modifier.fillMaxSize(), oversized = true)
                 // Signs read the zoom lazily and stay the same size on screen.
-                androidx.compose.runtime.CompositionLocalProvider(LocalIslandZoom provides { z }, LocalIslandTapGate provides tapGate) { content() }
+                androidx.compose.runtime.CompositionLocalProvider(LocalIslandZoom provides { z }, LocalIslandTapGate provides tapGate, LocalIslandCamera provides camera) { content() }
             }
         }
     }

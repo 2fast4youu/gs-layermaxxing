@@ -1,18 +1,6 @@
 package at.gregor.layermaxxing
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.math.roundToInt
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 
 /** What is being placed or edited on the own island. */
 internal sealed interface IslandTarget {
@@ -29,6 +17,7 @@ internal data class IslandDraft(val target: IslandTarget, val position: List<Int
  * to decoration 2.4, decoration to decoration 1.5 cells, all divided by the land scale.
  */
 internal object IslandLayout {
+    /** The drag/snap/preview projection lives in [IslandGrid]; this object holds the rules mirrored from the server. */
     const val DECOR_BUILDING_GAP = 2.4f
     const val DECOR_DECOR_GAP = 1.5f
     fun defaultPosition(b: IsleBuilding): List<Int> = IslandPlans.homeBuildings.getValue(b).let { listOf((it.x*20).roundToInt(),(it.y*20).roundToInt()) }
@@ -84,31 +73,4 @@ internal object IslandLayout {
         }
     }
     const val DRAFT_DECOR_ID = -1
-}
-
-/** Placement consumes its own drags; coordinates stay in island-local grid space at any zoom. */
-@Composable internal fun IslandPlacementGrid(land: Int, position: List<Int>, valid: Boolean, footprint: Float, onPosition: (List<Int>)->Unit) {
-    val scale=IslandPlans.constructionScale(land)
-    fun point(o: Offset, width: Float, height: Float) = listOf(
-        (((o.x/width-.5f)/scale+.5f)*20).roundToInt().coerceIn(0,20),
-        (((o.y/height-.55f)/scale+.55f)*20).roundToInt().coerceIn(0,20))
-    Canvas(Modifier.fillMaxSize().semantics { contentDescription="Bauplatzraster" }
-        .pointerInput(scale) { detectTapGestures { onPosition(point(it,size.width.toFloat(),size.height.toFloat())) } }
-        .pointerInput(scale) { detectDragGestures { change,_ -> change.consume(); onPosition(point(change.position,size.width.toFloat(),size.height.toFloat())) } }) {
-        val color=if(valid) Color(0xFF47CC78) else Color(0xFFEF665E)
-        for(i in 0..20) for(j in 0..20) if(IslandPlans.inside(i/20f,j/20f,radius=.95f)) {
-            val (x,y)=IslandPlans.onLand(i/20f,j/20f,scale)
-            val tileW=size.width*scale/20;val tileH=size.height*scale/20
-            drawRect(Color(0xFF24515A).copy(alpha=.35f),Offset(x*size.width-tileW/2,y*size.height-tileH/2),androidx.compose.ui.geometry.Size(tileW,tileH),style=Stroke(1.2f))
-        }
-        val (x,y)=IslandPlans.onLand(position[0]/20f,position[1]/20f,scale)
-        val w=size.width*footprint; val h=size.width*footprint*.62f
-        // Diamond footprint like a building plot: reads as ground, not as a flat UI box.
-        val path=androidx.compose.ui.graphics.Path().apply {
-            moveTo(x*size.width, y*size.height-h); lineTo(x*size.width+w/2, y*size.height-h/2)
-            lineTo(x*size.width, y*size.height); lineTo(x*size.width-w/2, y*size.height-h/2); close()
-        }
-        drawPath(path,color.copy(alpha=.24f))
-        drawPath(path,color,style=Stroke(3f))
-    }
 }

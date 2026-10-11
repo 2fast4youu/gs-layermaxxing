@@ -194,10 +194,18 @@ internal fun DynamicIsland(
     plan: IslandPlan,
     modifier: Modifier = Modifier,
     animate: Boolean = true,
+    /** Edit mode: buildings and decoration wiggle a little, like movable pieces in a base-builder. */
+    wobble: Boolean = false,
+    /** 0..1: how far a lifted (held) piece has risen off the ground. */
+    lift: Float = 1f,
+    /** Drawn between terrain and sprites, so sprites cover grid and footprint (the footprint lies on the ground). */
+    underlay: @Composable BoxWithConstraintsScope.() -> Unit = {},
     overlay: @Composable BoxWithConstraintsScope.() -> Unit = {},
 ) {
     val t = rememberInfiniteTransition(label = "isle")
     val sway by if (animate) t.animateFloat(-1f, 1f, infiniteRepeatable(tween(5200), RepeatMode.Reverse), label = "sway")
+    else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val wiggle by if (wobble) t.animateFloat(-1f, 1f, infiniteRepeatable(tween(190), RepeatMode.Reverse), label = "wiggle")
     else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     BoxWithConstraints(modifier.aspectRatio(IslandPlans.ASPECT)) {
         val w = maxWidth; val h = maxHeight
@@ -235,6 +243,7 @@ internal fun DynamicIsland(
                 )
             }
         }
+        underlay()
         plan.pieces.sortedBy { it.y }.forEachIndexed { i, p ->
             val box: Dp = w * p.size
             val building = p.name?.let { name -> IsleBuilding.entries.firstOrNull { it.label == name } }
@@ -243,7 +252,12 @@ internal fun DynamicIsland(
                     .then(
                         if (p.lifted) Modifier.graphicsLayer {
                             // Picked up: rises off the ground a little and grows, like a held game piece.
-                            translationY = -box.toPx() * .16f; scaleX = 1.08f; scaleY = 1.08f
+                            translationY = -box.toPx() * .16f * lift; scaleX = 1f + .08f * lift; scaleY = 1f + .08f * lift
+                            rotationZ = wiggle * 1.2f * lift
+                            transformOrigin = TransformOrigin(.5f, 1f)
+                        } else if (wobble && p.name != null) Modifier.graphicsLayer {
+                            // Edit mode: movable pieces wiggle, neighbours out of phase.
+                            rotationZ = wiggle * (if (i % 2 == 0) 1.6f else -1.6f)
                             transformOrigin = TransformOrigin(.5f, 1f)
                         } else if (p.sway || p.primitive == IsleBuilding.POST || p.primitive == IsleBuilding.LIGHTHOUSE) Modifier.graphicsLayer {
                             rotationZ = sway * (1.4f + (i % 3) * .5f)

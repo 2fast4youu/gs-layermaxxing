@@ -117,6 +117,7 @@ class CreativeIslandRegressionTest {
         repeat(20) { rule.mainClock.advanceTimeByFrame() }
         assertTrue("fixed decoration slots are gone", rule.onAllNodesWithContentDescription("Deko setzen").fetchSemanticsNodes().isEmpty())
         rule.onAllNodesWithText("Fertig")[0].performClick()
+        repeat(20) { rule.mainClock.advanceTimeByFrame() }
         rule.onAllNodesWithText("Bauen")[0].performClick()
         repeat(20) { rule.mainClock.advanceTimeByFrame() }
         rule.onAllNodesWithText("Deko")[0].performClick()
@@ -124,7 +125,7 @@ class CreativeIslandRegressionTest {
         rule.onAllNodesWithContentDescription("Laterne platzieren")[0].performClick()
         repeat(20) { rule.mainClock.advanceTimeByFrame() }
         assertTrue(rule.onAllNodesWithContentDescription("Bauplatzraster").fetchSemanticsNodes().isNotEmpty())
-        rule.onAllNodesWithText("Bestätigen")[0].performClick()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].performClick()
         assertTrue(awaitAny { requests.isNotEmpty() })
         val sent = requests.single()
         org.junit.Assert.assertEquals("decor_place", sent.action)
