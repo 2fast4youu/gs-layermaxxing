@@ -51,6 +51,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.composed
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import kotlin.math.roundToInt
 
 /**
  * The player's home island, assembled at runtime (see [DynamicIsland]): its
@@ -117,10 +122,12 @@ internal fun decorPieces(decor: Map<Int, String>, life: ApiClient.HomeIsland?, l
 
 /**
  * Draws the hub island with its buildings, decoration and life places. [onBuilding] null = visitor
- * view: labels stay, but nothing opens. A [placement] draft shows the isometric grid and lifts its
- * sprite; its check/cross bubbles hang at the piece. [editing] wiggles the pieces and lets a touch lift
- * them; [selected] outlines the footprint of the piece whose info bar is open; [onGround] is a tap on
- * empty ground.
+ * view: labels stay, but nothing opens. On the own island one touch surface ([IslandTouchSurface])
+ * handles every touch: tap = [onBuilding]/[onDecor], long press = [onBuildingLongPress]/[onDecorLongPress]
+ * and the same finger keeps moving the lifted piece, tap on empty ground = [onGround]. A [placement]
+ * draft shows the isometric grid and lifts its sprite; its check/cross bubbles hang at the piece.
+ * [editing] wiggles the pieces and lets a touch lift them. [selected] outlines the footprint of the
+ * tapped piece and shows [selectionBar] (its compact actions) right at it.
  */
 @Composable
 internal fun HubIsland(
@@ -150,6 +157,7 @@ internal fun HubIsland(
     onLift: ((IslandTarget) -> Unit)? = null,
     selected: IslandTarget? = null,
     onGround: (() -> Unit)? = null,
+    selectionBar: (@Composable () -> Unit)? = null,
 ) {
     val liftedBuilding = (placement?.target as? IslandTarget.Building)?.building
     val liftedDecor = (placement?.target as? IslandTarget.Decor)?.let { it.id ?: IslandLayout.DRAFT_DECOR_ID }
@@ -168,8 +176,11 @@ internal fun HubIsland(
         is IslandTarget.Decor -> IsleDecor.share(t.item) * IslandPlans.pieceScale(plan.landScale) / IslandPlans.pieceScale(1f)
     }
     val surfaceActive = placement != null || (editing && onLift != null)
-    val lift by androidx.compose.animation.core.animateFloatAsState(if (placement != null) 1f else 0f, androidx.compose.animation.core.tween(180), label = "lift")
-    DynamicIsland(plan, modifier, animate = animate, wobble = editing, lift = lift,
+    val reduced = rememberIsleReducedMotion()
+    // Picked up: the sprite rises and grows a little (the shadow darkens with it in DynamicIsland).
+    val lift by androidx.compose.animation.core.animateFloatAsState(if (placement != null) 1f else 0f,
+        androidx.compose.animation.core.tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "lift")
+    DynamicIsland(plan, modifier, animate = animate, wobble = editing && !reduced, lift = lift,
         underlay = {
             if (onBuilding != null) {
                 val outline = selected?.takeIf { placement == null }?.let { t ->
@@ -194,16 +205,23 @@ internal fun HubIsland(
             val tip = androidx.compose.ui.geometry.Offset(size.width * tx, size.height * ty)
             drawIslandJetty(tip, inland, size.width * .035f * IslandPlans.pieceScale(ls))
         }
-        // A tap on empty ground closes the info bar (buildings and places above it take their own taps first).
-        if (onGround != null && placement == null) Box(
-            Modifier.fillMaxSize().clickable(interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { gate { onGround() } },
-        )
-        if (surfaceActive) {
-            val targets = if (placement == null && onLift != null) buildList {
+        // One touch surface for the whole own island (rest, edit and placement): it stays the same node,
+        // so a long press can lift a piece and the same finger carries it on.
+        if (onBuilding != null) {
+            val targets = if (placement == null) buildList {
                 placed.forEach { (b, piece) -> add(EditTarget(IslandTarget.Building(b), life?.construction?.positions?.get(b.name) ?: IslandLayout.defaultPosition(b), piece.x, piece.y, piece.size)) }
                 decorObjects.forEach { (d, piece) -> add(EditTarget(IslandTarget.Decor(d.item, d.id), d.position, piece.x, piece.y, piece.size)) }
             } else emptyList()
-            IslandEditSurface(land, placement, placement?.let { IslandGrid.radiusFor(sizeOf(it.target), land) } ?: 1, targets, onLift ?: {}, onPosition)
+            fun decorOf(t: IslandTarget.Decor) = decorObjects.firstOrNull { it.first.id == t.id }?.first
+            IslandTouchSurface(
+                land, placement, placement?.let { IslandGrid.radiusFor(sizeOf(it.target), land) } ?: 1, targets,
+                editing = editing && onLift != null,
+                onTap = { t -> gate { when (t) { is IslandTarget.Building -> onBuilding(t.building); is IslandTarget.Decor -> decorOf(t)?.let { d -> onDecor?.invoke(d) } } } },
+                onLongPress = { t -> when (t) { is IslandTarget.Building -> onBuildingLongPress?.invoke(t.building); is IslandTarget.Decor -> decorOf(t)?.let { d -> onDecorLongPress?.invoke(d) } } },
+                onLift = onLift ?: {},
+                onGround = { onGround?.let { g -> gate { g() } } },
+                onPosition = onPosition,
+            )
         }
         if (life != null) LifeLayer(
             places = life.places, plots = life.plots, unlocks = life.plotUnlocks, here = life.here?.plot,
@@ -212,35 +230,53 @@ internal fun HubIsland(
                 IslandPlans.placedBuildings(hh.score,hh.construction).values.none { p -> kotlin.math.abs(p.x-fx)<p.size*.6f && fy<=p.y && fy>=p.y-p.size*IslandPlans.ASPECT }
             }, onPlot = if (placement == null) onPlot else null, onFigure = if (placement == null) onFigure else null,
             tags = lifeTags, landScale = ls, showEmptyPlots = editingPlots,
+            // an empty plot under a building would only cover its name sign
+            covered = { x, y -> placed.values.any { p -> kotlin.math.abs(p.x - x) < p.size * .55f && kotlin.math.abs(p.y - y) < p.size * .55f * IslandPlans.ASPECT } },
         )
-        // Decoration is tappable (short = actions, long = move) like any building.
+        // Decoration (short = actions, long = move): the touch surface handles the finger, these nodes
+        // carry the accessible actions and the debug hitbox.
         if (placement == null && !surfaceActive && onDecor != null) decorObjects.forEach { (d, piece) ->
             val box = w * piece.size
+            val name = piece.name ?: "Deko"
             Box(
-                Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box)
-                    .worldPress("${piece.name} bearbeiten", "${piece.name} verschieben", onDecorLongPress?.let { { it(d) } }) { gate { onDecor(d) } }
-                    .semantics { contentDescription = piece.name ?: "Deko" },
+                Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box).islandHitbox()
+                    .semantics {
+                        contentDescription = name; role = Role.Button
+                        onClick("$name bearbeiten") { gate { onDecor(d) }; true }
+                        onDecorLongPress?.let { long -> onLongClick("$name verschieben") { long(d); true } }
+                    },
             )
         }
         if (labels && placement == null) placed.forEach { (b, piece) ->
             val count = badges[b] ?: 0
             val box = w * piece.size
-            // The whole building is the touch target; the pill sits at its foot.
-            if (onBuilding != null && !surfaceActive) Box(
-                Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box)
-                    .worldPress("${b.label} öffnen", "${b.label} verschieben", onBuildingLongPress?.let { { it(b) } }) { gate { onBuilding(b) } },
+            val interactive = onBuilding != null && !surfaceActive
+            // The whole building is the touch target (handled by the surface); the sign sits at its foot.
+            if (interactive) Box(
+                Modifier.offset(x = w * piece.x - box / 2, y = h * piece.y - box).size(box).islandHitbox()
+                    .semantics {
+                        onClick("${b.label} öffnen") { gate { onBuilding?.invoke(b) }; true }
+                        onBuildingLongPress?.let { long -> onLongClick("${b.label} verschieben") { long(b); true } }
+                    },
             )
             val zoom = LocalIslandZoom.current
-            val tagWidth = if (plan.landScale < .7f) 64.dp else 100.dp
-            Row(
-                Modifier.offset(x = w * piece.x - tagWidth / 2, y = h * piece.y - 2.dp).width(tagWidth)
+            // Wide enough for every name ("Mein Haus" must never be cut off); the sign itself wraps its text.
+            Box(
+                Modifier.offset(x = w * piece.x - TagSpan / 2, y = h * piece.y - 2.dp).width(TagSpan)
                     // Counter-scale: when the island is zoomed, the sign keeps its on-screen size.
-                    .graphicsLayer { val k = 1f / zoom().coerceAtLeast(1f); scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f) }
-                    .then(if (onBuilding != null && !surfaceActive) Modifier.worldPress("${b.label} öffnen", "${b.label} verschieben", onBuildingLongPress?.let { { it(b) } }) { gate { onBuilding(b) } } else Modifier)
-                    .semantics { contentDescription = b.label; if (onBuilding != null) role = Role.Button },
-                horizontalArrangement = Arrangement.Center,
+                    .graphicsLayer { val k = 1f / zoom().coerceAtLeast(1f); scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f) },
+                contentAlignment = Alignment.TopCenter,
             ) {
-                Box {
+                Box(
+                    Modifier.semantics {
+                        contentDescription = b.label
+                        if (onBuilding != null) role = Role.Button
+                        if (interactive) {
+                            onClick("${b.label} öffnen") { gate { onBuilding?.invoke(b) }; true }
+                            onBuildingLongPress?.let { long -> onLongClick("${b.label} verschieben") { long(b); true } }
+                        }
+                    },
+                ) {
                     PlaceTag(if (piece.primitive != null) when (b) {
                         IsleBuilding.HOUSE -> "Zuhause"
                         IsleBuilding.LIBRARY -> "Wörter"
@@ -268,8 +304,79 @@ internal fun HubIsland(
                 Modifier.offset(x = cx - rowW / 2, y = top).width(rowW)
                     .graphicsLayer { val k = 1f / z; scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, if (flip) 1f else 0f) },
                 Alignment.TopCenter,
-            ) { PlacementBubbleRow(placementValid, placementBusy, onCancel, onConfirm) }
+            ) {
+                // Pops in once when the piece is picked up, then simply follows it.
+                val shown = androidx.compose.runtime.remember { androidx.compose.animation.core.MutableTransitionState(false) }.apply { targetState = true }
+                androidx.compose.animation.AnimatedVisibility(shown,
+                    enter = androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(200, easing = androidx.compose.animation.core.FastOutSlowInEasing), initialScale = .7f) +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180))) {
+                    PlacementBubbleRow(placementValid, placementBusy, onCancel, onConfirm)
+                }
+            }
         }
+        // The tapped piece's compact actions hang right at it (one context at a time; never a bottom card).
+        val holder = androidx.compose.runtime.remember { SelectionHolder() }
+        val selectedPiece = selected?.takeIf { placement == null }?.let { t ->
+            when (t) {
+                is IslandTarget.Building -> placed[t.building]
+                is IslandTarget.Decor -> decorObjects.firstOrNull { it.first.id == t.id }?.second
+            }
+        }
+        if (selectionBar != null && selectedPiece != null) { holder.bar = selectionBar; holder.anchor = Triple(selectedPiece.x, selectedPiece.y, selectedPiece.size) }
+        holder.anchor?.let { (ax, ay, asz) ->
+            AtPiece(ax, ay, asz, visible = selectionBar != null && selectedPiece != null) { holder.bar?.invoke() }
+        }
+    }
+}
+
+/** Keeps the last selection's actions for the exit animation after the selection is gone. */
+private class SelectionHolder { var bar: (@Composable () -> Unit)? = null; var anchor: Triple<Float, Float, Float>? = null }
+
+/** Name signs get this much room (counter-scaled), so no name is ever cut off. */
+private val TagSpan = 168.dp
+
+/** World hitbox without its own touch handling (the island's touch surface handles it); debug mode outlines it as before. */
+private fun Modifier.islandHitbox(): Modifier = composed {
+    if (DebugMode.showsHitboxes(LocalHitboxDebug.current)) Modifier.background(DebugMode.HitboxFill).border(1.5.dp, DebugMode.HitboxLine) else Modifier
+}
+
+/**
+ * Places [content] at a piece's foot (island-box fractions) at its on-screen size: under the name sign,
+ * always inside the part of the island that is on screen (the camera centres the piece, see FocusPan).
+ * Pops in with a short scale + fade, never moving the island.
+ */
+@Composable
+private fun androidx.compose.foundation.layout.BoxWithConstraintsScope.AtPiece(ax: Float, ay: Float, pieceSize: Float, visible: Boolean, content: @Composable () -> Unit) {
+    val camera = LocalIslandCamera.current
+    val zoom = LocalIslandZoom.current
+    val boxW = constraints.maxWidth.toFloat(); val boxH = constraints.maxHeight.toFloat()
+    val ease = androidx.compose.animation.core.FastOutSlowInEasing
+    Box(
+        Modifier.layout { measurable, _ ->
+            val p = measurable.measure(androidx.compose.ui.unit.Constraints())
+            layout(0, 0) {
+                val k = 1f / zoom().coerceAtLeast(1f)
+                val vis = camera?.visibleIn(androidx.compose.ui.geometry.Size(boxW, boxH)) ?: androidx.compose.ui.geometry.Rect(0f, 0f, boxW, boxH)
+                val m = 8.dp.toPx() * k
+                val bw = p.width * k; val bh = p.height * k
+                // Under the name sign. While the camera is still panning towards the piece it is held
+                // inside the visible part and slides along continuously (no flip above/below, no jump).
+                val below = ay * boxH + 24.dp.toPx() * k
+                val y = below.coerceAtMost(vis.bottom - m - bh).coerceAtLeast(vis.top + m)
+                val lo = vis.left + m + bw / 2; val hi = vis.right - m - bw / 2
+                val cx = if (lo <= hi) (ax * boxW).coerceIn(lo, hi) else (vis.left + vis.right) / 2
+                p.placeWithLayer((cx - bw / 2).roundToInt(), y.roundToInt()) {
+                    scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                }
+            }
+        },
+    ) {
+        androidx.compose.animation.AnimatedVisibility(visible,
+            enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200, easing = ease)) +
+                androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(220, easing = ease), initialScale = .82f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f)),
+            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150, easing = ease)) +
+                androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(150, easing = ease), targetScale = .9f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f)),
+        ) { content() }
     }
 }
 

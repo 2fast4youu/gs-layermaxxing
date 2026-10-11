@@ -3,40 +3,62 @@
 The starter is painted bare sand without menu buildings, ruins or primitive stand-ins.
 The avatar remains visible; every application function is available from **Menü**.
 
-## Screen structure (7.9.4, controls like Clash of Clans since 7.9.5)
+## Screen structure (7.9.4, controls like Clash of Clans since 7.9.5, one context at a time since 7.9.6)
 
 - The app's bottom navigation (Chats · Inseln · Mehr) is the same composable
-  (`MainNavigationBar`) on every tab, the island included. Settings stay reachable via Mehr.
-- Directly above it the island has its own second row of round icon buttons with labels: on the
-  overview *Meine Insel · Hafen · Menü*, on the own island *Übersicht · Bearbeiten · Menü*, when
-  visiting *Übersicht · Meine Insel*. On the own island **Bauen** is the big round shop button at the
-  bottom right (it steps aside while a shelf, an info bar or the edit mode is open).
+  (`MainNavigationBar`) on every tab, the island included, and always reachable. Settings stay reachable via Mehr.
+- **Own island (7.9.6 "flow")**: no second row any more. At rest there is only the bottom navigation,
+  the back pill "‹ Übersicht" at the top left and one narrow column of round buttons at the right edge
+  above the navigation: *Menü*, *Bearbeiten* (*Fertig* in edit mode) and the bigger primary **Bauen**
+  button with its label and a price chip (cheapest next step, e.g. "ab 25 P"; "gratis" in creative mode).
+  At most one contextual element is shown above the navigation; they share one bottom container and
+  slide/fade into each other (180–260 ms, FastOutSlowIn), so nothing stacks and nothing jumps.
+- On the overview *Meine Insel · Hafen · Menü* and when visiting *Übersicht · Meine Insel* the
+  second row of round icon buttons stays as before.
 - The own island opens zoomed in (zoom depends on land size) and cannot be zoomed out to overview
   size. Its header is a painted brass plate "Meine Insel" with a creative badge when active; the
   back pill reads "‹ Übersicht". The overview is labelled "Übersicht · alle Inseln".
 
-## Building (7.9.5)
+## Building (7.9.5, flow 7.9.6)
 
-**Bauen** (shop button) opens a horizontal shelf above the second row with painted cards in three tabs:
+**Bauen** (shop button) opens a slim bottom sheet (≤ 28 % of the height; it replaces the side column
+and any open actions) with painted cards in three tabs:
 *Gebäude* (the six function buildings, price or "gratis"), *Deko* (every decoration item) and
 *Land* (expand the island, new life place). Tapping a card puts the piece on the island as a local
 preview: the real sprite stands raised over a green/red footprint on the grid, and the round **✗ / ✓
 bubbles hang right at the piece** (under its footprint, above it near the shore) and follow it. ✓ saves,
-✗ discards; on an impossible spot the footprint turns red and ✓ is greyed out. The back arrow and
+✗ discards (and brings the sheet back when the piece came from it); on an impossible spot the footprint
+turns red and ✓ is greyed out. **The preview never leaves the land grid** (`IslandGrid.nearestLandCell`):
+a finger in the water keeps it on the nearest shore cell, a tap beside the island is ignored, and a new
+piece starts in the middle of the visible land. While a piece is held every other control fades out except
+the short hint at the top ("Ziehen oder tippen · Grün = frei, Rot = belegt", fades after ~2.6 s) and ✓/✗
+at the piece; the bottom navigation stays. The back arrow and
 Android back discard too. The piece can be dragged straight away: a drag that starts on it carries it
 with the same offset to the finger, a touch somewhere else puts it there first; the camera scrolls on
 its own when the finger nears the screen edge and the piece stays under the finger.
 
-A **short tap** on a building or decoration opens the **info bar**: name, stage, next stage with price
-(or "Meisterbau erreicht") and four big round buttons (Öffnen, Ausbauen with the price on the button /
-Info, Verschieben, Abreißen; decoration: Verschieben, Entfernen). The selected piece's footprint is
-outlined, the camera keeps it above the bar, and a tap on empty ground closes the bar.
-A **long press** lifts the piece into move mode (haptic tick). **Bearbeiten** puts the island in edit
+A **short tap** on a building or decoration shows its **actions right at the piece** (7.9.6, no bottom
+card any more): a small name sign and one pill of round icons (Öffnen, Ausbauen with the price on the
+button / Info, Verschieben, Abreißen; decoration: Verschieben, Entfernen). It pops in with scale + fade,
+the footprint is outlined, the camera pans smoothly only as far as needed to keep piece and actions on
+screen, and a tap on empty ground closes it.
+A **long press** (`LONG_PRESS_MS` = 350 ms) lifts the piece straight into move mode (haptic tick, the
+sprite rises, the grid fades in) and the **same finger** carries it on without lifting; on release the
+preview stays with ✓/✗. One touch surface (`IslandTouchSurface`) handles tap, long press, edit and
+placement, so the gesture never changes hands. "Verschieben" in the actions remains the alternative. **Bearbeiten** puts the island in edit
 mode: the grid fades in, pieces wiggle, touching a piece lifts it and a drag carries it right away;
 empty life plots are shown. *Fertig* leaves it.
 
 **Abreißen** always asks first. Normal mode: allowed, no points are refunded. Creative mode: free.
 Life places can be demolished from their sheet. Moving is free and never changes level or points.
+
+## Creative mode switch (7.9.6)
+
+Where the account may use it (test server role + entitlement), the island menu starts with one plainly
+labelled switch "Kreativmodus: Ein/Aus" with a one-line explanation. It acts at once (the menu closes, the
+header shows exactly one chip "Kreativmodus · alles gratis", the Bauen button and the sheet say "gratis");
+nothing disappears. The first time it is switched on, a short note explains it once (stored in the
+`island_hints` preferences, gone after ~7 s or "Verstanden"). The switch in Settings stays as well.
 
 ## Decoration
 
@@ -65,7 +87,13 @@ diagonal view. `construction.positions` and `construction.decor` live in the exi
 the same revision/atomic write protection as upgrades. Invalid or stale writes never save; after a failed
 confirmation the app reloads current state while keeping the local draft for a retry.
 
-Tests: `IslandGridTest` (projection, round trip, mesh slope, footprint, edge scroll),
+Camera note (7.9.6 fix): fingers and fractions are in island-box coordinates; the camera box is as tall
+as the viewport with the island box centred in it. 7.9.5 mixed both, so edge scrolling fired mid-screen while
+dragging and a new piece could start in the sea.
+
+Tests: `IslandFlowTest` (land clamp, tap in the water, long press + same finger, short tap, rest state,
+actions at the piece, slim sheet never together with the actions, Bauen always there, price/gratis, placement
+chrome + hint, creative chip and menu switch, full labels), `IslandGridTest` (projection, round trip, mesh slope, footprint, edge scroll),
 `IslandCocControlsTest` (✓/✗ at the building, info bar and tap on ground, edit mode, drag round trip,
 shop button, camera keeps the selection above the bar) and VillageVisualReview `coc-*`. These are JVM
 simulations, not evidence of device animation, haptics or multitouch.

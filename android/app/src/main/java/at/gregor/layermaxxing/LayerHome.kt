@@ -429,6 +429,8 @@ fun LayerHome(
                     glossary = { GlossaryScreen(api, token) },
                     loadIsland = { id -> api.island(token, id, if (id == status?.userId) { if (creativeActive) "creative" else "normal" } else null) },
                     creativeActive = creativeActive,
+                    creativeEligible = creativeEligible,
+                    onCreativeSwitch = { store.setCreativeMode(it); creativeSwitch = it },
                     changeConstruction = { state, request -> api.islandAction(token, state, request) },
                     mainNavigation = {
                         MaterialTheme(colorScheme = appColors, typography = appTypography) {

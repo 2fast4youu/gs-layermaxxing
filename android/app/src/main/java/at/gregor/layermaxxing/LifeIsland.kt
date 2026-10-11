@@ -122,6 +122,8 @@ internal fun BoxWithConstraintsScope.LifeLayer(
     tags: Boolean = true,
     landScale: Float = 1f,
     showEmptyPlots: Boolean = false,
+    /** An empty plot at this spot (box fractions) is covered by a building: its "+ Bauplatz" is not shown. */
+    covered: (Float, Float) -> Boolean = { _, _ -> false },
 ) {
     val w = maxWidth; val h = maxHeight
     val zoom = LocalIslandZoom.current
@@ -131,7 +133,7 @@ internal fun BoxWithConstraintsScope.LifeLayer(
         val (x, y) = IslandPlans.onLand(px, py, landScale)
         val place = places[i]
         val open = i < plots
-        if (place == null && (!open || onPlot == null || !showEmptyPlots)) return@forEachIndexed
+        if (place == null && (!open || onPlot == null || !showEmptyPlots || covered(x, y))) return@forEachIndexed
         val box = w * LifePlaces.PLACE_SIZE * IslandPlans.pieceScale(landScale)
         val res = place?.let { LifePlaces.kind(it.kind)?.res } ?: R.drawable.place_plot
         val label = place?.let(LifePlaces::label) ?: "Bauplatz"

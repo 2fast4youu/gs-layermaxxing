@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -444,7 +446,8 @@ class VillageVisualReview {
     @Test fun islandPlaceHall() = shot("34-gemeindehaus") { Isles(start = "home", placeKey = "CAMPFIRE") }
     @Test fun islandPlaceHouse() = shot("35-haus") { Isles(start = "home", placeKey = "HOUSE") }
     @Composable private fun EvolutionIsland(creative: Boolean = false, grown: Boolean = false, start: String = "home", startingPoints: Int = 500, rejectFirst: Boolean = false,
-                                            nav: Boolean = false, withLife: Boolean = false, level: Int = 3) {
+                                            nav: Boolean = false, withLife: Boolean = false, level: Int = 3, eligible: Boolean = false) {
+        var creativeOn by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(creative) }
         var state by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(ApiClient.IslandConstruction(
             mode=if(creative) "creative" else "normal", available=startingPoints, ageDays=if(startingPoints==0) 0 else 21,
             buildings=if(grown) IsleBuilding.entries.associate { it.name to level } else emptyMap(),land=if(grown) 5 else 0,
@@ -459,7 +462,8 @@ class VillageVisualReview {
             islands=ApiClient.Islands(startingPoints,listOf(ApiClient.IslandInfo(2,0,0,0,1,40,friendHome))),
             quests=emptyList(),letters=emptyList(),topics=emptyList(),opened=emptyMap(),onBack={},onChat={},onComposeLetter={},onOpenLetter={},
             onLockedTap={},onTopics={},onAllTopics={},onGlossary={},onPeople={},onCreateQuest={_,_,_,_,_,_->},onQuestDone={_,_->},onQuestDelete={},
-            ownId=1, startView=start, creativeActive=creative,
+            ownId=1, startView=start, creativeActive=creativeOn, creativeEligible=eligible,
+            onCreativeSwitch={ on -> creativeOn=on; state=state.copy(mode=if(on) "creative" else "normal") },
             mainNavigation=if(nav) ({ LayermaxxingTheme("light") { MainNavigationBar(listOf(MainTab.CHATS, MainTab.CASTLES, MainTab.MORE), MainTab.CASTLES, 2) {} } }) else null,
             loadIsland={id->if(id==1L) home.copy(construction=state) else friendHome},
             changeConstruction={c,req->
@@ -522,11 +526,13 @@ class VillageVisualReview {
     }) { EvolutionIsland(creative=true,grown=true) }
     @Test fun islandInvalidPlacement() = shot("69-ungueltiger-bauplatz",gesture={
         rule.onAllNodesWithText("Bauen")[0].performClick();rule.mainClock.advanceTimeBy(600)
+        // 7.9.6: the sea is out of reach (the preview clamps to land); an occupied cell is the invalid spot
         rule.onAllNodesWithContentDescription("Post platzieren")[0].performClick();rule.mainClock.advanceTimeBy(600)
-        rule.onAllNodesWithContentDescription("Bauplatzraster")[0].performTouchInput {
-            swipe(androidx.compose.ui.geometry.Offset(width*.316f,height*.504f),androidx.compose.ui.geometry.Offset(width*.01f,height*.01f),600)
-        }
-        androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications(); rule.mainClock.advanceTimeBy(600)
+        groundTap(listOf(11, 7), 0); settle()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Freunde platzieren")[0].performClick(); settle()
+        groundTap(listOf(11, 7), 0); settle()
         rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsNotEnabled()
     }) { EvolutionIsland(creative=true) }
     @Test fun islandCancelPlacementKeepsStarterEmpty() = shot("70-platzieren-abgebrochen",gesture={
@@ -554,10 +560,14 @@ class VillageVisualReview {
     @Test fun islandPlacementBackCancelsWithoutTrappingNavigation() = shot("74-zurueck-bricht-ab",gesture={
         rule.onAllNodesWithText("Bauen")[0].performClick();rule.mainClock.advanceTimeBy(600)
         rule.onAllNodesWithContentDescription("Post platzieren")[0].performClick();rule.mainClock.advanceTimeBy(600)
-        rule.onAllNodesWithContentDescription("Zurück")[0].performClick();rule.mainClock.advanceTimeBy(600)
+        // 7.9.6: while a piece is held only ✓/✗ and the hint are shown; Android back cancels like ✗
+        // and brings the build sheet back, a second back closes it
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }; settle()
         rule.onAllNodesWithText("Meine Insel")[0].assertExists()
-        rule.onAllNodesWithText("Bauen")[0].assertExists()
         rule.onAllNodesWithContentDescription("Post").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Bauleiste")[0].assertExists()
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }; settle()
+        rule.onAllNodesWithText("Bauen")[0].assertExists()
     }) { EvolutionIsland(creative=true) }
     @Test fun islandConflictReloadRetainsDraftAndAllowsRetry() = shot("75-konflikt-erholung",gesture={
         rule.onAllNodesWithText("Bauen")[0].performClick();rule.mainClock.advanceTimeBy(600)
@@ -687,9 +697,14 @@ class VillageVisualReview {
         rule.onAllNodesWithContentDescription("Isometrisches Raster")[0].assertExists()
     }) { EvolutionIsland(grown=true, nav=true, withLife=true, startingPoints=140) }
     @Test fun cocGridInvalidSpot() = shot("coc-08-raster-ungueltig", gesture={
+        // 7.9.6: the sea is out of reach, an occupied cell is the impossible spot
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Post platzieren")[0].performClick(); settle()
+        groundTap(listOf(11, 7), 0); settle()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].performClick(); settle()
         rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
         rule.onAllNodesWithContentDescription("Freunde platzieren")[0].performClick(); settle()
-        groundTap(listOf(1, 8), 0); settle()
+        groundTap(listOf(11, 7), 0); settle()
         rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsNotEnabled()
     }) { EvolutionIsland(creative=true, nav=true) }
     @Test fun cocGridSmallLandNearSpot() = shot("coc-09-raster-nahe-gebaeude", gesture={
@@ -699,4 +714,64 @@ class VillageVisualReview {
     }) { EvolutionIsland(creative=true, grown=true, level=0, nav=true, withLife=true) }
     @Test fun cocOverview() = shot("coc-10-uebersicht") { EvolutionIsland(start="map", nav=true, withLife=true) }
     @Test fun cocVisit() = shot("coc-11-besuch") { EvolutionIsland(start="visit:2", nav=true) }
+
+    // 7.9.6 "flow": one context at a time, placement only on land, long press moves in the same touch.
+    private fun centralTag(): Pair<IsleBuilding, androidx.compose.ui.unit.DpRect> {
+        val root = rule.onRoot().getBoundsInRoot()
+        val mx = (root.left + root.right) / 2; val my = (root.top + root.bottom) / 2
+        return IsleBuilding.entries.map { it to rule.onAllNodesWithContentDescription(it.label).filter(androidx.compose.ui.test.hasClickAction())[0].getBoundsInRoot() }
+            .minBy { (_, l) -> kotlin.math.hypot(((l.left + l.right) / 2 - mx).value, ((l.top + l.bottom) / 2 - my).value) }
+    }
+    @Test fun flowRest() = shot("flow-01-ruhezustand") { EvolutionIsland(grown=true, nav=true, withLife=true, startingPoints=140) }
+    @Test fun flowSelected() = shot("flow-02-gebaeude-angetippt", gesture={
+        rule.onAllNodesWithContentDescription("Wörterbuch").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle(900)
+        rule.onAllNodesWithContentDescription("Gebäudeaktionen")[0].assertExists()
+    }) { EvolutionIsland(grown=true, level=1, nav=true, withLife=true, startingPoints=300) }
+    @Test fun flowBuildSheet() = shot("flow-03-bauleiste", gesture={
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Bauleiste")[0].assertExists()
+    }) { EvolutionIsland(nav=true, withLife=true, startingPoints=140) }
+    @Test fun flowPlacementFingerInTheWater() = shot("flow-04-platzierung-finger-im-wasser", gesture={
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Post platzieren")[0].performClick(); settle()
+        val a = IslandGrid.project(listOf(11, 7), 0)
+        groundTap(listOf(11, 7), 0); settle()
+        // drag far out into the sea (top left): the preview stops on the nearest shore cell
+        rule.onAllNodesWithContentDescription("Bauplatzraster")[0].performTouchInput {
+            swipe(androidx.compose.ui.geometry.Offset(width * a.first, height * a.second), androidx.compose.ui.geometry.Offset(width * .06f, height * .12f), 500)
+        }
+        settle(300)
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsEnabled()
+    }) { EvolutionIsland(creative=true, nav=true) }
+    @Test fun flowLongPressMove() = shot("flow-05-verschieben-longpress", gesture={
+        val (b, tag) = centralTag()
+        val c = ApiClient.IslandConstruction(buildings = IsleBuilding.entries.associate { it.name to 3 }, land = 5)
+        val from = IslandLayout.defaultPosition(b)
+        val target = listOf(2, 3, -2, -3).flatMap { dy -> listOf(0, 1, -1).map { dx -> listOf(from[0] + dx, from[1] + dy) } }.first { IslandLayout.valid(c, b, it) }
+        val ground = rule.onAllNodesWithContentDescription("Boden")[0].getBoundsInRoot()
+        val p0 = IslandGrid.project(from, 5); val p1 = IslandGrid.project(target, 5)
+        rule.onRoot().performTouchInput {
+            val down = androidx.compose.ui.geometry.Offset(((tag.left + tag.right) / 2).toPx(), (tag.top - 22.dp).toPx())
+            val delta = androidx.compose.ui.geometry.Offset(((ground.right - ground.left) * (p1.first - p0.first)).toPx(), ((ground.bottom - ground.top) * (p1.second - p0.second)).toPx())
+            down(down); advanceEventTime(LONG_PRESS_MS + 150)
+            // still held: the piece is lifted and follows the same finger to a free cell
+            for (k in 1..10) { moveTo(down + delta * (k / 10f)); advanceEventTime(30) }
+        }
+        settle(400)
+        rule.onAllNodesWithContentDescription("Bauplatzraster")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsEnabled()
+    }) { EvolutionIsland(grown=true, nav=true, startingPoints=140) }
+    @Test fun flowEditMode() = shot("flow-06-bearbeiten", gesture={
+        rule.onAllNodesWithText("Bearbeiten")[0].performClick(); settle()
+        rule.onAllNodesWithText("Fertig")[0].assertExists()
+    }) { EvolutionIsland(grown=true, nav=true, withLife=true, startingPoints=140) }
+    @Test fun flowCreativeMenu() = shot("flow-07-kreativ-menue", captureDialogs=true, gesture={
+        rule.onAllNodesWithText("Menü")[0].performClick(); settle(900)
+        rule.onAllNodesWithText("Kreativmodus: Aus")[0].assertExists()
+    }) { EvolutionIsland(grown=true, nav=true, withLife=true, startingPoints=140, eligible=true) }
+    @Test fun flowCreativeSwitchedOn() = shot("flow-08-kreativ-an", gesture={
+        rule.onAllNodesWithText("Menü")[0].performClick(); settle(900)
+        rule.onAllNodesWithContentDescription("Kreativmodus")[0].performClick(); settle(900)
+        rule.onAllNodesWithText("Kreativmodus · alles gratis")[0].assertExists()
+    }) { EvolutionIsland(grown=true, nav=true, withLife=true, startingPoints=140, eligible=true) }
 }

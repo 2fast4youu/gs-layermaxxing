@@ -98,15 +98,19 @@ class IslandCocControlsTest {
     }
 
     @Test fun invalidPositionGreysTheCheckButNotTheCross() {
-        start(Saved()); placePost()
-        confirmNode.assertIsEnabled()
+        // 7.9.6: the sea can no longer be reached (the preview clamps to land, see IslandFlowTest);
+        // an occupied cell is the impossible spot now.
+        val saved = Saved(); start(saved); placePost()
         val a = IslandGrid.project(listOf(11, 7), 0)
         rule.onAllNodesWithContentDescription("Bauplatzraster")[0].performTouchInput { click(Offset(width * a.first, height * a.second)) }
         tick(); confirmNode.assertIsEnabled()
-        // dragged off the island into the sea
-        rule.onAllNodesWithContentDescription("Bauplatzraster")[0].performTouchInput {
-            swipe(Offset(width * a.first, height * a.second), Offset(width * .01f, height * .01f), 400)
-        }
+        confirmNode.performClick(); tick()
+        assertEquals(listOf(11, 7), saved.state.positions["POST"])
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); tick()
+        rule.onAllNodesWithContentDescription("Mein Haus platzieren")[0].performClick(); tick()
+        confirmNode.assertIsEnabled()
+        // put onto the post
+        rule.onAllNodesWithContentDescription("Bauplatzraster")[0].performTouchInput { click(Offset(width * a.first, height * a.second)) }
         tick()
         confirmNode.assertIsNotEnabled(); cancelNode.assertIsEnabled()
     }
@@ -140,7 +144,8 @@ class IslandCocControlsTest {
         start(Saved(), grown = true)
         rule.onAllNodesWithContentDescription("Post").filter(hasClickAction())[0].performClick(); tick()
         for (label in listOf("Öffnen", "Info", "Verschieben", "Abreißen")) rule.onAllNodesWithText(label)[0].assertExists()
-        rule.onAllNodesWithContentDescription("Boden")[0].performTouchInput { click(Offset(width * .5f, height * .92f)) }
+        // 7.9.6: the actions hang under the centred piece, so tap free ground at the upper left instead of the bottom middle
+        rule.onRoot().performTouchInput { click(Offset(width * .08f, height * .3f)) }
         tick(800)
         rule.onAllNodesWithText("Verschieben").assertCountEquals(0)
     }
@@ -172,12 +177,15 @@ class IslandCocControlsTest {
 
     @Test fun selectedBuildingStaysInSightAboveTheInfoBar() {
         start(Saved(), grown = true)
-        // the harbour stands at the very bottom of the island: the bar must not hide it
+        // the harbour stands at the very bottom of the island: its actions (7.9.6: at the piece) must not hide it
         val tag = rule.onAllNodesWithContentDescription("Hafen").filter(hasClickAction())[0]
         tag.performClick(); tick(1200)
-        val bar = rule.onAllNodesWithContentDescription("Info-Leiste")[0].getBoundsInRoot()
+        val root = rule.onRoot().getBoundsInRoot()
+        val bar = rule.onAllNodesWithContentDescription("Gebäudeaktionen")[0].getBoundsInRoot()
         val foot = rule.onAllNodesWithContentDescription("Hafen").filter(hasClickAction())[0].getBoundsInRoot()
-        assertTrue("foot at ${foot.top} dp is hidden by the bar starting at ${bar.top} dp", foot.top <= bar.top)
+        assertTrue("actions on screen: $bar in $root", bar.top >= root.top && bar.bottom <= root.bottom)
+        assertTrue("foot $foot on screen", foot.top >= root.top && foot.bottom <= root.bottom)
+        assertTrue("foot $foot is hidden by the actions $bar", foot.bottom <= bar.top || foot.top >= bar.bottom)
     }
 
     @Test fun aNewBuildingStartsInTheMiddleOfTheScreen() {

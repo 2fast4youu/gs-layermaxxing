@@ -102,6 +102,13 @@ internal object IslandBuild {
             else -> "Stufe ${level + 1}: $cost Punkte"
         }
     }
+    /** The line on the Bauen button: "gratis" in creative mode, otherwise what the cheapest next step costs. */
+    fun shopLine(c: ApiClient.IslandConstruction): String = when {
+        c.mode == "creative" -> "gratis"
+        IsleBuilding.entries.any { (c.buildings[it.name] ?: 0) == 0 } -> "ab ${c.buildCosts.getOrElse(0) { 0 }} P"
+        c.land < 5 -> "ab ${c.landCosts.getOrElse(c.land) { 0 }} P"
+        else -> "${c.available} P"
+    }
     fun decorFull(h: ApiClient.HomeIsland) = h.construction.mode != "creative" &&
         h.construction.decor.size >= h.construction.decorLimits.getOrElse(h.construction.land) { 6 }
 }
@@ -140,21 +147,140 @@ internal fun IslandActionRow(modifier: Modifier = Modifier, content: @Composable
     ) { content() }
 }
 
-/** The big round "Shop" button at the bottom right: opens the picture shelf of buildings, decoration and land. */
+/**
+ * The big round "Bauen" button at the bottom right (Clash of Clans' shop): hammer, label, and the price of
+ * the cheapest next step on a small chip ("gratis" in creative mode). Always there outside placement.
+ */
 @Composable
-internal fun ShopButton(onClick: () -> Unit) {
+internal fun ShopButton(line: String, onClick: () -> Unit) {
     Column(
-        Modifier.clip(RoundedCornerShape(26.dp)).clickable(onClickLabel = "Bauleiste öffnen", onClick = onClick).padding(4.dp)
+        Modifier.clip(RoundedCornerShape(26.dp)).clickable(onClickLabel = "Bauleiste öffnen", onClick = onClick).padding(2.dp)
             .semantics { contentDescription = "Bauen – Bauleiste öffnen"; role = Role.Button },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Box(contentAlignment = Alignment.BottomCenter) {
+            Box(
+                Modifier.padding(bottom = 7.dp).size(62.dp).shadow(9.dp, CircleShape)
+                    .background(Brush.verticalGradient(listOf(Color(0xFFFFE9A8), Color(0xFFE2A93C))), CircleShape)
+                    .border(3.dp, Color(0xFFFFF3DC), CircleShape),
+                Alignment.Center,
+            ) { AppIcon(R.drawable.ico_build, null, tint = Color(0xFF4A2A0C), size = 32.dp) }
+            Text(line, color = Color.White, fontSize = 10.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold, maxLines = 1,
+                modifier = Modifier.background(if (line == "gratis") IslandBuild.Ok else Color(0xFF243A3F), RoundedCornerShape(50))
+                    .border(1.dp, Color(0xFFFFF3DC), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp))
+        }
+        WorldText("Bauen", 12.sp, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+/** A small round side button (Bearbeiten, Menü) with its name on a little plaque under it. */
+@Composable
+internal fun IslandSideButton(icon: Int, label: String, selected: Boolean = false, onClick: () -> Unit) {
+    Column(
+        Modifier.clip(RoundedCornerShape(20.dp)).clickable(onClickLabel = label, onClick = onClick).padding(2.dp)
+            .semantics { role = Role.Button; if (selected) this.selected = true },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Box(
-            Modifier.size(66.dp).shadow(9.dp, CircleShape)
-                .background(Brush.verticalGradient(listOf(Color(0xFFFFE9A8), Color(0xFFE2A93C))), CircleShape)
-                .border(3.dp, Color(0xFFFFF3DC), CircleShape),
+            Modifier.size(44.dp).shadow(5.dp, CircleShape)
+                .background(Brush.verticalGradient(if (selected) listOf(Color(0xFFF6E3AE), Color(0xFFD9B05A)) else listOf(Color(0xFF45666B), Color(0xFF253D42))), CircleShape)
+                .border(2.dp, if (selected) Color(0xFFFFF3DC) else Color(0xAAE6D3A3), CircleShape),
             Alignment.Center,
-        ) { AppIcon(R.drawable.ico_build, null, tint = Color(0xFF4A2A0C), size = 34.dp) }
-        WorldText("Bauen", 13.sp, plaque = false)
+        ) { AppIcon(icon, null, tint = if (selected) Color(0xFF3B2410) else IslandBuild.Cream, size = 22.dp) }
+        WorldText(label, 10.5.sp, display = false, fill = if (selected) IslandBuild.Gold else IslandBuild.Cream, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+/**
+ * The island's resting controls: one narrow column at the right edge above the app navigation
+ * (Menü, Bearbeiten, and the big Bauen button at the bottom, where the thumb is). Replaces the old
+ * second row of text buttons; the way back to the overview is the pill at the top left.
+ */
+@Composable
+internal fun IslandSideActions(editing: Boolean, shopLine: String, onBuild: () -> Unit, onEdit: () -> Unit, onMenu: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier.semantics { contentDescription = "Aktionsgruppe" },
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        IslandSideButton(R.drawable.ico_menu, "Menü", onClick = onMenu)
+        IslandSideButton(if (editing) R.drawable.ico_check else R.drawable.ico_edit, if (editing) "Fertig" else "Bearbeiten", selected = editing, onClick = onEdit)
+        ShopButton(shopLine, onBuild)
+    }
+}
+
+/**
+ * The tapped piece's actions, hanging right at it (Clash of Clans): its name on a small sign and one
+ * pill of round icon buttons (Öffnen, Ausbauen with the price on the button, Verschieben, Abreißen).
+ * Compact on purpose: no bottom card, nothing stacked.
+ */
+@Composable
+internal fun PieceActionBar(title: String, subtitle: String?, actions: List<SelectionAction>) {
+    Column(Modifier.semantics { contentDescription = "Gebäudeaktionen" }, horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(
+            Modifier.shadow(4.dp, RoundedCornerShape(50)).background(Color(0xF2243A3F), RoundedCornerShape(50))
+                .border(1.dp, Color(0x99E6D3A3), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, color = IslandBuild.Cream, fontFamily = Kit.Display, fontSize = 15.sp, maxLines = 1, softWrap = false)
+            if (subtitle != null) Text(" · $subtitle", color = IslandBuild.Gold, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, maxLines = 1, softWrap = false)
+        }
+        Spacer(Modifier.height(5.dp))
+        Row(
+            Modifier.shadow(8.dp, RoundedCornerShape(28.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xF22B4449), Color(0xF21E3236))), RoundedCornerShape(28.dp))
+                .border(1.5.dp, Color(0x88E6D3A3), RoundedCornerShape(28.dp)).padding(horizontal = 6.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            actions.forEach { a ->
+                Column(
+                    // wide enough for every label ("Verschieben" was cut off at a fixed 60 dp)
+                    Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = a.label, onClick = a.onClick)
+                        .widthIn(min = 58.dp).padding(horizontal = 3.dp, vertical = 2.dp).semantics { role = Role.Button },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(contentAlignment = Alignment.BottomCenter) {
+                        Box(
+                            Modifier.padding(bottom = if (a.detail != null) 7.dp else 0.dp).size(42.dp).shadow(4.dp, CircleShape)
+                                .background(Brush.verticalGradient(listOf(a.tone.copy(alpha = .92f), a.tone)), CircleShape)
+                                .border(2.dp, Color(0xFFFFF3DC), CircleShape),
+                            Alignment.Center,
+                        ) { AppIcon(a.icon, null, tint = if (a.dark) Color(0xFF3B2410) else Color.White, size = 22.dp) }
+                        // The price sits on the button itself, like the cost on a base-builder's upgrade button.
+                        if (a.detail != null) Text(a.detail, color = Color(0xFF3B2410), fontSize = 9.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold, maxLines = 1,
+                            softWrap = false, modifier = Modifier.background(Color(0xFFFFF3DC), RoundedCornerShape(50)).padding(horizontal = 6.dp))
+                    }
+                    Text(a.label, color = IslandBuild.Cream, fontSize = 10.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
+                        modifier = Modifier.padding(top = 2.dp))
+                }
+            }
+        }
+    }
+}
+
+/** The short placement hint at the top: shown when a piece is picked up, then it fades away. */
+@Composable
+internal fun PlacementHint(text: String, modifier: Modifier = Modifier) {
+    Text(text, color = IslandBuild.Cream, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false,
+        modifier = modifier.shadow(6.dp, RoundedCornerShape(50)).background(Color(0xF2243A3F), RoundedCornerShape(50))
+            .border(1.dp, Color(0x99E6D3A3), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp))
+}
+
+/** One-time note after the creative mode was switched on in the island menu. */
+@Composable
+internal fun CreativeHintCard(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.padding(horizontal = 18.dp).shadow(10.dp, RoundedCornerShape(20.dp)).background(Isle.Card, RoundedCornerShape(20.dp))
+            .border(1.5.dp, Color(0xFFC9A55C), RoundedCornerShape(20.dp)).padding(horizontal = 14.dp, vertical = 10.dp)
+            .semantics { contentDescription = "Hinweis Kreativmodus" },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppIcon(R.drawable.ico_build, null, tint = Color(0xFFB9852E), size = 26.dp)
+        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+            Text("Kreativmodus ist an", fontFamily = Kit.Display, fontSize = 16.sp, color = Isle.Ink)
+            Text("Frei bauen, ausbauen, abreißen – kostenlos. Deine Punkte bleiben; beim Ausschalten bleibt alles stehen.",
+                fontFamily = Kit.Body, fontSize = 12.sp, color = Isle.Muted)
+        }
+        TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Verstanden", color = Isle.TealDark, fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -172,7 +298,7 @@ internal fun IslandBuildBar(
 ) {
     val c = home.construction
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp).shadow(10.dp, RoundedCornerShape(24.dp))
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp).semantics { contentDescription = "Bauleiste" }.shadow(10.dp, RoundedCornerShape(24.dp))
             .background(Brush.verticalGradient(listOf(Color(0xF22B4449), Color(0xF21E3236))), RoundedCornerShape(24.dp))
             .border(1.5.dp, Color(0x88E6D3A3), RoundedCornerShape(24.dp)).padding(vertical = 8.dp),
     ) {
@@ -186,7 +312,7 @@ internal fun IslandBuildBar(
                         .semantics { role = Role.Tab; if (on) selected = true })
             }
             Spacer(Modifier.weight(1f))
-            Text(if (c.mode == "creative") "Kreativ · alles gratis" else "${c.available} P", color = IslandBuild.Gold, fontSize = 12.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold)
+            Text(if (c.mode == "creative") "alles gratis" else "${c.available} P", color = IslandBuild.Gold, fontSize = 12.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold)
             Box(Modifier.padding(start = 6.dp).size(40.dp).clip(CircleShape).background(Color(0x33FFF8E6))
                 .clickable(onClickLabel = "Bauleiste schließen", onClick = onClose).semantics { contentDescription = "Bauleiste schließen" }, Alignment.Center) {
                 AppIcon(R.drawable.ico_close, null, tint = IslandBuild.Cream, size = 20.dp)
@@ -350,7 +476,11 @@ internal fun DemolishDialog(name: String, creative: Boolean, what: String = "Das
     )
 }
 
-/** Header of the own island: a painted brass plate, clearly not the overview. */
+/**
+ * Header of the own island: a painted brass plate, clearly not the overview. Under it either one quiet
+ * line or, in creative mode, exactly one chip "Kreativmodus · alles gratis". The line has a fixed height,
+ * so switching modes never moves the island.
+ */
 @Composable
 internal fun MyIslandHeader(title: String, subtitle: String, creative: Boolean, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -358,18 +488,41 @@ internal fun MyIslandHeader(title: String, subtitle: String, creative: Boolean, 
             Image(painterResource(R.drawable.p_plate), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
             Text(title, fontFamily = Kit.Display, fontSize = 24.sp, color = Color(0xFF3B2410), modifier = Modifier.padding(bottom = 4.dp).semantics { contentDescription = "Ansicht: $title" })
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (creative) Text("KREATIV", color = Color(0xFF3B2410), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, fontFamily = Kit.Body,
-                modifier = Modifier.padding(end = 6.dp).background(IslandBuild.Gold, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
-            WorldText(subtitle, 11.sp, fill = IslandBuild.Gold, display = false)
+        Box(Modifier.height(22.dp), Alignment.Center) {
+            if (creative) Text("Kreativmodus · alles gratis", color = Color(0xFF3B2410), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, fontFamily = Kit.Body, maxLines = 1,
+                modifier = Modifier.background(IslandBuild.Gold, RoundedCornerShape(50)).border(1.dp, Color(0xFFFFF3DC), RoundedCornerShape(50))
+                    .padding(horizontal = 10.dp, vertical = 2.dp))
+            else WorldText(subtitle, 11.sp, fill = IslandBuild.Gold, display = false)
         }
     }
 }
 
 /** The island menu: every function as a painted piece on harbour paper under a signpost. */
 @Composable
-internal fun IslandMenuContent(home: ApiClient.HomeIsland?, onOpen: (IsleBuilding) -> Unit, onSettings: () -> Unit, onBuild: () -> Unit) {
+internal fun IslandMenuContent(
+    home: ApiClient.HomeIsland?, onOpen: (IsleBuilding) -> Unit, onSettings: () -> Unit, onBuild: () -> Unit,
+    creativeEligible: Boolean = false, creative: Boolean = false, onCreative: (Boolean) -> Unit = {},
+) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).navigationBarsPadding()) {
+        // The creative switch sits on top, plainly labelled, where the island's own options are.
+        if (creativeEligible) {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(18.dp))
+                    .background(if (creative) Color(0xFFF6E3AE) else Color(0xFFF1E6CC))
+                    .border(1.5.dp, if (creative) Color(0xFFD9B05A) else Color(0xFFC9A55C), RoundedCornerShape(18.dp))
+                    .clickable(onClickLabel = if (creative) "Kreativmodus ausschalten" else "Kreativmodus einschalten") { onCreative(!creative) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AppIcon(R.drawable.ico_build, null, tint = Color(0xFF8A5A14), size = 24.dp)
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                    Text("Kreativmodus: ${if (creative) "Ein" else "Aus"}", fontFamily = Kit.Display, fontSize = 17.sp, color = Isle.Ink)
+                    Text("Frei bauen, ausbauen, abreißen – kostenlos", fontFamily = Kit.Body, fontSize = 12.sp, color = Isle.Muted)
+                }
+                androidx.compose.material3.Switch(creative, onCheckedChange = onCreative,
+                    modifier = Modifier.semantics { contentDescription = "Kreativmodus" })
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(painterResource(R.drawable.fief_signpost), null, Modifier.size(64.dp))
             Column(Modifier.padding(start = 8.dp)) {
