@@ -76,10 +76,6 @@ class IslandWorldTest {
             // Buildings (named pieces) and plots; rim trees stand on the painted coast by design.
             IslandPlans.home(1L, score).pieces.filter { it.name != null }
                 .forEach { assertTrue("$score ${it.name}", IslandPlans.inside(it.x, it.y, s, .95f)) }
-            LifePlaces.plots.forEach { (px, py) ->
-                val (x, y) = IslandPlans.onLand(px, py, s)
-                assertTrue("$score plot", IslandPlans.inside(x, y, s, .95f))
-            }
         }
     }
 
@@ -123,19 +119,19 @@ class IslandWorldTest {
         assertEquals(85,c.spent)
     }
 
-    @Test fun placementBlocksSeaBuildingsAndOccupiedDecorOrLifePlaces() {
+    @Test fun placementBlocksSeaBuildingsAndOccupiedDecorOrSpecialDecor() {
         val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)))
         assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(0,0)))
         assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(11,11)))
         assertTrue(IslandLayout.valid(c,IsleBuilding.POST,listOf(10,11)))
-        val withDecor=c.copy(decor=listOf(ApiClient.IslandDecor(0,"flowers",listOf(8,9),0)))
-        val h=ApiClient.HomeIsland(1,mapOf(0 to "flowers"),0,emptyList(),places=mapOf(0 to ApiClient.LifePlace("home","")),construction=withDecor)
-        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(8,9),IslandLayout.obstacles(h)))
-        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(10,6),IslandLayout.obstacles(h)))
+        // A former life place is special decoration now and blocks like a building.
+        val withDecor=c.copy(decor=listOf(ApiClient.IslandDecor(0,"flowers",listOf(8,9),0), ApiClient.IslandDecor(200,"place_home",listOf(10,6),name="Zuhause")))
+        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(8,9)))
+        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(10,6)))
+        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(12,6)))
+        assertTrue(!IslandLayout.validDecor(withDecor,listOf(12,9),special=true))
         // Creative mode builds on the same island: places and decoration still block.
-        val creative=h.copy(construction=withDecor.copy(mode="creative"))
-        assertEquals(IslandLayout.obstacles(h),IslandLayout.obstacles(creative))
-        assertTrue(!IslandLayout.valid(creative.construction,IsleBuilding.POST,listOf(8,9),IslandLayout.obstacles(creative)))
+        assertTrue(!IslandLayout.valid(withDecor.copy(mode="creative"),IsleBuilding.POST,listOf(8,9)))
     }
     @Test fun freeDecorationFollowsTheSameGridRulesAsTheServer() {
         val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)),land=5,

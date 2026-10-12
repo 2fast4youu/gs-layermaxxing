@@ -117,12 +117,13 @@ internal object IslandPlans {
     /** Home: the menu buildings around a plaza. Anchors were picked so paths and lawns never cross. */
     /** The app's own places sit at the coast; the inland plots belong to the player's real life (LifePlaces). */
     val homeBuildings = linkedMapOf(
-        IsleBuilding.HOUSE to IslandPiece(R.drawable.b_house, .50f, .28f, .11f, name = "Mein Haus"),
-        IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.lm_lighthouse, .88f, .44f, .105f, name = "Freunde"),
-        IsleBuilding.POST to IslandPiece(R.drawable.lm_post, .12f, .47f, .105f, name = "Post"),
-        IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.lm_campfire, .28f, .80f, .10f, name = "Gruppen"),
-        IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library, .74f, .79f, .10f, name = "Wörterbuch"),
-        IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty, .51f, .85f, .115f, name = "Hafen"),
+        // 7.9.7: default spots are cells of the build grid of every land stage (the old coast spots were in the water).
+        IsleBuilding.HOUSE to IslandPiece(R.drawable.b_house, .50f, .30f, .11f, name = "Mein Haus"),
+        IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.lm_lighthouse, .80f, .45f, .105f, name = "Freunde"),
+        IsleBuilding.POST to IslandPiece(R.drawable.lm_post, .20f, .45f, .105f, name = "Post"),
+        IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.lm_campfire, .35f, .70f, .10f, name = "Gruppen"),
+        IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library, .65f, .70f, .10f, name = "Wörterbuch"),
+        IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty, .50f, .75f, .115f, name = "Hafen"),
     )
     val plaza = Offset(.5f, .55f)
     /** Small decoration lawns ringing the plaza, clear of the building plots. */

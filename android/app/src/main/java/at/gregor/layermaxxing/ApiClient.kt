@@ -136,12 +136,16 @@ class ApiClient(
         val decorLimits: List<Int> = listOf(6, 8, 10, 12, 14, 16),
         /** False when the server answers without a construction block (no island building yet). */
         val supported: Boolean = true,
+        /** Special decoration (former life places, 7.9.7): price per item and the global limit per island. */
+        val specialCosts: Map<String, Int> = SpecialDecor.defaultCosts,
+        val specialLimit: Int = SpecialDecor.LIMIT,
     )
-    data class IslandDecor(val id: Int, val item: String, val position: List<Int>, val slot: Int? = null)
+    /** [name] = own name of a special decoration ("Coden am Berg"), empty for ordinary decoration. */
+    data class IslandDecor(val id: Int, val item: String, val position: List<Int>, val slot: Int? = null, val name: String = "")
     /** One construction write: building, land or free decoration. */
     data class IslandRequest(
         val action: String, val building: String? = null, val item: String? = null,
-        val decorId: Int? = null, val position: List<Int>? = null,
+        val decorId: Int? = null, val position: List<Int>? = null, val name: String? = null,
     )
     data class LifePlace(val kind: String, val name: String)
     data class Here(val plot: Int?, val status: String)
@@ -512,6 +516,7 @@ class ApiClient(
         parseHomeIsland(execute(authorized(token, "api/island/construction").post(
             JSONObject().put("mode", state.mode).put("action", request.action).put("building", request.building ?: JSONObject.NULL)
                 .put("item", request.item ?: JSONObject.NULL).put("decor_id", request.decorId ?: JSONObject.NULL)
+                .apply { request.name?.let { put("name", it) } }
                 .put("expected_revision", state.revision).put("position", position?.let { org.json.JSONArray(it) } ?: JSONObject.NULL).body()).build()))
     }
     internal fun parseHomeIsland(j: JSONObject): HomeIsland {
@@ -534,9 +539,11 @@ class ApiClient(
                     c.optJSONObject("positions")?.let { p -> p.keys().asSequence().associateWith { k -> p.getJSONArray(k).let { listOf(it.getInt(0),it.getInt(1)) } } }.orEmpty(),
                     decor = c.optJSONArray("decor")?.let { a -> (0 until a.length()).map { i -> a.getJSONObject(i).let { d ->
                         IslandDecor(d.getInt("id"), d.getString("item"), d.getJSONArray("position").let { listOf(it.getInt(0), it.getInt(1)) },
-                            if (d.isNull("slot") || !d.has("slot")) null else d.getInt("slot"))
+                            if (d.isNull("slot") || !d.has("slot")) null else d.getInt("slot"), d.optString("name", ""))
                     } } }.orEmpty(),
-                    decorLimits = ints("decor_limits", listOf(6, 8, 10, 12, 14, 16)))
+                    decorLimits = ints("decor_limits", listOf(6, 8, 10, 12, 14, 16)),
+                    specialCosts = c.optJSONObject("special_costs")?.let { s -> s.keys().asSequence().associateWith { s.getInt(it) } } ?: SpecialDecor.defaultCosts,
+                    specialLimit = c.optInt("special_limit", SpecialDecor.LIMIT))
             } ?: IslandConstruction(supported = false),
         )
     }

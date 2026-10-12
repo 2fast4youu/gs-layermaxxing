@@ -67,26 +67,47 @@ internal object IslandGrid {
             (((fy - IslandPlans.LAND_CY) / s + IslandPlans.LAND_CY) * STEPS).roundToInt().coerceIn(0, STEPS),
         )
     }
-    fun landCell(i: Int, j: Int) = IslandPlans.inside(i / 20f, j / 20f, radius = .95f)
-    /** Every lattice point on land. The border rows/columns (0 and 20) are always water. */
-    val landCells: List<List<Int>> by lazy { buildList { for (i in 0..STEPS) for (j in 0..STEPS) if (landCell(i, j)) add(listOf(i, j)) } }
-    /** Is a finger (box fraction) over a land cell? A tap beside the island is ignored. */
-    fun onLand(fx: Float, fy: Float, land: Int): Boolean = unproject(fx, fy, land).let { landCell(it[0], it[1]) }
+    /*
+     * THE build grid (7.9.7), the same rule as the server's grid_buildable (server/app/main.py) and pinned
+     * in server/app/island_grid.json: a lattice point is buildable when it lies on the sand/meadow inside
+     * the painted rocks and shore. The lattice scales with the land like the painted terrain, so the area
+     * grows on screen with every stage; the edge margin is constant on screen (a bit wider in cells on a
+     * small island). 7.9.6 used the whole painted ellipse (r .95) for every stage: shore and water.
+     */
+    private const val GRID_CX = .5
+    private const val GRID_CY = .47
+    private const val GRID_RX = .37
+    private const val GRID_RY = .33
+    private const val GRID_EDGE = .035
+    private val landFactor = doubleArrayOf(.46, .58, .70, .82, .92, 1.0)
+    fun buildable(i: Int, j: Int, land: Int): Boolean {
+        if (i !in 0..STEPS || j !in 0..STEPS) return false
+        val r = 1.0 - GRID_EDGE / landFactor[land.coerceIn(0, 5)]
+        val u = (i.toDouble() / STEPS - GRID_CX) / GRID_RX
+        val v = (j.toDouble() / STEPS - GRID_CY) / GRID_RY
+        return u * u + v * v <= r * r
+    }
+    fun buildable(p: List<Int>, land: Int): Boolean = p.size == 2 && buildable(p[0], p[1], land)
+    private val cellsByLand = Array(6) { land -> lazy { buildList { for (i in 0..STEPS) for (j in 0..STEPS) if (buildable(i, j, land)) add(listOf(i, j)) } } }
+    /** Every buildable cell of a land stage = exactly what the grid draws and what the server accepts. */
+    fun buildableCells(land: Int): List<List<Int>> = cellsByLand[land.coerceIn(0, 5)].value
+    /** Is a finger (box fraction) over a buildable cell? A tap beside the land is ignored. */
+    fun onLand(fx: Float, fy: Float, land: Int): Boolean = unproject(fx, fy, land).let { buildable(it, land) }
     /**
      * Hard clamp of a finger (box fraction) to the grid: on land the snapped cell, in the water the land
      * cell nearest on screen (x distances count [IslandPlans.ASPECT] times as much as y). Never water.
      */
     fun nearestLandCell(fx: Float, fy: Float, land: Int): List<Int> {
         val cell = unproject(fx, fy, land)
-        if (landCell(cell[0], cell[1])) return cell
+        if (buildable(cell, land)) return cell
         val s = IslandPlans.constructionScale(land)
         val gx = ((fx - IslandPlans.LAND_CX) / s + IslandPlans.LAND_CX) * STEPS
         val gy = ((fy - IslandPlans.LAND_CY) / s + IslandPlans.LAND_CY) * STEPS
-        return landCells.minBy { (i, j) -> val dx = (i - gx) * IslandPlans.ASPECT; val dy = j - gy; dx * dx + dy * dy }
+        return buildableCells(land).minBy { (i, j) -> val dx = (i - gx) * IslandPlans.ASPECT; val dy = j - gy; dx * dx + dy * dy }
     }
-    /** A stored/started cell moved onto land if it is not (old data, a camera looking at the sea). */
+    /** A stored/started cell moved onto the land's grid if it is not (old data, a camera looking at the sea). */
     fun clampToLand(cell: List<Int>, land: Int): List<Int> =
-        if (cell.size == 2 && cell[0] in 0..STEPS && cell[1] in 0..STEPS && landCell(cell[0], cell[1])) cell
+        if (buildable(cell, land)) cell
         else project(listOf(cell.getOrElse(0) { 10 }.coerceIn(0, STEPS), cell.getOrElse(1) { 10 }.coerceIn(0, STEPS)), land).let { (x, y) -> nearestLandCell(x, y, land) }
 
     /** Diamond corners (top, right, bottom, left) of a footprint of [radius] cells around [cell], in box fractions. */
@@ -100,16 +121,27 @@ internal object IslandGrid {
     /** Footprint radius (in cells) that matches a sprite of [size] (fraction of the island width) on this land. */
     fun radiusFor(size: Float, land: Int): Int = (size / (2f * step(land))).roundToInt().coerceIn(1, 4)
 
-    /** One piece of the mesh: a lattice point and its diagonal neighbour, both on land. */
+    /** One piece of the mesh: a lattice point and its diagonal neighbour, both buildable. */
     class Edge(val i1: Int, val j1: Int, val i2: Int, val j2: Int)
-    /** All mesh segments on land. Independent of the land size: the grid is scaled by [project]. */
-    val edges: List<Edge> by lazy {
+    private val edgesByLand = Array(6) { land -> lazy {
         buildList {
-            for (i in 0..STEPS) for (j in 0..STEPS) if (landCell(i, j)) {
-                if (i < STEPS && j < STEPS && landCell(i + 1, j + 1)) add(Edge(i, j, i + 1, j + 1))
-                if (i < STEPS && j > 0 && landCell(i + 1, j - 1)) add(Edge(i, j, i + 1, j - 1))
+            for (i in 0..STEPS) for (j in 0..STEPS) if (buildable(i, j, land)) {
+                if (i < STEPS && j < STEPS && buildable(i + 1, j + 1, land)) add(Edge(i, j, i + 1, j + 1))
+                if (i < STEPS && j > 0 && buildable(i + 1, j - 1, land)) add(Edge(i, j, i + 1, j - 1))
             }
         }
+    } }
+    /** The diagonal mesh through the buildable cells of a land stage (scaled to the screen by [project]). */
+    fun edges(land: Int): List<Edge> = edgesByLand[land.coerceIn(0, 5)].value
+    /**
+     * One grid cell ("Kästchen") on screen: the diamond around a lattice point whose corners lie half a
+     * step towards its four neighbours. Neighbouring cells touch at their corners, so the cells and the
+     * mesh between them tile the land like a checkerboard of diamonds.
+     */
+    fun cell(cell: List<Int>, land: Int): List<Pair<Float, Float>> = footprintHalf(project(cell, land), land)
+    private fun footprintHalf(c: Pair<Float, Float>, land: Int): List<Pair<Float, Float>> {
+        val d = step(land) * .5f
+        return listOf(c.first to c.second - d, c.first + d to c.second, c.first to c.second + d, c.first - d to c.second)
     }
 }
 
@@ -150,28 +182,32 @@ internal val LocalIslandCamera = androidx.compose.runtime.staticCompositionLocal
 /** Something the edit surface can pick up: a standing building or a decoration object. */
 internal data class EditTarget(val target: IslandTarget, val cell: List<Int>, val x: Float, val y: Float, val size: Float)
 
-/** Soft mesh + held piece's footprint + selection footprint, drawn between terrain and sprites. */
+/**
+ * The build grid as cells ("Kästchen") + held piece's footprint + selection footprint, drawn between terrain
+ * and sprites. Only the buildable cells of the current land are drawn ([IslandGrid.buildableCells]: exactly
+ * the spots app and server accept); [blocked] cells (where the held piece may not stand because of other
+ * pieces) are darker.
+ */
 @Composable
 internal fun IslandGridUnderlay(
     land: Int, showGrid: Boolean, focus: List<Int>?, focusRadius: Int, valid: Boolean,
-    selection: Triple<Float, Float, Int>?,
+    selection: Triple<Float, Float, Int>?, blocked: Set<List<Int>> = emptySet(),
 ) {
     val fade by animateFloatAsState(if (showGrid) 1f else 0f, tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "grid-fade")
-    Canvas(Modifier.fillMaxSize().semantics { contentDescription = if (showGrid) "Isometrisches Raster" else "Boden" }) {
+    Canvas(Modifier.fillMaxSize().semantics { contentDescription = if (showGrid) "Baufeld mit Kästchen" else "Boden" }) {
         val w = size.width; val h = size.height
-        fun px(i: Int, j: Int) = Offset(IslandGrid.x(i, land) * w, IslandGrid.y(j, land) * h)
         if (fade > .01f) {
-            val dark = Color(0xFF24515A); val light = Color(0xFFFFF4D6)
-            val thin = 1.1.dp.toPx()
-            IslandGrid.edges.forEach { e ->
-                val near = focus?.let { f ->
-                    val d = abs((e.i1 + e.i2) / 2f - f[0]) + abs((e.j1 + e.j2) / 2f - f[1])
-                    (1f - d / 12f).coerceIn(0f, 1f)
-                } ?: 0f
-                val a = (.26f + .42f * near) * fade
-                val p1 = px(e.i1, e.j1); val p2 = px(e.i2, e.j2)
-                drawLine(dark.copy(alpha = a * .55f), p1, p2, thin * 2f)
-                drawLine(light.copy(alpha = a), p1, p2, thin)
+            val dark = Color(0xFF24515A); val light = Color(0xFFFFF4D6); val ink = Color(0xFF3B2A18)
+            val thin = 1.dp.toPx()
+            IslandGrid.buildableCells(land).forEach { c ->
+                val near = focus?.let { f -> (1f - (abs(c[0] - f[0]) + abs(c[1] - f[1])) / 10f).coerceIn(0f, 1f) } ?: 0f
+                val path = Path().apply {
+                    IslandGrid.cell(c, land).forEachIndexed { n, (fx, fy) -> if (n == 0) moveTo(fx * w, fy * h) else lineTo(fx * w, fy * h) }
+                    close()
+                }
+                if (c in blocked) drawPath(path, dark.copy(alpha = (.42f + .12f * near) * fade))
+                else drawPath(path, light.copy(alpha = (.20f + .22f * near) * fade))
+                drawPath(path, ink.copy(alpha = (.30f + .25f * near) * fade), style = Stroke(thin))
             }
         }
         fun diamond(cx: Float, cy: Float, radius: Int) = Path().apply {

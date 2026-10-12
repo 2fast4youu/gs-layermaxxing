@@ -25,7 +25,8 @@ def test_starter_has_no_house_or_completed_buildings(tmp_path):
         assert s['places'] == {} and s['plots'] == 0
         assert s['construction']['buildings'] == {} and s['construction']['land'] == 0
         assert c.put('/api/island/here',headers=auth(a),json={'plot':0}).status_code == 422
-        assert c.put('/api/island/places',headers=auth(a),json={'places':{'0':{'kind':'home'}}}).status_code == 403
+        # 7.9.7: building plots are gone (life places are special decoration); the legacy write is refused.
+        assert c.put('/api/island/places',headers=auth(a),json={'places':{'0':{'kind':'home'}}}).status_code == 410
         assert state(c,a)['places'] == {}
 
 
@@ -59,9 +60,11 @@ def test_creative_builds_free_on_the_real_island_and_keeps_everything(tmp_path):
         a,b,x=register(c,'A'),register(c,'B'),register(c,'X'); befriend(c,a,b)
         assert c.get(f"/api/island/{a['user_id']}?mode=creative",headers=auth(a)).status_code==403
         earn(c,a,b)
-        with m.db() as conn: conn.execute('UPDATE users SET created_at=? WHERE id=?',(m.now_ts()-86400,a['user_id']))
+        with m.db() as conn:
+            conn.execute('UPDATE users SET created_at=? WHERE id=?',(m.now_ts()-86400,a['user_id']))
+            # An existing life place from before 7.9.7 (the plot write itself is gone).
+            conn.execute("INSERT INTO island_places(user_id,plot,kind,name) VALUES (?,0,'home','Altbau')",(a['user_id'],))
         earned=action(c,a,state(c,a),action='expand',building=None).json()  # 40 real points spent
-        assert c.put('/api/island/places',headers=auth(a),json={'places':{'0':{'kind':'home','name':'Altbau'}}}).status_code==200
         with m.db() as conn:
             conn.execute('UPDATE users SET creative_entitled=1 WHERE id=?',(a['user_id'],))
             # A stale separate creative world from 7.9.3 stays stored but is never shown again.
@@ -71,6 +74,7 @@ def test_creative_builds_free_on_the_real_island_and_keeps_everything(tmp_path):
         assert creative['places']=={'0':{'kind':'home','name':'Altbau'}} and creative['plots']==3
         assert creative['construction']['land']==1 and creative['construction']['buildings']=={}
         assert creative['construction']['mode']=='creative'
+        assert [d['name'] for d in creative['construction']['decor'] if d['item']=='place_home']==['Altbau']
         assert action(c,a,creative,action="activate",building=None,mode="creative").status_code==200
         for _ in range(3):
             r=action(c,a,creative,mode='creative'); assert r.status_code==200,r.text; creative=r.json()
@@ -163,7 +167,7 @@ def test_decor_is_built_freely_and_old_slots_migrate_without_loss(tmp_path):
         with m.db() as conn: conn.execute('UPDATE users SET creative_entitled=1 WHERE id=?',(a['user_id'],))
         cr=state(c,a,'creative')
         assert c.post('/api/island/construction',headers=auth(a),json={'mode':'creative','action':'decor_place','item':'windmill','position':[0,0],'expected_revision':cr['construction']['revision']}).status_code==422
-        ok=c.post('/api/island/construction',headers=auth(a),json={'mode':'creative','action':'decor_place','item':'windmill','position':[13,15],'expected_revision':cr['construction']['revision']})
+        ok=c.post('/api/island/construction',headers=auth(a),json={'mode':'creative','action':'decor_place','item':'windmill','position':[13,13],'expected_revision':cr['construction']['revision']})
         assert ok.status_code==200,ok.text
 
 
@@ -171,15 +175,18 @@ def test_land_expansion_creates_buildable_plots_and_persists_restart(tmp_path):
     m=load_app(tmp_path)
     with TestClient(m.app) as c:
         a,b=register(c,'A'),register(c,'B'); befriend(c,a,b); earn(c,a,b)
-        with m.db() as conn: conn.execute('UPDATE users SET created_at=? WHERE id=?',(m.now_ts()-86400,a['user_id']))
+        with m.db() as conn:
+            conn.execute('UPDATE users SET created_at=? WHERE id=?',(m.now_ts()-86400,a['user_id']))
+            conn.execute("INSERT INTO island_places(user_id,plot,kind,name) VALUES (?,0,'home','Zuhause')",(a['user_id'],))
         expanded=action(c,a,state(c,a),action='expand',building=None).json()
         assert expanded['plots']==3 and expanded['construction']['available']==60
-        assert c.put('/api/island/places',headers=auth(a),json={'places':{'0':{'kind':'home','name':'Zuhause'}}}).status_code==200
         assert c.put('/api/island/here',headers=auth(a),json={'plot':0,'status':'privat'}).status_code==200
         assert 'here' not in c.get(f"/api/island/{a['user_id']}",headers=auth(b)).json()
         m.initialize_database()
-        assert action(c,a,expanded,building='HOUSE').status_code==422  # default placement cannot bypass collision
-        assert state(c,a)['construction']==expanded['construction']
+        migrated=state(c,a)['construction']
+        assert action(c,a,state(c,a),building='HOUSE').status_code==422  # default placement cannot bypass the (migrated) place
+        assert state(c,a)['construction']==migrated
+        assert {k:migrated[k] for k in ('buildings','land','spent')}=={k:expanded['construction'][k] for k in ('buildings','land','spent')}
         assert action(c,a,state(c,a),building='UNKNOWN').status_code==422
         assert state(c,a)['construction']['spent']==40
 
@@ -227,7 +234,7 @@ def test_layout_blocks_decor_and_places_in_both_directions(tmp_path):
         current=state(c,a)
         moved=c.post('/api/island/construction',headers=auth(a),json={'action':'move','building':'POST','position':[10,6],'expected_revision':current['construction']['revision']}).json()
         expanded=action(c,a,moved,action='expand',building=None).json()
-        assert c.put('/api/island/places',headers=auth(a),json={'places':{'0':{'kind':'home'}}}).status_code==422
+        assert c.put('/api/island/places',headers=auth(a),json={'places':{'0':{'kind':'home'}}}).status_code==410
         assert action(c,a,expanded,building='HOUSE').status_code==422  # default placement cannot bypass collision
         assert state(c,a)['construction']==expanded['construction']
 

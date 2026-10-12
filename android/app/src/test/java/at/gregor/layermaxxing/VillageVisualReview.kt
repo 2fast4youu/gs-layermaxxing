@@ -694,7 +694,7 @@ class VillageVisualReview {
     }) { EvolutionIsland(grown=true, nav=true, withLife=true, startingPoints=200) }
     @Test fun cocEditMode() = shot("coc-07-bearbeiten", gesture={
         rule.onAllNodesWithText("Bearbeiten")[0].performClick(); settle()
-        rule.onAllNodesWithContentDescription("Isometrisches Raster")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].assertExists()
     }) { EvolutionIsland(grown=true, nav=true, withLife=true, startingPoints=140) }
     @Test fun cocGridInvalidSpot() = shot("coc-08-raster-ungueltig", gesture={
         // 7.9.6: the sea is out of reach, an occupied cell is the impossible spot

@@ -317,7 +317,7 @@ internal fun IslandWorld(
         val start = h.construction.positions[b.name] ?: if (built) IslandLayout.defaultPosition(b)
             else (screenCentreCell(h.construction.land) ?: IslandLayout.defaultPosition(b)).let { IslandGrid.clampToLand(it, h.construction.land) }
         val pos = if (built) start
-            else IslandLayout.freeCell(start) { IslandLayout.valid(h.construction, b, it, IslandLayout.obstacles(h)) }
+            else IslandLayout.freeCell(start) { IslandLayout.valid(h.construction, b, it) }
         placement = IslandDraft(IslandTarget.Building(b), pos, lifted)
     }
     fun startDecor(item: String, existing: ApiClient.IslandDecor?, fromShop: Boolean = false) {
@@ -325,7 +325,7 @@ internal fun IslandWorld(
         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         selection = null; buildBar = false; shopDraft = fromShop
         val start = existing?.position ?: IslandGrid.clampToLand(screenCentreCell(h.construction.land) ?: listOf(10, 12), h.construction.land)
-        val pos = existing?.position ?: IslandLayout.freeCell(start) { IslandLayout.validDecor(h.construction, it, IslandLayout.obstacles(h)) }
+        val pos = existing?.position ?: IslandLayout.freeCell(start) { IslandLayout.validDecor(h.construction, it, special = SpecialDecor.isSpecial(item)) }
         placement = IslandDraft(IslandTarget.Decor(item, existing?.id), pos, existing != null)
     }
     fun confirmDraft() {
@@ -434,6 +434,9 @@ internal fun IslandWorld(
                         onDecorLongPress = { d -> startDecor(d.item, d) },
                         life = island?.let { IslandLayout.preview(it, placement) },
                         placementValid = placement?.let { d -> island?.let { IslandLayout.valid(it, d) } } ?: true,
+                        blockedCells = remember(island?.construction, placement?.target) {
+                            placement?.target?.let { t -> island?.let { IslandLayout.blockedCells(it, t) } }.orEmpty()
+                        },
                         showFigure = placement == null, editingPlots = editing && placement == null,
                         placement = placement, onPosition = { p -> if (!constructionBusy) placement = placement?.copy(position = p) },
                         placementBusy = constructionBusy, onConfirm = { confirmDraft() }, onCancel = { cancelDraft() },

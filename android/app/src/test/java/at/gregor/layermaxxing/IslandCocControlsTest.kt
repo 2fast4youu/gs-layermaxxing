@@ -152,11 +152,11 @@ class IslandCocControlsTest {
 
     @Test fun editModeShowsTheIsometricGridAndLeavingHidesIt() {
         start(Saved(), grown = true)
-        rule.onAllNodesWithContentDescription("Isometrisches Raster").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Baufeld mit Kästchen").assertCountEquals(0)
         rule.onAllNodesWithText("Bearbeiten")[0].performClick(); tick()
-        rule.onAllNodesWithContentDescription("Isometrisches Raster")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].assertExists()
         rule.onAllNodesWithText("Fertig")[0].performClick(); tick()
-        rule.onAllNodesWithContentDescription("Isometrisches Raster").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Baufeld mit Kästchen").assertCountEquals(0)
     }
 
     @Test fun touchingABuildingInEditModeLiftsItWithBubbles() {

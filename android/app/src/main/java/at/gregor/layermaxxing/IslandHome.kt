@@ -158,6 +158,8 @@ internal fun HubIsland(
     selected: IslandTarget? = null,
     onGround: (() -> Unit)? = null,
     selectionBar: (@Composable () -> Unit)? = null,
+    /** Grid cells where the held piece may not stand (darker). */
+    blockedCells: Set<List<Int>> = emptySet(),
 ) {
     val liftedBuilding = (placement?.target as? IslandTarget.Building)?.building
     val liftedDecor = (placement?.target as? IslandTarget.Decor)?.let { it.id ?: IslandLayout.DRAFT_DECOR_ID }
@@ -191,7 +193,8 @@ internal fun HubIsland(
                     piece?.let { Triple(it.x, it.y, IslandGrid.radiusFor(it.size, land)) }
                 }
                 IslandGridUnderlay(land, showGrid = editing || placement != null, focus = placement?.position,
-                    focusRadius = placement?.let { IslandGrid.radiusFor(sizeOf(it.target), land) } ?: 1, valid = placementValid, selection = outline)
+                    focusRadius = placement?.let { IslandGrid.radiusFor(sizeOf(it.target), land) } ?: 1, valid = placementValid, selection = outline,
+                    blocked = if (placement != null) blockedCells else emptySet())
             }
         },
     ) {

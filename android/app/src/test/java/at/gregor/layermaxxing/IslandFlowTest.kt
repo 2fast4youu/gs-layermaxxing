@@ -107,10 +107,10 @@ class IslandFlowTest {
         confirmNode.assertIsEnabled()
         confirmNode.performClick(); tick()
         val p = saved.state.positions["POST"]
-        assertTrue("saved at $p, must be a land cell", p != null && IslandGrid.landCell(p[0], p[1]))
+        assertTrue("saved at $p, must be a land cell", p != null && IslandGrid.buildable(p, saved.state.land))
         assertTrue("moved towards the finger, not left in the middle: $p", p!![0] < 11)
         // it stands on the shore: at least one neighbour cell is water
-        assertTrue("on the shore: $p", listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1).any { (dx, dy) -> !IslandGrid.landCell(p[0] + dx, p[1] + dy) })
+        assertTrue("on the shore: $p", listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1).any { (dx, dy) -> !IslandGrid.buildable(p[0] + dx, p[1] + dy, saved.state.land) })
     }
 
     @Test fun aTapInTheWaterDoesNotMoveThePreview() {

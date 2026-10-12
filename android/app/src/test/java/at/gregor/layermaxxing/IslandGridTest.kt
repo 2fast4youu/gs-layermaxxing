@@ -17,8 +17,8 @@ class IslandGridTest {
         (IslandGrid.x(e.i2, land) - IslandGrid.x(e.i1, land)) * aspect to (IslandGrid.y(e.j2, land) - IslandGrid.y(e.j1, land))
 
     @Test fun gridLinesAreDiagonalNotAxisParallel() {
-        assertTrue(IslandGrid.edges.size > 200)
-        for (land in 0..5) IslandGrid.edges.forEach { e ->
+        for (land in 0..5) assertTrue(IslandGrid.edges(land).size > 150)
+        for (land in 0..5) IslandGrid.edges(land).forEach { e ->
             val (dx, dy) = screen(e, land)
             assertTrue("no vertical line", abs(dx) > 1e-4f)
             assertTrue("no horizontal line", abs(dy) > 1e-4f)
@@ -28,16 +28,16 @@ class IslandGridTest {
     }
 
     @Test fun gridLinesRunInBothDiagonalDirections() {
-        val down = IslandGrid.edges.count { it.j2 > it.j1 }; val up = IslandGrid.edges.count { it.j2 < it.j1 }
+        val down = IslandGrid.edges(5).count { it.j2 > it.j1 }; val up = IslandGrid.edges(5).count { it.j2 < it.j1 }
         assertTrue(down > 100 && up > 100)
     }
 
     @Test fun gridOnlyCoversLand() {
-        IslandGrid.edges.forEach { e ->
-            assertTrue(IslandPlans.inside(e.i1 / 20f, e.j1 / 20f, radius = .95f))
-            assertTrue(IslandPlans.inside(e.i2 / 20f, e.j2 / 20f, radius = .95f))
+        for (land in 0..5) IslandGrid.edges(land).forEach { e ->
+            assertTrue(IslandGrid.buildable(e.i1, e.j1, land))
+            assertTrue(IslandGrid.buildable(e.i2, e.j2, land))
         }
-        assertFalse(IslandGrid.edges.any { it.i1 == 0 && it.j1 == 0 })
+        assertFalse(IslandGrid.edges(5).any { it.i1 == 0 && it.j1 == 0 })
     }
 
     @Test fun projectionIsTheOneTheIslandRendersWith() {

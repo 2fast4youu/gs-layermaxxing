@@ -13,42 +13,46 @@ internal sealed interface IslandTarget {
 internal data class IslandDraft(val target: IslandTarget, val position: List<Int>, val lifted: Boolean = false)
 
 /**
- * Grid rules mirrored from the server (server/app/main.py): building clearance 3, building/place
- * to decoration 2.4, decoration to decoration 1.5 cells, all divided by the land scale.
+ * Grid rules mirrored from the server (server/app/main.py placement_blocked): big pieces (function
+ * buildings and special decoration) keep 3 cells to each other, 2.4 to ordinary decoration, decoration
+ * keeps 1.5 to decoration, all divided by the land scale. Every spot must be a cell of the land's build
+ * grid ([IslandGrid.buildable]).
  */
 internal object IslandLayout {
     /** The drag/snap/preview projection lives in [IslandGrid]; this object holds the rules mirrored from the server. */
     const val DECOR_BUILDING_GAP = 2.4f
     const val DECOR_DECOR_GAP = 1.5f
+    const val BUILDING_GAP = 3f
     fun defaultPosition(b: IsleBuilding): List<Int> = IslandPlans.homeBuildings.getValue(b).let { listOf((it.x*20).roundToInt(),(it.y*20).roundToInt()) }
-    fun separation(c: ApiClient.IslandConstruction) = 3f / IslandPlans.constructionScale(c.land)
-    /** Life places (plots) are part of the same island in both modes. */
-    fun obstacles(h: ApiClient.HomeIsland): List<List<Int>> =
-        h.places.keys.mapNotNull { LifePlaces.plots.getOrNull(it) }.map { (x,y) -> listOf((x*20).roundToInt(),(y*20).roundToInt()) }
-    private fun d2(p: List<Int>, q: List<Int>) = ((q[0]-p[0])*(q[0]-p[0])+(q[1]-p[1])*(q[1]-p[1])).toFloat()
-    private fun onIsland(p: List<Int>) = p.size == 2 && p[0] in 0..20 && p[1] in 0..20 && IslandPlans.inside(p[0]/20f,p[1]/20f,radius=.95f)
+    fun separation(c: ApiClient.IslandConstruction) = BUILDING_GAP / IslandPlans.constructionScale(c.land)
+    private fun d2(p: List<Int>, q: List<Int>) = ((q[0]-p[0])*(q[0]-p[0])+(q[1]-p[1])*(q[1]-p[1])).toDouble()
     fun buildingPositions(c: ApiClient.IslandConstruction, except: IsleBuilding? = null) =
         IsleBuilding.entries.filter { it != except && (c.buildings[it.name] ?: 0) > 0 }.map { c.positions[it.name] ?: defaultPosition(it) }
-    fun valid(c: ApiClient.IslandConstruction, b: IsleBuilding, p: List<Int>, obstacles: List<List<Int>> = emptyList()): Boolean {
-        if (!onIsland(p)) return false
-        val clearance=separation(c)*separation(c)
-        if(obstacles.any { q -> d2(p,q) < clearance }) return false
-        val gap = DECOR_BUILDING_GAP / IslandPlans.constructionScale(c.land)
-        if(c.decor.any { d2(p,it.position) < gap*gap }) return false
-        return buildingPositions(c, b).all { d2(p,it) >= clearance }
+    /** Does something else stand too close? [big] = the piece is a building or special decoration. */
+    fun blocked(c: ApiClient.IslandConstruction, p: List<Int>, big: Boolean, ignoreBuilding: IsleBuilding? = null, ignoreDecor: Int? = null): Boolean {
+        val f = IslandPlans.constructionScale(c.land).toDouble()
+        fun sq(gap: Float) = (gap / f) * (gap / f)
+        val toBuilding = if (big) sq(BUILDING_GAP) else sq(DECOR_BUILDING_GAP)
+        if (buildingPositions(c, ignoreBuilding).any { d2(p, it) < toBuilding }) return true
+        return c.decor.any { d ->
+            d.id != ignoreDecor && d2(p, d.position) < when {
+                SpecialDecor.isSpecial(d.item) -> toBuilding
+                big -> sq(DECOR_BUILDING_GAP)
+                else -> sq(DECOR_DECOR_GAP)
+            }
+        }
     }
-    fun validDecor(c: ApiClient.IslandConstruction, p: List<Int>, obstacles: List<List<Int>> = emptyList(), ignoreId: Int? = null): Boolean {
-        if (!onIsland(p)) return false
-        val s = IslandPlans.constructionScale(c.land)
-        val gb = DECOR_BUILDING_GAP / s; val gd = DECOR_DECOR_GAP / s
-        if (buildingPositions(c).any { d2(p,it) < gb*gb }) return false
-        if (obstacles.any { d2(p,it) < gb*gb }) return false
-        return c.decor.none { it.id != ignoreId && d2(p,it.position) < gd*gd }
-    }
+    fun valid(c: ApiClient.IslandConstruction, b: IsleBuilding, p: List<Int>): Boolean =
+        IslandGrid.buildable(p, c.land) && !blocked(c, p, big = true, ignoreBuilding = b)
+    fun validDecor(c: ApiClient.IslandConstruction, p: List<Int>, ignoreId: Int? = null, special: Boolean = false): Boolean =
+        IslandGrid.buildable(p, c.land) && !blocked(c, p, big = special, ignoreDecor = ignoreId)
     fun valid(h: ApiClient.HomeIsland, draft: IslandDraft): Boolean = when (val t = draft.target) {
-        is IslandTarget.Building -> valid(h.construction, t.building, draft.position, obstacles(h))
-        is IslandTarget.Decor -> validDecor(h.construction, draft.position, obstacles(h), t.id)
+        is IslandTarget.Building -> valid(h.construction, t.building, draft.position)
+        is IslandTarget.Decor -> validDecor(h.construction, draft.position, t.id, SpecialDecor.isSpecial(t.item))
     }
+    /** Buildable cells where the held piece may NOT stand (drawn darker in the grid). */
+    fun blockedCells(h: ApiClient.HomeIsland, target: IslandTarget): Set<List<Int>> =
+        IslandGrid.buildableCells(h.construction.land).filterTo(HashSet()) { !valid(h, IslandDraft(target, it)) }
     /** Nearest free cell to [start] (ring search), so a new object never starts on a red square. */
     fun freeCell(start: List<Int>, ok: (List<Int>) -> Boolean): List<Int> {
         if (ok(start)) return start
