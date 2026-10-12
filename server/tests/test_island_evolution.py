@@ -254,5 +254,8 @@ def test_creative_shrink_never_saves_overlapping_layout_or_loses_buildings(tmp_p
         assert action(c,a,current,action='shrink',building=None,mode='creative').status_code==422
         assert state(c,a,'creative')['construction']==current['construction']
         assert current['construction']['buildings']=={'POST':1,'HOUSE':1}
-        removed=action(c,a,current,action='downgrade',building='POST',mode='creative').json()
+        # 7.9.9: stage 1 -> the free stage-0 piece -> gone; only then is there room to shrink.
+        starter=action(c,a,current,action='downgrade',building='POST',mode='creative').json()
+        assert starter['construction']['starters']==['POST']
+        removed=action(c,a,starter,action='downgrade',building='POST',mode='creative').json()
         assert action(c,a,removed,action='shrink',building=None,mode='creative').status_code==200
