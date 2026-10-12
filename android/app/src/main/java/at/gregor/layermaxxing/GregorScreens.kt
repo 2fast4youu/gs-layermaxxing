@@ -214,8 +214,9 @@ fun GlossaryScreen(
         )
     }
 
+    // Opaque parchment: inside the library the page theme makes "surface" transparent (dialog was see-through).
     if (adding) AlertDialog(
-        onDismissRequest = { adding = false },
+        onDismissRequest = { adding = false }, containerColor = GlossaryDialogPaper,
         title = { Text("Neues Wort") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -259,6 +260,8 @@ fun GlossaryScreen(
     }
 }
 
+internal val GlossaryDialogPaper = androidx.compose.ui.graphics.Color(0xFFFFF9EC)
+
 /** 7.9.9: category of a new word (Begriffe preselected by the caller). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -274,7 +277,7 @@ internal fun GlossaryCategoryPicker(selected: String, onSelect: (String) -> Unit
 @Composable
 private fun ExplanationDialog(title: String, value: String, onValue: (String) -> Unit, busy: Boolean, onDismiss: () -> Unit, onSave: () -> Unit) =
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = onDismiss, containerColor = GlossaryDialogPaper,
         title = { Text(title) },
         text = { OutlinedTextField(value, { onValue(it.take(2000)) }, Modifier.fillMaxWidth().heightIn(min = 120.dp), label = { Text("Erklärung") }) },
         confirmButton = { Button(enabled = value.isNotBlank() && !busy, onClick = onSave) { Text("Speichern") } },
