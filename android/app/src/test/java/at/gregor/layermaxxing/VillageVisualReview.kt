@@ -886,7 +886,6 @@ class VillageVisualReview {
         rule.onAllNodesWithContentDescription("Kategorie Witze")[0].performClick(); settle()
     }) { VillageTheme(true) { LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossarySeed, addTerm = { _, _, _ -> }) }, level = 2) } }
     @Test fun start69GlossaryNewWord() = shot("start69-12-woerterbuch-neues-wort", captureDialogs=true, gesture={
-        rule.onAllNodesWithText("Wort hinzufügen")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); settle()
-        rule.onAllNodesWithContentDescription("Neue Kategorie Witze")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Wort hinzufügen")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); settle()
     }) { VillageTheme(true) { LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossarySeed, addTerm = { _, _, _ -> }) }, level = 3) } }
 }

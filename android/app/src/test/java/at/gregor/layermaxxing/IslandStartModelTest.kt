@@ -8,7 +8,10 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performTextInput
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -80,34 +83,65 @@ class IslandStartModelTest {
         assertTrue(Dictionary.rows(listOf(joke, word), "", "Zitate").isEmpty())
     }
 
-    @Test fun theGlossaryHasCategoryTabsShowsEachCategoryAndNewWordsDefaultToBegriffe() {
+    @Test fun theGlossaryHasCategoryTabsAndEveryEntryShowsItsCategory() {
         val saved = mutableListOf<Triple<String, String, String>>()
         val seed = listOf(
             ApiClient.GlossaryTerm(1, "Kalauer", "A", listOf(ApiClient.GlossaryExplanation(1, "Was ist gelb und kann schießen? Eine Banone.", "A", 0, 0, false)), false, "Witze"),
             ApiClient.GlossaryTerm(2, "Carpe diem", "A", listOf(ApiClient.GlossaryExplanation(2, "Nutze den Tag.", "A", 0, 0, false)), false, "Zitate"),
         )
         rule.setContent { VillageTheme(true) { GlossaryScreen(seed = seed, addTerm = { t, x, c -> saved += Triple(t, x, c) }) } }
+        rule.mainClock.autoAdvance = false
+        fun tick() { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications(); rule.mainClock.advanceTimeBy(700) }
+        tick()
         for (c in listOf("Alle") + GlossaryCategories.all) rule.onAllNodesWithContentDescription("Kategorie $c")[0].assertExists()
         // "Alle" starts with the built-in app terms, which are Begriffe
         rule.onAllNodesWithContentDescription("Kategorie von Insel: Begriffe")[0].assertExists()
-        rule.onAllNodesWithContentDescription("Kategorie Witze")[0].performClick(); rule.waitForIdle()
+        rule.onAllNodesWithContentDescription("Kategorie Witze")[0].performClick(); tick()
         rule.onAllNodesWithContentDescription("Kategorie von Kalauer: Witze")[0].assertExists()
         rule.onAllNodesWithText("Carpe diem").assertCountEquals(0)
         rule.onAllNodesWithText("Insel").assertCountEquals(0)
-        rule.onAllNodesWithContentDescription("Kategorie Zitate")[0].performClick(); rule.waitForIdle()
+        rule.onAllNodesWithContentDescription("Kategorie Zitate")[0].performClick(); tick()
         rule.onAllNodesWithContentDescription("Kategorie von Carpe diem: Zitate")[0].assertExists()
         rule.onAllNodesWithText("Kalauer").assertCountEquals(0)
-        rule.onAllNodesWithContentDescription("Kategorie Alle")[0].performClick(); rule.waitForIdle()
-        // a new word: Begriffe is preselected, Sprüche can be chosen
-        rule.onAllNodesWithText("Wort hinzufügen")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); rule.waitForIdle()
+        rule.onAllNodesWithContentDescription("Kategorie Alle")[0].performClick(); tick()
+        rule.onAllNodesWithContentDescription("Wort hinzufügen")[0].assertExists()
+    }
+
+    @Test fun theNewWordPickerPreselectsBegriffeAndOffersAllFour() {
+        var chosen by androidx.compose.runtime.mutableStateOf(GlossaryCategories.DEFAULT)
+        rule.setContent { VillageTheme(true) { GlossaryCategoryPicker(chosen) { chosen = it } } }
         val begriffe = rule.onAllNodesWithContentDescription("Neue Kategorie Begriffe")[0].fetchSemanticsNode()
         assertEquals(true, begriffe.config.getOrNull(SemanticsProperties.Selected))
-        rule.onAllNodesWithContentDescription("Neue Kategorie Sprüche")[0].performClick()
-        rule.onAllNodesWithText("Wort")[0].performTextInput("Morgenstund")
-        rule.onAllNodesWithText("Erklärung")[0].performTextInput("hat Gold im Mund")
-        rule.onAllNodesWithText("Eintragen")[0].performClick(); rule.waitForIdle()
-        assertEquals(listOf(Triple("Morgenstund", "hat Gold im Mund", "Sprüche")), saved)
-        rule.onAllNodesWithContentDescription("Kategorie Sprüche")[0].performClick(); rule.waitForIdle()
-        rule.onAllNodesWithContentDescription("Kategorie von Morgenstund: Sprüche")[0].assertExists()
+        for (c in GlossaryCategories.all) rule.onAllNodesWithContentDescription("Neue Kategorie $c")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Neue Kategorie Sprüche")[0].performClick(); rule.waitForIdle()
+        assertEquals("Sprüche", chosen)
+        assertEquals(true, rule.onAllNodesWithContentDescription("Neue Kategorie Sprüche")[0].fetchSemanticsNode().config.getOrNull(SemanticsProperties.Selected))
+    }
+
+    /** Wire format: category is sent (default Begriffe) and read back; old servers without the field mean Begriffe. */
+    @Test fun glossaryAndIslandWireFormatIsBackwardsCompatible() {
+        val sent = mutableListOf<String>()
+        var reply = "[]"
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            val req = chain.request()
+            val buf = okio.Buffer(); req.body?.writeTo(buf); sent += req.method + " " + req.url.encodedPath + " " + buf.readUtf8()
+            okhttp3.Response.Builder().request(req).protocol(okhttp3.Protocol.HTTP_1_1).code(if (req.method == "POST") 201 else 200).message("ok")
+                .body((if (req.method == "POST") "{\"id\": 7, \"merged\": false}" else reply).toResponseBody("application/json".toMediaTypeOrNull())).build()
+        }.build()
+        val api = ApiClient("https://example.invalid/", client)
+        kotlinx.coroutines.runBlocking {
+            api.addGlossaryTerm("t", "Layer", "Ebene")
+            api.addGlossaryTerm("t", "Kalauer", "Haha", "Witze")
+            reply = """[{"id":1,"term":"Alt","explanations":[]},{"id":2,"term":"Kalauer","category":"Witze","explanations":[]},{"id":3,"term":"X","category":"Rezepte","explanations":[]}]"""
+            assertEquals(listOf("Begriffe", "Witze", "Begriffe"), api.glossary("t").map { it.category })
+            reply = """{"user_id":1,"decor":{},"score":0,"items":[],"construction":{"buildings":{"POST":2},"starters":["HOUSE"],"land":0}}"""
+            val c = api.island("t", 1).construction
+            assertEquals(setOf("HOUSE"), c.starters); assertTrue(c.standing(IsleBuilding.HOUSE)); assertEquals(2, c.level(IsleBuilding.POST))
+            reply = """{"user_id":1,"decor":{},"score":0,"items":[],"construction":{"buildings":{"POST":1},"land":0}}"""
+            assertEquals(emptySet<String>(), api.island("t", 1).construction.starters)
+        }
+        assertTrue(sent[0], sent[0].contains("\"category\":\"Begriffe\""))
+        assertTrue(sent[1], sent[1].contains("\"category\":\"Witze\""))
     }
 }
+

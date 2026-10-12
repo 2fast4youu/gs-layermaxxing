@@ -149,7 +149,7 @@ fun GlossaryScreen(
             if (rows.isEmpty()) item {
                 Column(Modifier.padding(vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("„${query.trim()}“ steht noch nicht drin.", fontWeight = FontWeight.Bold)
-                    if (sharedAvailable) Button(onClick = { newTerm = query.trim(); newText = ""; adding = true }) { Text("Als neues Wort eintragen") }
+                    if (sharedAvailable) Button(onClick = { newTerm = query.trim(); newText = ""; newCategory = GlossaryCategories.DEFAULT; adding = true }) { Text("Als neues Wort eintragen") }
                 }
             }
             items(rows, key = { it.key }) { row ->
@@ -176,7 +176,7 @@ fun GlossaryScreen(
                             Text(entry.meaning)
                             if (open) Text(entry.action, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                             // Built-in words are editable too: the first own explanation turns them into a shared entry.
-                            if (open && sharedAvailable) OutlinedButton(onClick = { newTerm = entry.term; newText = ""; adding = true }) { AppIcon(R.drawable.ico_add, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Eigene Erklärung") }
+                            if (open && sharedAvailable) OutlinedButton(onClick = { newTerm = entry.term; newText = ""; newCategory = GlossaryCategories.DEFAULT; adding = true }) { AppIcon(R.drawable.ico_add, null, size = 18.dp, modifier = Modifier.padding(end = 6.dp)); Text("Eigene Erklärung") }
                         }
                         row.shared?.let { term ->
                             val shown = if (open) term.explanations else term.explanations.take(1)
@@ -209,7 +209,7 @@ fun GlossaryScreen(
         }
         if (sharedAvailable) ExtendedFloatingActionButton(
             onClick = { newTerm = query.trim(); newText = ""; newCategory = GlossaryCategories.DEFAULT; adding = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp).semantics { contentDescription = "Wort hinzufügen" },
             text = { Text("Wort hinzufügen") }, icon = { AppIcon(R.drawable.ico_add, null, size = 20.dp) },
         )
     }
@@ -221,12 +221,7 @@ fun GlossaryScreen(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(newTerm, { newTerm = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("Wort") }, singleLine = true)
                 Text("Kategorie", style = MaterialTheme.typography.labelMedium)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    GlossaryCategories.all.forEach { c ->
-                        FilterChip(selected = newCategory == c, onClick = { newCategory = c }, label = { Text(c) },
-                            modifier = Modifier.semantics { contentDescription = "Neue Kategorie " + c })
-                    }
-                }
+                GlossaryCategoryPicker(newCategory) { newCategory = it }
                 OutlinedTextField(newText, { newText = it.take(2000) }, Modifier.fillMaxWidth().heightIn(min = 110.dp), label = { Text("Erklärung") })
                 Text(
                     "Für alle sichtbar. Gibt es das Wort schon, wird deine Erklärung dort ergänzt.",
@@ -260,6 +255,18 @@ fun GlossaryScreen(
         ExplanationDialog("Erklärung ändern", draft, { draft = it }, busy, onDismiss = { editing = null }) {
             val x = draft; editing = null
             run { api!!.editGlossaryExplanation(token!!, ex.id, x) }
+        }
+    }
+}
+
+/** 7.9.9: category of a new word (Begriffe preselected by the caller). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun GlossaryCategoryPicker(selected: String, onSelect: (String) -> Unit) {
+    FlowRow(Modifier.fillMaxWidth().semantics { contentDescription = "Kategorie wählen" }, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        GlossaryCategories.all.forEach { c ->
+            FilterChip(selected = selected == c, onClick = { onSelect(c) }, label = { Text(c) },
+                modifier = Modifier.semantics { contentDescription = "Neue Kategorie " + c })
         }
     }
 }
