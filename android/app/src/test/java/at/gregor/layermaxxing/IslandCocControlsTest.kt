@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
@@ -64,6 +65,7 @@ class IslandCocControlsTest {
                 val b = req.building
                 state = when (req.action) {
                     "upgrade" -> c.copy(buildings = c.buildings + (b!! to ((c.buildings[b] ?: 0) + 1)), positions = req.position?.let { c.positions + (b to it) } ?: c.positions, revision = c.revision + 1)
+                    "build" -> c.copy(starters = c.starters + b!!, positions = c.positions + (b to req.position!!), revision = c.revision + 1)
                     "move" -> c.copy(positions = c.positions + (b!! to req.position!!), revision = c.revision + 1)
                     else -> c
                 }.copy(mode = state.mode)
@@ -143,18 +145,21 @@ class IslandCocControlsTest {
     @Test fun infoBarShowsTheActionsAndATapOnEmptyGroundClosesIt() {
         start(Saved(), grown = true)
         rule.onAllNodesWithContentDescription("Post").filter(hasClickAction())[0].performClick(); tick()
-        for (label in listOf("Öffnen", "Info", "Verschieben", "Abreißen")) rule.onAllNodesWithText(label)[0].assertExists()
+        for (label in listOf("Öffnen", "Info", "Abreißen")) rule.onAllNodesWithText(label)[0].assertExists()
+        // 7.9.9: moving is the long press only
+        rule.onAllNodesWithText("Verschieben").assertCountEquals(0)
         // 7.9.6: the actions hang under the centred piece, so tap free ground at the upper left instead of the bottom middle
         rule.onRoot().performTouchInput { click(Offset(width * .08f, height * .3f)) }
         tick(800)
-        rule.onAllNodesWithText("Verschieben").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Gebäudeaktionen").assertCountEquals(0)
     }
 
     @Test fun movingFromTheActionsShowsTheGridAndCancelHidesIt() {
         start(Saved(), grown = true)
         rule.onAllNodesWithContentDescription("Baufeld mit Kästchen").assertCountEquals(0)
         rule.onAllNodesWithContentDescription("Post").filter(hasClickAction())[0].performClick(); tick()
-        rule.onAllNodesWithText("Verschieben")[0].performClick(); tick()
+        // 7.9.9: "Verschieben" left the actions; the long press lifts the piece
+        rule.onAllNodesWithContentDescription("Post").filter(hasClickAction())[0].performTouchInput { longClick() }; tick()
         rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].assertExists()
         rule.onAllNodesWithContentDescription("Bauplatzraster")[0].assertExists()
         confirmNode.assertExists(); cancelNode.assertExists()

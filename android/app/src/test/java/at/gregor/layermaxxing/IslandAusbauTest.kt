@@ -57,6 +57,7 @@ class IslandAusbauTest {
                 sent.requests += req
                 state = when (req.action) {
                     "upgrade" -> cc.copy(buildings = cc.buildings + (req.building!! to ((cc.buildings[req.building] ?: 0) + 1)))
+                    "build" -> cc.copy(starters = cc.starters + req.building!!, positions = cc.positions + (req.building to req.position!!))
                     else -> cc.copy(decor = cc.decor + ApiClient.IslandDecor(300 + sent.requests.size, req.item!!, req.position!!))
                 }.copy(revision = cc.revision + 1)
                 ApiClient.HomeIsland(1, emptyMap(), 500, items, construction = state)
@@ -99,7 +100,8 @@ class IslandAusbauTest {
         rule.onAllNodesWithText("Besondere Deko 3/3")[0].assertExists()
         val card = rule.onAllNodesWithContentDescription("Besondere Deko Hütte platzieren")[0]
         card.assertExists()
-        assertEquals("nicht verfügbar", card.fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+        // 7.9.9: greyed with the short reason "3/3"
+        assertEquals("nicht verfügbar: 3/3", card.fetchSemanticsNode().config[SemanticsProperties.StateDescription])
         card.performClick(); tick()
         rule.onAllNodesWithContentDescription("Bauplatzraster").assertCountEquals(0)
         assertTrue(sent.errors.any { "3" in it }); assertTrue(sent.requests.isEmpty())
@@ -124,7 +126,7 @@ class IslandAusbauTest {
         val starts = BuildShelf.starts(counts)
         fun scrollToSection(section: Int) {
             val range = strip.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
-            val dp = (0 until starts[section]).sumOf { if (it in starts) 66 else 104 }
+            val dp = starts[section] * BuildShelf.ITEM_DP  // 7.9.9: cards only, no heading items
             val px = with(rule.density) { dp.dp.toPx() }
             strip.performSemanticsAction(SemanticsActions.ScrollBy) { it(px - range.value(), 0f) }; tick()
         }
@@ -141,24 +143,25 @@ class IslandAusbauTest {
         rule.onAllNodesWithContentDescription("Post platzieren")[0].assertExists()
     }
 
-    @Test fun sectionStartsAccountForTheirHeadings() {
-        assertEquals(listOf(0, 7, 18, 27), BuildShelf.starts(listOf(6, 10, 8, 1)))
-        assertEquals(0, BuildShelf.sectionAt(6, listOf(0, 7, 18, 27)))
-        assertEquals(1, BuildShelf.sectionAt(7, listOf(0, 7, 18, 27)))
-        assertEquals(3, BuildShelf.sectionAt(28, listOf(0, 7, 18, 27)))
+    @Test fun sectionStartsAreCardsOnlyWithoutHeadings() {
+        // 7.9.9: no heading items in the strip any more; sections start right at their first card.
+        assertEquals(listOf(0, 6, 16, 24), BuildShelf.starts(listOf(6, 10, 8, 1)))
+        assertEquals(0, BuildShelf.sectionAt(5, listOf(0, 6, 16, 24)))
+        assertEquals(1, BuildShelf.sectionAt(6, listOf(0, 6, 16, 24)))
+        assertEquals(3, BuildShelf.sectionAt(24, listOf(0, 6, 16, 24)))
     }
 
     @Test fun theBuildButtonIsTealAndBrassNotYellow() {
         start(ApiClient.IslandConstruction(mode = "normal", available = 500, ageDays = 30, land = 2))
         rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].assertExists()
-        rule.onAllNodesWithContentDescription("Preis: ab 25 P")[0].assertExists()
+        // 7.9.9: missing functions are built for free at stage 0
+        rule.onAllNodesWithContentDescription("Preis: gratis")[0].assertExists()
     }
-    @Test fun overviewIsOnlyInTheMenuAndItsEntryReallyNavigates() {
+    @Test fun overviewIsTheBackPlateAndItReallyNavigates() {
+        // 7.9.9: the overview left the menu; it is the painted back plate at the top left.
         start(ApiClient.IslandConstruction(land = 2))
-        rule.onAllNodesWithText("Übersicht").assertCountEquals(0)
         rule.onAllNodesWithContentDescription("Zurück").assertCountEquals(0)
-        rule.onAllNodesWithText("Menü")[0].performClick(); tick(900)
-        rule.onAllNodesWithText("Übersicht")[0].performClick(); tick(900)
+        rule.onAllNodesWithContentDescription("Zurück zur Übersicht")[0].performClick(); tick(900)
         rule.onAllNodesWithText("Übersicht · alle Inseln")[0].assertExists()
         rule.onAllNodesWithContentDescription("Ansicht: Meine Insel").assertCountEquals(0)
         rule.onAllNodesWithText("Meine Insel").assertCountEquals(0)
@@ -180,7 +183,9 @@ class IslandAusbauTest {
         }
         rule.onAllNodesWithContentDescription("Post öffnen")[0].performClick(); tick()
         rule.onAllNodesWithText("Inselmenü").assertCountEquals(0)
-        rule.onAllNodesWithText("Postamt")[0].assertExists()
+        // 7.9.9: the place shows the stage it has (stage 0 = Briefbaum), not the finished Postamt
+        rule.onAllNodesWithContentDescription("Ort: Briefbaum")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Ort: Postamt").assertCountEquals(0)
     }
 
     @Test fun upgradePreviewHasLargePaintedBeforeAfterWithoutOpenOrMoveAndUpdatesTheStage() {

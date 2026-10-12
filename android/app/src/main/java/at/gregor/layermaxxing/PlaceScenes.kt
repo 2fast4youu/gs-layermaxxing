@@ -259,7 +259,7 @@ internal fun PostOffice(
     var choosing by rememberSaveable { mutableStateOf(false) }
     PlaceStage(IsleBuilding.POST, onClose, level, action = "Brief schreiben" to { choosing = true }) { map ->
         val selected = fach?.let { id -> pals.firstOrNull { it.id == id } }
-        val wall = Modifier.padding(top = 96.dp, bottom = 92.dp).fillMaxSize()
+        val wall = Modifier.padding(top = 112.dp, bottom = 92.dp).fillMaxSize()
         if (selected == null) {
             if (pals.isEmpty()) Box(wall, Alignment.Center) {
                 if (level == 0) Parchment("Noch nichts am Briefbaum", "Für jeden Freund hängt hier bald ein eigener Umschlag am Stamm.")

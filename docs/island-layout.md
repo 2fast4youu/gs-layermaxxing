@@ -96,3 +96,7 @@ chrome + hint, creative chip and menu switch, full labels), `IslandGridTest` (pr
 `IslandCocControlsTest` (✓/✗ at the building, info bar and tap on ground, edit mode, drag round trip,
 shop button, camera keeps the selection above the bar) and VillageVisualReview `coc-*`. These are JVM
 simulations, not evidence of device animation, haptics or multitouch.
+
+## 7.9.9-start
+
+The island menu has no bottom pills any more (no Übersicht/Bauen/Einstellungen); the own island has a painted brass back plate "← Übersicht" at the top left (≥48 dp) and Android back leads to the overview too. A tapped building offers Öffnen, Ausbauen (price) and Abreißen; moving is the long press only. The build strip holds cards only (tabs above still follow the scroll); what cannot be placed now is greyscale with a short reason. Details: docs/insel-ausbau.md.

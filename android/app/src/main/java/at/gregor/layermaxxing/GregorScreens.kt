@@ -168,7 +168,7 @@ fun GlossaryScreen(
                                     .padding(horizontal = 8.dp, vertical = 2.dp).semantics { contentDescription = "Kategorie von " + row.term + ": " + category },
                             )
                             Text(
-                                if (row.builtIn != null) "App" else "${row.shared!!.explanations.size} Erklärungen",
+                                if (row.builtIn != null) "App" else row.shared!!.explanations.size.let { n -> if (n == 1) "1 Erklärung" else "$n Erklärungen" },
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
                             )
                         }

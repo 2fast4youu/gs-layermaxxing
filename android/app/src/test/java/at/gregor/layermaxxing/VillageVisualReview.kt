@@ -12,6 +12,8 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.performSemanticsAction
 
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.filter
@@ -465,6 +467,7 @@ class VillageVisualReview {
                 val b=req.building
                 state=when(req.action) {
                     "upgrade"->c.copy(buildings=c.buildings+(b!! to ((c.buildings[b]?:0)+1)),positions=req.position?.let { c.positions+(b to it) } ?: c.positions,revision=c.revision+1)
+                    "build"->c.copy(starters=c.starters+b!!,positions=c.positions+(b to req.position!!),revision=c.revision+1)
                     "move"->c.copy(positions=c.positions+(b!! to req.position!!),revision=c.revision+1)
                     "expand"->c.copy(land=c.land+1,revision=c.revision+1)
                     "downgrade"->c.copy(buildings=c.buildings+(b!! to ((c.buildings[b]?:0)-1)),revision=c.revision+1)
@@ -509,7 +512,7 @@ class VillageVisualReview {
     @Test fun islandMoveInteraction() = shot("68-gebaeude-verschieben",gesture={
         rule.onAllNodesWithContentDescription("Post")[0].performClick()
         rule.mainClock.advanceTimeBy(600)
-        rule.onAllNodesWithText("Verschieben")[0].performClick()
+        rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performTouchInput { longClick() }
         rule.mainClock.advanceTimeBy(600)
         rule.onAllNodesWithContentDescription("Bauplatzraster")[0].performTouchInput {
             swipe(androidx.compose.ui.geometry.Offset(width*.12f,height*.47f),androidx.compose.ui.geometry.Offset(width*.2f,height*.55f),600)
@@ -547,7 +550,7 @@ class VillageVisualReview {
     }) { EvolutionIsland() }
     @Test fun islandSelectionToolbar() = shot("72-gebaeude-kontext",gesture={
         rule.onAllNodesWithContentDescription("Post")[0].performClick();rule.mainClock.advanceTimeBy(600)
-        rule.onAllNodesWithText("Verschieben")[0].assertExists()
+        rule.onAllNodesWithText("Verschieben").assertCountEquals(0)
         rule.onAllNodesWithText("Info")[0].assertExists()
     }) { EvolutionIsland(grown=true) }
     @Test fun islandUpgradePreviewAfterSelection() = shot("73-ausbau-vorschau",captureDialogs=true,gesture={
@@ -627,7 +630,7 @@ class VillageVisualReview {
     @Test fun kbCreativeIslandStaysTappable() = shot("86-kreativ-antippbar", gesture={
         rule.onAllNodesWithContentDescription("Wörterbuch").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); rule.mainClock.advanceTimeBy(600)
         rule.onAllNodesWithText("Abreißen")[0].assertExists()
-        rule.onAllNodesWithText("Verschieben")[0].assertExists()
+        rule.onAllNodesWithText("Verschieben").assertCountEquals(0)
     }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
     @Test fun kbMyIslandHeaderWithUnchangedNavigation() = shot("87-meine-insel-navigation", gesture={
         rule.onAllNodesWithText("Meine Insel")[0].assertExists()
@@ -681,7 +684,7 @@ class VillageVisualReview {
     }) { EvolutionIsland(creative=true, nav=true) }
     @Test fun cocMoveBuildingLifted() = shot("coc-04-verschieben", gesture={
         rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
-        rule.onAllNodesWithText("Verschieben")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performTouchInput { longClick() }; settle()
         groundTap(listOf(6, 11), 5); settle()
         rule.onAllNodesWithContentDescription("Bestätigen")[0].assertExists()
     }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
@@ -699,7 +702,7 @@ class VillageVisualReview {
     @Test fun cocEditMode() = shot("coc-07-bearbeiten", gesture={
         rule.onAllNodesWithText("Bearbeiten").assertCountEquals(0)
         rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
-        rule.onAllNodesWithText("Verschieben")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performTouchInput { longClick() }; settle()
         rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].assertExists()
     }) { EvolutionIsland(grown=true, nav=true, withLife=true, startingPoints=140) }
     @Test fun cocGridInvalidSpot() = shot("coc-08-raster-ungueltig", gesture={
@@ -774,7 +777,7 @@ class VillageVisualReview {
     @Test fun flowEditMode() = shot("flow-06-bearbeiten", gesture={
         rule.onAllNodesWithText("Bearbeiten").assertCountEquals(0)
         rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
-        rule.onAllNodesWithText("Verschieben")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performTouchInput { longClick() }; settle()
         rule.onAllNodesWithContentDescription("Bauplatzraster")[0].assertExists()
     }) { EvolutionIsland(grown=true, nav=true, withLife=true, startingPoints=140) }
     @Test fun flowCreativeMenu() = shot("flow-07-kreativ-menue", captureDialogs=true, gesture={
@@ -817,13 +820,73 @@ class VillageVisualReview {
     }) { EvolutionIsland(creative=true, nav=true) }
     @Test fun ausbauLargeLandGrid() = shot("ausbau-08-grosses-landraster", gesture={
         rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
-        rule.onAllNodesWithText("Verschieben")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performTouchInput { longClick() }; settle()
     }) { EvolutionIsland(grown=true, level=2, nav=true) }
     @Test fun ausbauOverview() = shot("ausbau-09-uebersicht", captureDialogs=true, gesture={
-        rule.onAllNodesWithText("Menü")[0].performClick(); settle(900)
-        rule.onAllNodesWithText("Übersicht")[0].performClick(); settle(900)
+        // 7.9.9: the overview is the painted back plate, no longer a pill in the menu
+        rule.onAllNodesWithContentDescription("Zurück zur Übersicht")[0].performClick(); settle(900)
         rule.onAllNodesWithText("Übersicht · alle Inseln")[0].assertExists()
     }) { EvolutionIsland(grown=true, nav=true, withLife=true) }
     @Test fun ausbauVisit() = shot("ausbau-10-besuch") { EvolutionIsland(start="visit:2", nav=true) }
-
+    // 7.9.9-start: Veit's phone feedback on 7.9.8, production composables after real interactions (JVM renders).
+    private fun noClick(label: String) = rule.onAllNodes(androidx.compose.ui.test.SemanticsMatcher("click $label") {
+        it.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick)?.label == label }).assertCountEquals(0)
+    @Test fun start69Menu() = shot("start69-01-inselmenue-ohne-pills", captureDialogs=true, gesture={
+        rule.onAllNodesWithText("Menü")[0].performClick(); settle(900)
+        rule.onAllNodesWithText("Inselmenü")[0].assertExists()
+        for (l in listOf("Übersicht", "Bauen", "Einstellungen")) noClick(l)
+    }) { EvolutionIsland(grown=true, level=1, nav=true, eligible=true) }
+    @Test fun start69BackPlate() = shot("start69-02-meine-insel-zurueck", gesture={
+        rule.onAllNodesWithContentDescription("Zurück zur Übersicht")[0].assertExists()
+    }) { EvolutionIsland(grown=true, level=1, nav=true, withLife=true) }
+    @Test fun start69EmptyShelf() = shot("start69-03-leere-insel-bauleiste", gesture={
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithText("Schlafplatz")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Abschnitt Gebäude").assertCountEquals(0)
+    }) { EvolutionIsland(startingPoints=0, nav=true) }
+    @Test fun start69EmptyShelfGrey() = shot("start69-04-leere-insel-bauleiste-grau", gesture={
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Reiter Besondere Deko")[0].performClick(); settle(1400)
+    }) { EvolutionIsland(startingPoints=0, nav=true) }
+    @Test fun start69HammockBuilt() = shot("start69-05-haengematte-gratis-gebaut", gesture={
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Mein Haus platzieren")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].performClick(); settle(900)
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Post platzieren")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].performClick(); settle(900)
+        rule.onAllNodesWithContentDescription("Mein Haus").filter(androidx.compose.ui.test.hasClickAction())[0].assertExists()
+    }) { EvolutionIsland(startingPoints=0, nav=true) }
+    @Test fun start69Actions() = shot("start69-06-gebaeude-aktionen", gesture={
+        rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
+        rule.onAllNodesWithText("Verschieben").assertCountEquals(0)
+        rule.onAllNodesWithText("Ausbauen")[0].assertExists()
+    }) { EvolutionIsland(grown=true, level=1, nav=true, withLife=true) }
+    private fun openPlace(label: String) { rule.onAllNodesWithText("Menü")[0].performClick(); settle(900)
+        rule.onAllNodesWithContentDescription("$label öffnen")[0].performClick(); settle(1200) }
+    @Test fun start69LighthouseStage0() = shot("start69-07-leuchtturm-stufe0", gesture={
+        openPlace("Freunde"); rule.onAllNodesWithContentDescription("Ort: Aussichtspalme")[0].assertExists()
+    }) { EvolutionIsland(startingPoints=0, nav=true) }
+    @Test fun start69LighthouseStage2() = shot("start69-08-leuchtturm-stufe2", gesture={
+        openPlace("Freunde"); rule.onAllNodesWithContentDescription("Ort: Leuchtfeuer")[0].assertExists()
+    }) { EvolutionIsland(grown=true, level=2, nav=true) }
+    @Test fun start69PostStage0() = shot("start69-09-post-stufe0", gesture={
+        openPlace("Post"); rule.onAllNodesWithContentDescription("Ort: Briefbaum")[0].assertExists()
+    }) { EvolutionIsland(startingPoints=0, nav=true) }
+    private val glossarySeed = listOf(
+        ApiClient.GlossaryTerm(1, "Kalauer", "Gerfried", listOf(ApiClient.GlossaryExplanation(1, "Was ist gelb und kann schießen? Eine Banone.", "Gerfried", 0, 0, false)), false, "Witze"),
+        ApiClient.GlossaryTerm(2, "Carpe diem", "Veit", listOf(ApiClient.GlossaryExplanation(2, "Nutze den Tag. (Horaz)", "Veit", 0, 0, false)), false, "Zitate"),
+        ApiClient.GlossaryTerm(3, "Morgenstund", "Veit", listOf(ApiClient.GlossaryExplanation(3, "… hat Gold im Mund.", "Veit", 0, 0, true)), true, "Sprüche"),
+        ApiClient.GlossaryTerm(4, "Layermaxxing", "Gregor", listOf(ApiClient.GlossaryExplanation(4, "Ebenen stapeln, bis es passt.", "Gregor", 0, 0, false)), false),
+    )
+    @Test fun start69Glossary() = shot("start69-10-woerterbuch-kategorien") {
+        VillageTheme(true) { LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossarySeed, addTerm = { _, _, _ -> }) }, level = 0) }
+    }
+    @Test fun start69GlossaryFilter() = shot("start69-11-woerterbuch-filter-witze", gesture={
+        rule.onAllNodesWithContentDescription("Kategorie Witze")[0].performClick(); settle()
+    }) { VillageTheme(true) { LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossarySeed, addTerm = { _, _, _ -> }) }, level = 2) } }
+    @Test fun start69GlossaryNewWord() = shot("start69-12-woerterbuch-neues-wort", captureDialogs=true, gesture={
+        rule.onAllNodesWithText("Wort hinzufügen")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); settle()
+        rule.onAllNodesWithContentDescription("Neue Kategorie Witze")[0].performClick(); settle()
+    }) { VillageTheme(true) { LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossarySeed, addTerm = { _, _, _ -> }) }, level = 3) } }
 }

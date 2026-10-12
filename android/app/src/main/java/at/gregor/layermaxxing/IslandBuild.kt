@@ -468,7 +468,9 @@ private fun BuildCard(name: String, price: String, enabled: Boolean, description
                 AppIcon(R.drawable.ico_lock, null, tint = IslandBuild.Cream, size = 12.dp)
             }
         }
-        Text(name, color = Isle.Ink, fontFamily = Kit.Display, fontSize = 13.sp, maxLines = 1, textAlign = TextAlign.Center)
+        // Long stage names ("Wörter am Treibholz") get a smaller size and may wrap once instead of being cut.
+        Text(name, color = Isle.Ink, fontFamily = Kit.Display, fontSize = if (name.length <= 10) 13.sp else if (name.length <= 13) 11.5.sp else 10.sp,
+            lineHeight = 11.sp, maxLines = 2, textAlign = TextAlign.Center)
         Text(price, color = if (price == "gratis") IslandBuild.Ok else Isle.Muted, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, fontSize = 10.5.sp, maxLines = 1, softWrap = false)
     }
 }
@@ -680,7 +682,7 @@ private fun MenuPill(label: String, icon: Int, modifier: Modifier, onClick: () -
 @Composable
 internal fun OverviewBackPlate(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        modifier.heightIn(min = 52.dp).width(142.dp).height(52.dp).clip(RoundedCornerShape(14.dp))
+        modifier.heightIn(min = 52.dp).width(164.dp).height(52.dp).clip(RoundedCornerShape(14.dp))
             .clickable(onClickLabel = "Zur Übersicht", onClick = onClick)
             .semantics { contentDescription = "Zurück zur Übersicht"; role = Role.Button },
         Alignment.Center,
@@ -689,7 +691,7 @@ internal fun OverviewBackPlate(onClick: () -> Unit, modifier: Modifier = Modifie
         Row(Modifier.padding(bottom = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             AppIcon(R.drawable.ico_back, null, tint = Color(0xFF3B2410), size = 20.dp)
             Spacer(Modifier.width(4.dp))
-            Text("Übersicht", fontFamily = Kit.Display, fontSize = 17.sp, color = Color(0xFF3B2410), maxLines = 1, softWrap = false)
+            Text("Übersicht", fontFamily = Kit.Display, fontSize = 16.sp, color = Color(0xFF3B2410), maxLines = 1, softWrap = false)
         }
     }
 }

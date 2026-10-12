@@ -73,6 +73,7 @@ class IslandFlowTest {
                 val b = req.building
                 state = when (req.action) {
                     "upgrade" -> c.copy(buildings = c.buildings + (b!! to ((c.buildings[b] ?: 0) + 1)), positions = req.position?.let { c.positions + (b to it) } ?: c.positions, revision = c.revision + 1)
+                    "build" -> c.copy(starters = c.starters + b!!, positions = c.positions + (b to req.position!!), revision = c.revision + 1)
                     "move" -> c.copy(positions = c.positions + (b!! to req.position!!), revision = c.revision + 1)
                     else -> c
                 }.copy(mode = state.mode)
@@ -188,7 +189,8 @@ class IslandFlowTest {
         val gap = maxOf(bar.top - post.bottom, post.top - bar.bottom)
         assertTrue("actions hang at the building (gap $gap)", gap.value <= 140f)
         assertTrue("actions stay compact (${bar.height})", bar.height.value <= root.height.value * .22f)
-        for (label in listOf("Öffnen", "Info", "Verschieben", "Abreißen")) rule.onAllNodesWithText(label)[0].assertExists()
+        for (label in listOf("Öffnen", "Info", "Abreißen")) rule.onAllNodesWithText(label)[0].assertExists()
+        rule.onAllNodesWithText("Verschieben").assertCountEquals(0)  // 7.9.9: moving = long press only
         // a tap on empty ground closes it again
         tapEmptyGround()
         tick(900)
@@ -232,8 +234,14 @@ class IslandFlowTest {
     }
 
     @Test fun theBuildButtonShowsTheCostInNormalMode() {
+        // 7.9.9: stage 0 is free while a function is missing; with everything standing the next step is land
+        start(creative = false, buildings = IsleBuilding.entries.associate { it.name to 1 }, land = 0)
+        rule.onAllNodesWithText("ab 40 P")[0].assertExists()
+    }
+
+    @Test fun theBuildButtonSaysGratisWhileAFunctionIsMissing() {
         start(creative = false)
-        rule.onAllNodesWithText("ab 25 P")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Preis: gratis")[0].assertExists()
     }
 
     @Test fun placementHidesTheOtherChromeAndTheHintFadesOut() {
