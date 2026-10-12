@@ -161,6 +161,12 @@ class IslandAusbauTest {
         rule.onAllNodesWithText("Übersicht")[0].performClick(); tick(900)
         rule.onAllNodesWithText("Übersicht · alle Inseln")[0].assertExists()
         rule.onAllNodesWithContentDescription("Ansicht: Meine Insel").assertCountEquals(0)
+        rule.onAllNodesWithText("Meine Insel").assertCountEquals(0)
+        rule.onAllNodesWithText("Hafen").assertCountEquals(0)
+        rule.onAllNodesWithText("Menü")[0].performClick(); tick(900)
+        rule.onAllNodesWithText("Meine Insel")[0].performClick(); tick(900)
+        rule.onAllNodesWithText("Übersicht · alle Inseln").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].assertExists()
     }
 
     @Test fun starterMenuShowsNaturalStagesAndTheirActualFunctions() {

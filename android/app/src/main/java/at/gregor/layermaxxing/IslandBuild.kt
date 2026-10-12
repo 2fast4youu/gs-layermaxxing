@@ -582,7 +582,7 @@ internal fun MyIslandHeader(title: String, subtitle: String, creative: Boolean, 
 /** The island menu: every function as a painted piece on harbour paper under a signpost. */
 @Composable
 internal fun IslandMenuContent(
-    home: ApiClient.HomeIsland?, onOpen: (IsleBuilding) -> Unit, onSettings: () -> Unit, onBuild: () -> Unit, onOverview: () -> Unit = {},
+    home: ApiClient.HomeIsland?, onOpen: (IsleBuilding) -> Unit, onSettings: () -> Unit, onBuild: () -> Unit, onOverview: () -> Unit = {}, overviewLabel: String = "Übersicht",
     creativeEligible: Boolean = false, creative: Boolean = false, onCreative: (Boolean) -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).navigationBarsPadding()) {
@@ -637,7 +637,7 @@ internal fun IslandMenuContent(
                 }
             }
         }
-        MenuPill("Übersicht", R.drawable.ico_map, Modifier.fillMaxWidth().padding(bottom = 10.dp), onOverview)
+        MenuPill(overviewLabel, if (overviewLabel == "Meine Insel") R.drawable.ico_island else R.drawable.ico_map, Modifier.fillMaxWidth().padding(bottom = 10.dp), onOverview)
         Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MenuPill("Einstellungen", R.drawable.ico_appearance, Modifier.weight(1f), onSettings)
             MenuPill("Bauen", R.drawable.ico_build, Modifier.weight(1f), onBuild)

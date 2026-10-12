@@ -13,8 +13,9 @@ The avatar remains visible; every application function is available from **Menü
   button with its label and a price chip (cheapest next step, e.g. "ab 25 P"; "gratis" in creative mode).
   At most one contextual element is shown above the navigation; they share one bottom container and
   slide/fade into each other (180–260 ms, FastOutSlowIn), so nothing stacks and nothing jumps.
-- On the overview *Meine Insel · Hafen · Menü* and when visiting *Übersicht · Meine Insel* the
-  second row of round icon buttons stays as before.
+- On the overview (7.9.8) only **Menü** remains above the app navigation. Its menu offers
+  **Meine Insel** to return home; functional buildings remain accessible there. When visiting,
+  *Übersicht · Meine Insel* stays available.
 - The own island opens zoomed in (zoom depends on land size) and cannot be zoomed out to overview
   size. Its header is a painted brass plate "Meine Insel" with a creative badge when active; the
   overview entry is available only in **Menü**. The overview is labelled "Übersicht · alle Inseln".

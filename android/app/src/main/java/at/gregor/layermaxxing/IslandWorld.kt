@@ -584,8 +584,6 @@ internal fun IslandWorld(
                         IslandRowItem(R.drawable.ico_island, "Meine Insel") { view = "home" }
                     }
                     else -> {
-                        IslandRowItem(R.drawable.ico_island, "Meine Insel", badge = incoming.size) { place = null; view = "home" }
-                        IslandRowItem(R.drawable.ico_harbour, "Hafen", selected = place == IsleBuilding.HARBOUR.name, badge = openQuests) { place = IsleBuilding.HARBOUR.name }
                         IslandRowItem(R.drawable.ico_menu, "Menü") { functionMenu = true }
                     }
                 }
@@ -637,9 +635,10 @@ internal fun IslandWorld(
     if (functionMenu) ModalBottomSheet(onDismissRequest = { functionMenu = false }, containerColor = Isle.Card,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         IslandMenuContent(island,
-            onOpen = { b -> functionMenu = false; place = b.name },
+            onOpen = { b -> functionMenu = false; view = "home"; place = b.name },
             onSettings = { functionMenu = false; onSettings() },
-            onOverview = { functionMenu = false; place = null; selection = null; buildBar = false; view = "map" },
+            onOverview = { functionMenu = false; place = null; selection = null; buildBar = false; view = if (view == "map") "home" else "map" },
+            overviewLabel = if (view == "map") "Meine Insel" else "Übersicht",
             onBuild = { functionMenu = false; place = null; view = "home"; selection = null; buildBar = true },
             creativeEligible = creativeEligible, creative = creativeActive,
             // The switch acts at once and the menu closes, so the chip and the "gratis" prices are seen right away.
