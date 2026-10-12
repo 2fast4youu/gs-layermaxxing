@@ -144,4 +144,3 @@ class IslandStartModelTest {
         assertTrue(sent[1], sent[1].contains("\"category\":\"Witze\""))
     }
 }
-
