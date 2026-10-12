@@ -16,6 +16,10 @@ import androidx.compose.ui.unit.dp
 import java.time.Instant
 import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 
 private val ENTRY_ICONS = mapOf(
     "👥" to R.drawable.ico_groups, "🔒" to R.drawable.ico_lock, "⭐" to R.drawable.ico_points, "✉" to R.drawable.ico_letter,
@@ -65,11 +69,19 @@ fun ExtensionEntry(title: String, detail: String, onClick: () -> Unit) {
  * to the built-in terms instead of breaking the screen.
  */
 @Composable
-fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
+fun GlossaryScreen(
+    api: ApiClient? = null, token: String? = null,
+    /** Tests/renders: start with these shared words and save new ones here instead of the server. */
+    seed: List<ApiClient.GlossaryTerm>? = null,
+    addTerm: (suspend (term: String, explanation: String, category: String) -> Unit)? = null,
+) {
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
-    var shared by remember { mutableStateOf<List<ApiClient.GlossaryTerm>>(emptyList()) }
-    var sharedAvailable by remember { mutableStateOf(api != null && token != null) }
+    var shared by remember { mutableStateOf(seed ?: emptyList()) }
+    var sharedAvailable by remember { mutableStateOf(seed != null || api != null && token != null) }
+    // 7.9.9: filter tabs (null = Alle) and the category of a new word (default Begriffe).
+    var filter by remember { mutableStateOf<String?>(null) }
+    var newCategory by remember { mutableStateOf(GlossaryCategories.DEFAULT) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
@@ -90,7 +102,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
             }
     }
     fun run(block: suspend () -> Unit) {
-        if (api == null || token == null || busy) return
+        if ((api == null || token == null) && addTerm == null || busy) return
         busy = true
         scope.launch {
             runCatching { block() }.onFailure { error = it.message ?: "Speichern fehlgeschlagen" }
@@ -99,7 +111,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
     }
     LaunchedEffect(token) { reload() }
 
-    val rows = Dictionary.rows(shared, query)
+    val rows = Dictionary.rows(shared, query, filter)
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -112,6 +124,20 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
                     placeholder = { Text("Wort oder Erklärung suchen") }, leadingIcon = { AppIcon(R.drawable.ico_search, null, size = 20.dp) },
                     shape = RoundedCornerShape(24.dp),
                 )
+            }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).semantics { contentDescription = "Wörterbuch Kategorien" },
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    (listOf<String?>(null) + GlossaryCategories.all).forEach { c ->
+                        FilterChip(
+                            selected = filter == c, onClick = { filter = c; expanded = null },
+                            label = { Text(c ?: "Alle") },
+                            modifier = Modifier.semantics { contentDescription = "Kategorie " + (c ?: "Alle") },
+                        )
+                    }
+                }
             }
             error?.let { item { Text(ApiErrors.friendly(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) } }
             if (!sharedAvailable) item {
@@ -135,6 +161,12 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(row.term, Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                            val category = row.shared?.category ?: GlossaryCategories.DEFAULT
+                            Text(
+                                category, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(end = 6.dp).background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(50))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp).semantics { contentDescription = "Kategorie von " + row.term + ": " + category },
+                            )
                             Text(
                                 if (row.builtIn != null) "App" else "${row.shared!!.explanations.size} Erklärungen",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
@@ -176,7 +208,7 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
             }
         }
         if (sharedAvailable) ExtendedFloatingActionButton(
-            onClick = { newTerm = query.trim(); newText = ""; adding = true },
+            onClick = { newTerm = query.trim(); newText = ""; newCategory = GlossaryCategories.DEFAULT; adding = true },
             modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp),
             text = { Text("Wort hinzufügen") }, icon = { AppIcon(R.drawable.ico_add, null, size = 20.dp) },
         )
@@ -188,6 +220,13 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(newTerm, { newTerm = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("Wort") }, singleLine = true)
+                Text("Kategorie", style = MaterialTheme.typography.labelMedium)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    GlossaryCategories.all.forEach { c ->
+                        FilterChip(selected = newCategory == c, onClick = { newCategory = c }, label = { Text(c) },
+                            modifier = Modifier.semantics { contentDescription = "Neue Kategorie " + c })
+                    }
+                }
                 OutlinedTextField(newText, { newText = it.take(2000) }, Modifier.fillMaxWidth().heightIn(min = 110.dp), label = { Text("Erklärung") })
                 Text(
                     "Für alle sichtbar. Gibt es das Wort schon, wird deine Erklärung dort ergänzt.",
@@ -197,9 +236,16 @@ fun GlossaryScreen(api: ApiClient? = null, token: String? = null) {
         },
         confirmButton = {
             Button(enabled = Dictionary.canSubmit(newTerm, newText) && !busy, onClick = {
-                val t = newTerm; val x = newText; adding = false
+                val t = newTerm; val x = newText; val c = newCategory; adding = false
                 expanded = null
-                run { api!!.addGlossaryTerm(token!!, t, x) }
+                run {
+                    if (addTerm != null) {
+                        addTerm(t, x, c)
+                        // Local mirror for renders/tests (the server answers with its list otherwise).
+                        if (api == null) shared = shared + ApiClient.GlossaryTerm(-(shared.size + 1L), t.trim(), "Ich",
+                            listOf(ApiClient.GlossaryExplanation(-(shared.size + 1L), x.trim(), "Ich", 0, 0, true)), true, c)
+                    } else api!!.addGlossaryTerm(token!!, t, x, c)
+                }
             }) { Text("Eintragen") }
         },
         dismissButton = { TextButton(onClick = { adding = false }) { Text("Abbrechen") } },

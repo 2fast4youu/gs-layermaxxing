@@ -27,13 +27,16 @@ internal object IslandLayout {
     fun separation(c: ApiClient.IslandConstruction) = BUILDING_GAP / IslandPlans.constructionScale(c.land)
     private fun d2(p: List<Int>, q: List<Int>) = ((q[0]-p[0])*(q[0]-p[0])+(q[1]-p[1])*(q[1]-p[1])).toDouble()
     fun buildingPositions(c: ApiClient.IslandConstruction, except: IsleBuilding? = null) =
-        IsleBuilding.entries.filter { it != except && (c.buildings[it.name] ?: 0) > 0 }.map { c.positions[it.name] ?: defaultPosition(it) }
+        IsleBuilding.entries.filter { it != except && c.standing(it) }.map { c.positions[it.name] ?: defaultPosition(it) }
     /** Does something else stand too close? [big] = the piece is a building or special decoration. */
     fun blocked(c: ApiClient.IslandConstruction, p: List<Int>, big: Boolean, ignoreBuilding: IsleBuilding? = null, ignoreDecor: Int? = null): Boolean {
         val f = IslandPlans.constructionScale(c.land).toDouble()
         fun sq(gap: Float) = (gap / f) * (gap / f)
-        val toBuilding = if (big) sq(BUILDING_GAP) else sq(DECOR_BUILDING_GAP)
-        if (buildingPositions(c, ignoreBuilding).any { d2(p, it) < toBuilding }) return true
+        // 7.9.9 (server placement_blocked): stage-0 pieces are small and keep only the decoration gap to big pieces.
+        val small = ignoreBuilding != null && ignoreBuilding.name in c.starters
+        val toBuilding = if (big && !small) sq(BUILDING_GAP) else sq(DECOR_BUILDING_GAP)
+        val others = IsleBuilding.entries.filter { it != ignoreBuilding && c.standing(it) }
+        if (others.any { o -> d2(p, c.positions[o.name] ?: defaultPosition(o)) < if (o.name in c.starters) sq(DECOR_BUILDING_GAP) else toBuilding }) return true
         return c.decor.any { d ->
             d.id != ignoreDecor && d2(p, d.position) < when {
                 SpecialDecor.isSpecial(d.item) -> toBuilding
@@ -42,8 +45,9 @@ internal object IslandLayout {
             }
         }
     }
+    /** A building not standing yet is placed at its free stage 0 (7.9.9), so it keeps the small gap. */
     fun valid(c: ApiClient.IslandConstruction, b: IsleBuilding, p: List<Int>): Boolean =
-        IslandGrid.buildable(p, c.land) && !blocked(c, p, big = true, ignoreBuilding = b)
+        IslandGrid.buildable(p, c.land) && !blocked(if (c.standing(b)) c else c.copy(starters = c.starters + b.name), p, big = true, ignoreBuilding = b)
     fun validDecor(c: ApiClient.IslandConstruction, p: List<Int>, ignoreId: Int? = null, special: Boolean = false): Boolean =
         IslandGrid.buildable(p, c.land) && !blocked(c, p, big = special, ignoreDecor = ignoreId)
     fun valid(h: ApiClient.HomeIsland, draft: IslandDraft): Boolean = when (val t = draft.target) {
@@ -68,8 +72,9 @@ internal object IslandLayout {
         draft ?: return h
         val c = h.construction
         return when (val t = draft.target) {
+            // A new building appears as its free stage 0 (7.9.9); a standing one keeps its stage.
             is IslandTarget.Building -> h.copy(construction = c.copy(
-                buildings = c.buildings + (t.building.name to (c.buildings[t.building.name] ?: 0).coerceAtLeast(1)),
+                starters = if (c.standing(t.building)) c.starters else c.starters + t.building.name,
                 positions = c.positions + (t.building.name to draft.position)))
             is IslandTarget.Decor -> h.copy(construction = c.copy(decor =
                 if (t.id == null) c.decor + ApiClient.IslandDecor(DRAFT_DECOR_ID, t.item, draft.position)

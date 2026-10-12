@@ -75,4 +75,11 @@ internal object IslandStages {
 
     fun of(b: IsleBuilding, level: Int): Stage = table.getValue(b)[level.coerceIn(0, 3)]
     fun all(b: IsleBuilding): List<Stage> = table.getValue(b)
+    /** Short stage label: "Start" for stage 0, otherwise "Stufe n". */
+    fun stageLabel(level: Int) = if (level <= 0) "Start" else "Stufe $level"
 }
+
+/** 7.9.9: a function stands on the island when it is upgraded (1..3) or built at its free stage 0. */
+internal fun ApiClient.IslandConstruction.standing(b: IsleBuilding): Boolean = (buildings[b.name] ?: 0) > 0 || b.name in starters
+/** Current stage of a function (0 = stage 0, standing or not). */
+internal fun ApiClient.IslandConstruction.level(b: IsleBuilding): Int = buildings[b.name] ?: 0

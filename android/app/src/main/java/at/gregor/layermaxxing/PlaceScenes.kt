@@ -146,6 +146,8 @@ private val Body = Kit.Body
 internal fun PlaceStage(
     place: IsleBuilding,
     onClose: () -> Unit,
+    /** 7.9.9: the building's current stage (0–3): title, head picture, icon and line follow [IslandStages]. */
+    level: Int = 3,
     action: Pair<String, () -> Unit>? = null,
     bg: Int = place.background(),
     imgAspect: Float = 1024f / 1536f,
@@ -168,16 +170,34 @@ internal fun PlaceStage(
                 Alignment.Center,
             ) { AppIcon(R.drawable.ico_back, null, tint = Color(0xFF5A3A12), size = 26.dp) }
             Spacer(Modifier.width(10.dp))
-            // The wooden sign.
-            Box(Modifier.height(58.dp).width(230.dp), Alignment.Center) {
+            val stage = IslandStages.of(place, level)
+            // The wooden sign carries the name of the building as it stands now (Aussichtspalme … Leuchtturm).
+            Box(Modifier.height(58.dp).weight(1f, fill = false).width(214.dp), Alignment.Center) {
                 Image(painterResource(R.drawable.p_sign), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.FillBounds)
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 14.dp)) {
+                    AppIcon(stage.icon, null, tint = Color(0xFFFFF6E5), size = 18.dp)
+                    Spacer(Modifier.width(5.dp))
                     Text(
-                        place.placeName(), fontFamily = Display, fontSize = 22.sp, color = Color(0xFFFFF6E5),
+                        stage.name, fontFamily = Display, fontSize = if (stage.name.length > 14) 17.sp else 21.sp, color = Color(0xFFFFF6E5), maxLines = 1,
                         style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xAA3B2410), Offset(0f, 3f), 2f)),
+                        modifier = Modifier.semantics { contentDescription = "Ort: ${stage.name}" },
                     )
                 }
             }
+            Spacer(Modifier.width(6.dp))
+            // Head picture: the painted piece of this very stage (hammock, palm, … master building).
+            Box(Modifier.size(58.dp).shadow(4.dp, CircleShape).background(Brush.radialGradient(listOf(Color(0xFFFFF6E5), Color(0xFFE9D3A6))), CircleShape)
+                .border(2.dp, Color(0xFF8A5A2B), CircleShape).padding(5.dp), Alignment.BottomCenter) {
+                PaintedIslandPlace(place, level, stage.res, Modifier.fillMaxSize(), description = "Kopfbild: ${stage.name}")
+            }
+        }
+        // Under the sign: what it is and which stage, plus how it looks now.
+        Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 70.dp, start = 68.dp, end = 12.dp)) {
+            val stage = IslandStages.of(place, level)
+            Text("${stage.subtitle} · ${stage.look}", fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, color = Color(0xFFFFF6E5), maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.background(Color(0x66000000), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp)
+                    .semantics { contentDescription = "Stufe: ${stage.subtitle}" })
         }
         action?.let { (label, onClick) -> GoldButton(label, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 18.dp), onClick) }
     }
@@ -233,14 +253,18 @@ internal fun PostOffice(
     onLocked: (ApiClient.Message) -> Unit,
     onWrite: (Long) -> Unit,
     onClose: () -> Unit,
+    level: Int = 3,
 ) {
     var fach by rememberSaveable { mutableStateOf<Long?>(null) }
     var choosing by rememberSaveable { mutableStateOf(false) }
-    PlaceStage(IsleBuilding.POST, onClose, action = "Brief schreiben" to { choosing = true }) { map ->
+    PlaceStage(IsleBuilding.POST, onClose, level, action = "Brief schreiben" to { choosing = true }) { map ->
         val selected = fach?.let { id -> pals.firstOrNull { it.id == id } }
         val wall = Modifier.padding(top = 96.dp, bottom = 92.dp).fillMaxSize()
         if (selected == null) {
-            if (pals.isEmpty()) Box(wall, Alignment.Center) { Parchment("Noch keine Fächer", "Für jeden Freund entsteht hier ein eigenes Postfach.") }
+            if (pals.isEmpty()) Box(wall, Alignment.Center) {
+                if (level == 0) Parchment("Noch nichts am Briefbaum", "Für jeden Freund hängt hier bald ein eigener Umschlag am Stamm.")
+                else Parchment("Noch keine Fächer", "Für jeden Freund entsteht hier ein eigenes Postfach.")
+            }
             else LazyVerticalGrid(
                 GridCells.Fixed(3), wall.padding(horizontal = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -352,9 +376,10 @@ internal fun HarbourBoard(
     onNewQuest: () -> Unit,
     onAllTopics: () -> Unit,
     onClose: () -> Unit,
+    level: Int = 3,
 ) {
     var showDone by rememberSaveable { mutableStateOf(false) }
-    PlaceStage(IsleBuilding.HARBOUR, onClose, action = "Quest anpinnen" to onNewQuest) { map ->
+    PlaceStage(IsleBuilding.HARBOUR, onClose, level, action = "Quest anpinnen" to onNewQuest) { map ->
         val shown = quests.filter { (it.completedAt != null) == showDone }
         Column(map.region(.17f, .315f, .83f, .615f).padding(horizontal = 6.dp)) {
             Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -448,11 +473,12 @@ internal fun LighthouseView(
     onFriend: (Long) -> Unit,
     onFind: () -> Unit,
     onClose: () -> Unit,
+    level: Int = 3,
 ) {
     val t = rememberInfiniteTransition(label = "beam")
     val angle by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(5200, easing = LinearEasing), RepeatMode.Reverse), label = "a")
     val bob by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(1800), RepeatMode.Reverse), label = "bob")
-    PlaceStage(IsleBuilding.LIGHTHOUSE, onClose, action = "Freunde finden" to onFind, imgAspect = 941f / 1672f) { map ->
+    PlaceStage(IsleBuilding.LIGHTHOUSE, onClose, level, action = "Freunde finden" to onFind, imgAspect = 941f / 1672f) { map ->
         Canvas(Modifier.fillMaxSize()) {
             val origin = Offset(size.width * .5f, size.height * 1.02f)
             val a = angle * .9f
@@ -474,7 +500,8 @@ internal fun LighthouseView(
                 item { NightTitle("Flaschenpost angespült") }
                 items(incoming, key = { "in-${it.id}" }) { r -> Bottle(r.senderName, bob, onYes = { onRespond(r.id, true) }, onNo = { onRespond(r.id, false) }) }
             }
-            item { NightTitle(if (pals.isEmpty()) "Noch leuchtet niemand zurück" else "Im Lichtkegel") }
+            // The words follow the stage: from the palm one looks out, from the tower it shines.
+            item { NightTitle(if (pals.isEmpty()) (if (level < 2) "Noch winkt niemand zurück" else "Noch leuchtet niemand zurück") else if (level < 2) "In Sichtweite" else "Im Lichtkegel") }
             item {
                 LazyVerticalGrid(
                     GridCells.Fixed(3), Modifier.fillMaxWidth().heightIn(max = 520.dp),
@@ -542,10 +569,10 @@ private fun Bottle(name: String, bob: Float, onYes: () -> Unit, onNo: () -> Unit
 
 /** The glossary lies open on the reading desk among the shelves. */
 @Composable
-internal fun LibraryBook(onClose: () -> Unit, glossary: @Composable () -> Unit) {
-    PlaceStage(IsleBuilding.LIBRARY, onClose) { map ->
+internal fun LibraryBook(onClose: () -> Unit, glossary: @Composable () -> Unit, level: Int = 3) {
+    PlaceStage(IsleBuilding.LIBRARY, onClose, level) { map ->
         Box(
-            Modifier.fillMaxSize().padding(top = 92.dp, start = 14.dp, end = 14.dp, bottom = 14.dp).navigationBarsPadding(),
+            Modifier.fillMaxSize().padding(top = 100.dp, start = 14.dp, end = 14.dp, bottom = 14.dp).navigationBarsPadding(),
         ) {
             // Leather cover peeking out behind the page.
             Box(
@@ -583,9 +610,13 @@ internal fun CommunityHall(
     onGroupQuest: (Long) -> Unit,
     onManage: () -> Unit,
     onClose: () -> Unit,
+    level: Int = 3,
 ) {
-    PlaceStage(IsleBuilding.CAMPFIRE, onClose, action = "Gruppen verwalten" to onManage) { map ->
-        if (groups.isEmpty()) Box(Modifier.fillMaxSize(), Alignment.Center) { Parchment("Noch keine Tische", "Gründe eine Gruppe – sie bekommt hier ihren eigenen Tisch.") }
+    PlaceStage(IsleBuilding.CAMPFIRE, onClose, level, action = "Gruppen verwalten" to onManage) { map ->
+        if (groups.isEmpty()) Box(Modifier.fillMaxSize(), Alignment.Center) {
+            if (level == 0) Parchment("Noch niemand am Feuer", "Gründe eine Gruppe – sie bekommt hier ihren eigenen Platz am Feuerkreis.")
+            else Parchment("Noch keine Tische", "Gründe eine Gruppe – sie bekommt hier ihren eigenen Tisch.")
+        }
         else LazyVerticalGrid(
             GridCells.Fixed(2), Modifier.fillMaxSize().padding(horizontal = 10.dp),
             contentPadding = PaddingValues(top = map.y(.3f).coerceAtLeast(120.dp), bottom = 100.dp),
@@ -658,8 +689,9 @@ internal fun MyHouse(
     onSettings: () -> Unit,
     onEdit: () -> Unit,
     onClose: () -> Unit,
+    level: Int = 3,
 ) {
-    PlaceStage(IsleBuilding.HOUSE, onClose, action = "Profil & Einstellungen" to onSettings) { map ->
+    PlaceStage(IsleBuilding.HOUSE, onClose, level, action = "Profil & Einstellungen" to onSettings) { map ->
         // Portrait in a golden frame, centred on the empty wall.
         Box(map.region(.36f, .16f, .7f, .43f), Alignment.Center) {
             Box(

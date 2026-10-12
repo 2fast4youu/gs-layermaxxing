@@ -28,7 +28,7 @@ internal object IslandEvolution {
         IsleBuilding.CAMPFIRE -> "Feuerkreis"
         IsleBuilding.HARBOUR -> "Strandtreff"
     }
-    fun levelName(b: IsleBuilding, level: Int) = "${IslandStages.of(b, level).name} · " + if (level == 0) "noch nicht gebaut" else "Stufe $level"
+    fun levelName(b: IsleBuilding, level: Int, standing: Boolean = level > 0) = "${IslandStages.of(b, level).name} · " + if (!standing) "noch nicht gebaut" else IslandStages.stageLabel(level)
     fun allowed(c: ApiClient.IslandConstruction, cost: Int, days: Int) = c.mode == "creative" || c.available >= cost && c.ageDays >= days
 }
 
@@ -77,16 +77,20 @@ internal fun IslandUpgradeContent(
     onAction: (String) -> Unit, onDismiss: () -> Unit,
 ) {
     val c=island.construction
-    val level=building?.let { c.buildings[it.name] ?: 0 } ?: c.land
+    val level=building?.let { c.level(it) } ?: c.land
+    // 7.9.9: a function that does not stand yet is built at its free stage 0 first.
+    val standing=building?.let { c.standing(it) } ?: true
     val max=if(building==null) 5 else 3
     val costs=if(building==null) c.landCosts else c.buildCosts
     val days=if(building==null) c.landDays else c.buildDays
     val cost=costs.getOrElse(level) { 0 }; val day=days.getOrElse(level) { 0 }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=24.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        Text(building?.let { "${IslandStages.of(it, level).name} ausbauen" } ?: "Insel vergrößern",fontSize=22.sp,color=Isle.Ink)
+        Text(building?.let { if (standing) "${IslandStages.of(it, level).name} ausbauen" else "${IslandStages.of(it, 0).name} bauen" } ?: "Insel vergrößern",fontSize=22.sp,color=Isle.Ink)
         Text(if(c.mode=="creative") "Kreativmodus · kostenlos auf deiner echten Insel" else "${c.available} Punkte verfügbar · Tag ${c.ageDays}",color=Isle.Muted,fontSize=13.sp)
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
-            if(building!=null) {
+            if(building!=null && !standing) {
+                BuildingPreview(building, 0, Modifier.weight(1f))
+            } else if(building!=null) {
                 BuildingPreview(building, level, Modifier.weight(1f))
                 Text("→", color=Isle.Muted, fontSize=24.sp, modifier=Modifier.padding(horizontal=6.dp))
                 BuildingPreview(building, (level+1).coerceAtMost(max), Modifier.weight(1f))
@@ -96,14 +100,17 @@ internal fun IslandUpgradeContent(
                 DynamicIsland(IslandPlans.home(1,0,c.copy(land=(level+1).coerceAtMost(max))),Modifier.width(145.dp),animate=false)
             }
         }
-        Text(if(building==null) "Landstufe $level / $max" else IslandEvolution.levelName(building,level),color=Isle.Ink)
-        if(level<max) {
+        Text(if(building==null) "Landstufe $level / $max" else IslandEvolution.levelName(building,level,standing),color=Isle.Ink)
+        if(!standing) {
+            Text("Start: gratis · Ausbau ab Stufe 1 kostet Punkte.",color=Isle.Muted,fontSize=13.sp)
+            Button(onClick={onAction("upgrade")},enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy) "Wird gespeichert…" else "Gratis bauen") }
+        } else if(level<max) {
             Text(if(c.mode=="creative") "Nächster Ausbau: kostenlos" else "Nächster Ausbau: $cost Punkte · ab Tag $day. Punkte werden beim Bauen verbraucht.",color=Isle.Muted,fontSize=13.sp)
             Button(onClick={onAction(if(building==null) "expand" else "upgrade")},enabled=!busy && IslandEvolution.allowed(c,cost,day),modifier=Modifier.fillMaxWidth()) {
                 Text(if(busy) "Wird gespeichert…" else if(building==null) "Land erweitern" else if(level==0) "Gebäude bauen" else "Auf Stufe ${level+1} ausbauen")
             }
         } else Text("Vollständig ausgebaut",color=Isle.TealDark)
-        if(c.mode=="creative" && level>0) OutlinedButton(onClick={onAction(if(building==null) "shrink" else "downgrade")},enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(building==null) "Land kostenlos verkleinern" else "Kostenlos zurückbauen") }
+        if(c.mode=="creative" && (if (building==null) level>0 else standing)) OutlinedButton(onClick={onAction(if(building==null) "shrink" else "downgrade")},enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(building==null) "Land kostenlos verkleinern" else "Kostenlos zurückbauen") }
         TextButton(onClick=onDismiss,modifier=Modifier.fillMaxWidth()) { Text("Schließen") }
         Spacer(Modifier.navigationBarsPadding())
     }

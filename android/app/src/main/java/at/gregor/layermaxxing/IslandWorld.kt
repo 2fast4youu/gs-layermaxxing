@@ -307,7 +307,7 @@ internal fun IslandWorld(
         val h = island ?: return
         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         selection = null; buildBar = false; upgradePick = null; landPick = false; shopDraft = fromShop
-        val built = (h.construction.buildings[b.name] ?: 0) > 0
+        val built = h.construction.standing(b)
         // A new piece starts in the middle of what the player sees, but never in the water.
         val start = h.construction.positions[b.name] ?: if (built) IslandLayout.defaultPosition(b)
             else (screenCentreCell(h.construction.land) ?: IslandLayout.defaultPosition(b)).let { IslandGrid.clampToLand(it, h.construction.land) }
@@ -327,7 +327,8 @@ internal fun IslandWorld(
         val d = placement ?: return
         val h = island ?: return
         val request = when (val t = d.target) {
-            is IslandTarget.Building -> ApiClient.IslandRequest(if ((h.construction.buildings[t.building.name] ?: 0) > 0) "move" else "upgrade", t.building.name, position = d.position)
+            // 7.9.9: a new function is built for free at stage 0 ("build"); a standing one only moves.
+            is IslandTarget.Building -> ApiClient.IslandRequest(if (h.construction.standing(t.building)) "move" else "build", t.building.name, position = d.position)
             is IslandTarget.Decor -> if (t.id == null) ApiClient.IslandRequest("decor_place", item = t.item, position = d.position)
                 else ApiClient.IslandRequest("decor_move", decorId = t.id, position = d.position)
         }
@@ -395,13 +396,13 @@ internal fun IslandWorld(
                     val h = island
                     val selectionBar: (@Composable () -> Unit)? = if (h == null || placement != null || place != null) null else when (sel) {
                         is IslandTarget.Building -> {
-                            val b = sel.building; val level = h.construction.buildings[b.name] ?: 0
+                            val b = sel.building; val level = h.construction.level(b)
                             ({
-                                PieceActionBar(IslandStages.of(b, level).name, "Stufe $level", listOf(
+                                // 7.9.9: no "Verschieben" here any more: moving is the long press on the piece.
+                                PieceActionBar(IslandStages.of(b, level).name, IslandStages.stageLabel(level), listOf(
                                     SelectionAction("Öffnen", IslandStages.of(b, level).icon, tone = Color(0xFF3F7C78)) { selection = null; place = b.name },
                                     SelectionAction(if (level < 3) "Ausbauen" else "Info", if (level < 3) R.drawable.ico_growth else R.drawable.ico_info,
                                         detail = IslandBuild.upgradeCost(h.construction, level), tone = Color(0xFFE2A93C), dark = true) { selection = null; upgradePick = b },
-                                    SelectionAction("Verschieben", R.drawable.ico_pin_place, tone = Color(0xFF5E8A5C)) { startBuilding(b, true) },
                                     SelectionAction("Abreißen", R.drawable.ico_delete, tone = IslandBuild.No) { demolishTarget = sel },
                                 ))
                             })
@@ -410,7 +411,6 @@ internal fun IslandWorld(
                             val d = h.construction.decor.firstOrNull { it.id == sel.id }
                             ({
                                 PieceActionBar(d?.let(IsleDecor::name) ?: IsleDecor.labels[sel.item] ?: sel.item, if (SpecialDecor.isSpecial(sel.item)) "Besondere Deko" else "Deko", listOf(
-                                    SelectionAction("Verschieben", R.drawable.ico_pin_place, tone = Color(0xFF5E8A5C)) { startDecor(sel.item, d) },
                                     SelectionAction("Entfernen", R.drawable.ico_delete, tone = IslandBuild.No) { demolishTarget = sel },
                                 ))
                             })
@@ -466,7 +466,11 @@ internal fun IslandWorld(
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (view != "home") {
+            if (view == "home") {
+                // 7.9.9: a clearly visible painted plate back to the overview (Android back does the same).
+                OverviewBackPlate({ if (!constructionBusy) { selection = null; buildBar = false; place = null; view = "map" } })
+                Spacer(Modifier.width(8.dp))
+            } else {
                 Pill(Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Zurück") {
                     if (!constructionBusy) { if (view != "map") view = "map" else onBack() }
                 }.semantics { contentDescription = "Zurück" }) {
@@ -552,13 +556,9 @@ internal fun IslandWorld(
                     ) {
                         if (h != null) IslandBuildBar(h,
                             onBuilding = { b ->
-                                val level = h.construction.buildings[b.name] ?: 0
-                                when {
-                                    level > 0 -> { buildBar = false; selection = IslandTarget.Building(b) }
-                                    IslandBuild.buildable(h.construction, b) -> startBuilding(b, false, fromShop = true)
-                                    h.construction.ageDays < h.construction.buildDays.getOrElse(0) { 0 } -> onError("${b.label} kannst du ab Tag ${h.construction.buildDays.getOrElse(0) { 0 }} bauen")
-                                    else -> onError("Für ${b.label} fehlen ${h.construction.buildCosts.getOrElse(0) { 0 } - h.construction.available} Punkte")
-                                }
+                                // Standing: select it (its actions show the upgrade); otherwise its stage 0 is free.
+                                if (h.construction.standing(b)) { buildBar = false; selection = IslandTarget.Building(b) }
+                                else startBuilding(b, false, fromShop = true)
                             },
                             onDecor = { item ->
                                 val c = h.construction
@@ -603,30 +603,32 @@ internal fun IslandWorld(
             exit = androidx.compose.animation.slideOutVertically { it / 3 } + androidx.compose.animation.fadeOut(),
         ) {
             val close = { place = null }
+            // 7.9.9: every place shows the stage it really has (stage 0 when it does not stand yet).
+            fun stageOf(b: IsleBuilding) = island?.construction?.level(b) ?: 0
             when (openPlace ?: IsleBuilding.HOUSE) {
                 IsleBuilding.POST -> PostOffice(
                     pals = pals, letters = letters, opened = opened,
-                    onOpen = onOpenLetter, onLocked = onLockedTap, onWrite = onComposeLetter, onClose = close,
+                    onOpen = onOpenLetter, onLocked = onLockedTap, onWrite = onComposeLetter, onClose = close, level = stageOf(IsleBuilding.POST),
                 )
                 IsleBuilding.HARBOUR -> HarbourBoard(
                     quests = quests, topics = topics, onQuestDone = onQuestDone, onQuestDelete = onQuestDelete,
-                    onNewQuest = { newQuestFor = null to null }, onAllTopics = onAllTopics, onClose = close,
+                    onNewQuest = { newQuestFor = null to null }, onAllTopics = onAllTopics, onClose = close, level = stageOf(IsleBuilding.HARBOUR),
                 )
                 IsleBuilding.LIGHTHOUSE -> LighthouseView(
                     pals = pals, levels = infoById.mapValues { it.value.level }, incoming = incoming, outgoing = outgoing,
-                    onRespond = onRespondFriend, onFriend = { selectedFriend = it }, onFind = onPeople, onClose = close,
+                    onRespond = onRespondFriend, onFriend = { selectedFriend = it }, onFind = onPeople, onClose = close, level = stageOf(IsleBuilding.LIGHTHOUSE),
                 )
-                IsleBuilding.LIBRARY -> LibraryBook(onClose = close, glossary = glossary)
+                IsleBuilding.LIBRARY -> LibraryBook(onClose = close, glossary = glossary, level = stageOf(IsleBuilding.LIBRARY))
                 IsleBuilding.CAMPFIRE -> CommunityHall(
                     groups = groups, quests = quests, onGroupQuest = { newQuestFor = null to it },
-                    onManage = { onPlace(IsleBuilding.CAMPFIRE) }, onClose = close,
+                    onManage = { onPlace(IsleBuilding.CAMPFIRE) }, onClose = close, level = stageOf(IsleBuilding.CAMPFIRE),
                 )
                 IsleBuilding.HOUSE -> MyHouse(
                     name = ownName, emoji = ownEmoji, color = ownColor, friends = pals.size,
                     questsDone = quests.count { it.completedAt != null },
                     letters = letters.size, qp = islands?.qp ?: 0,
                     onSettings = { onPlace(IsleBuilding.HOUSE) },
-                    onEdit = { place = null; view = "home"; selection = null; buildBar = true }, onClose = close,
+                    onEdit = { place = null; view = "home"; selection = null; buildBar = true }, onClose = close, level = stageOf(IsleBuilding.HOUSE),
                 )
             }
         }
@@ -674,7 +676,7 @@ internal fun IslandWorld(
             containerColor = Isle.Card, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             IslandUpgradeContent(building, h, constructionBusy,
                 onAction = { action ->
-                    if (action == "upgrade" && building != null && (h.construction.buildings[building.name] ?: 0) == 0) startBuilding(building, false)
+                    if (action == "upgrade" && building != null && !h.construction.standing(building)) startBuilding(building, false)
                     else construct(ApiClient.IslandRequest(action, building?.name))
                 }, onDismiss = { if (!constructionBusy) { upgradePick = null; landPick = false } })
         }

@@ -104,6 +104,8 @@ class ApiClient(
     )
     data class GlossaryTerm(
         val id: Long, val term: String, val creatorName: String, val explanations: List<GlossaryExplanation>, val canDelete: Boolean,
+        /** 7.9.9: Begriffe, Witze, Sprüche or Zitate; old servers send none (= Begriffe). */
+        val category: String = GlossaryCategories.DEFAULT,
     )
 
     data class Quest(
@@ -139,6 +141,8 @@ class ApiClient(
         /** Special decoration (former life places, 7.9.7): price per item and the global limit per island. */
         val specialCosts: Map<String, Int> = SpecialDecor.defaultCosts,
         val specialLimit: Int = SpecialDecor.LIMIT,
+        /** 7.9.9: functions standing at their free stage 0 (hammock, letter tree, …); not a level. */
+        val starters: Set<String> = emptySet(),
     )
     /** [name] = own name of a special decoration ("Coden am Berg"), empty for ordinary decoration. */
     data class IslandDecor(val id: Int, val item: String, val position: List<Int>, val slot: Int? = null, val name: String = "")
@@ -543,7 +547,8 @@ class ApiClient(
                     } } }.orEmpty(),
                     decorLimits = ints("decor_limits", listOf(6, 8, 10, 12, 14, 16)),
                     specialCosts = c.optJSONObject("special_costs")?.let { s -> s.keys().asSequence().associateWith { s.getInt(it) } } ?: SpecialDecor.defaultCosts,
-                    specialLimit = c.optInt("special_limit", SpecialDecor.LIMIT))
+                    specialLimit = c.optInt("special_limit", SpecialDecor.LIMIT),
+                    starters = c.optJSONArray("starters")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty())
             } ?: IslandConstruction(supported = false),
         )
     }
@@ -580,9 +585,9 @@ class ApiClient(
 
     // Shared, community-edited glossary (plain text by design: it is a public dictionary).
     suspend fun glossary(token: String): List<GlossaryTerm> = array(token, "api/glossary", ::parseGlossaryTerm)
-    suspend fun addGlossaryTerm(token: String, term: String, explanation: String): Long = io {
+    suspend fun addGlossaryTerm(token: String, term: String, explanation: String, category: String = GlossaryCategories.DEFAULT): Long = io {
         execute(authorized(token, "api/glossary").post(
-            JSONObject().put("term", term.trim()).put("explanation", explanation.trim()).body()
+            JSONObject().put("term", term.trim()).put("explanation", explanation.trim()).put("category", GlossaryCategories.normalize(category)).body()
         ).build()).getLong("id")
     }
     suspend fun addGlossaryExplanation(token: String, termId: Long, text: String) = unitCall(
@@ -667,7 +672,8 @@ class ApiClient(
                 e.optLong("created_at"), e.optLong("updated_at"), e.optBoolean("mine"),
             )
         }
-        return GlossaryTerm(json.getLong("id"), json.getString("term"), json.optString("creator_name"), explanations, json.optBoolean("can_delete"))
+        return GlossaryTerm(json.getLong("id"), json.getString("term"), json.optString("creator_name"), explanations, json.optBoolean("can_delete"),
+            GlossaryCategories.normalize(json.optString("category", GlossaryCategories.DEFAULT)))
     }
 
     private fun parseTopic(json: JSONObject): Topic {

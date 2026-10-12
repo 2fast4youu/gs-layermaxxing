@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -72,22 +74,41 @@ internal object IslandBuild {
         IsleBuilding.HARBOUR -> "Quests"
     }
 
-    /** Price line of a building card: free in creative, points + day gate in normal mode. */
-    fun price(c: ApiClient.IslandConstruction, b: IsleBuilding): String {
-        val level = c.buildings[b.name] ?: 0
-        if (level > 0) return "Stufe $level · steht"
-        if (c.mode == "creative") return "gratis"
-        val cost = c.buildCosts.getOrElse(0) { 0 }; val day = c.buildDays.getOrElse(0) { 0 }
-        return if (c.ageDays < day) "$cost P · ab Tag $day" else "$cost Punkte"
-    }
-    fun buildable(c: ApiClient.IslandConstruction, b: IsleBuilding) = (c.buildings[b.name] ?: 0) > 0 ||
-        IslandEvolution.allowed(c, c.buildCosts.getOrElse(0) { 0 }, c.buildDays.getOrElse(0) { 0 })
+    /** Price line of a building card (7.9.9): stage 0 of every function is free; a standing one says so. */
+    fun price(c: ApiClient.IslandConstruction, b: IsleBuilding): String =
+        if (c.standing(b)) "steht · ${IslandStages.stageLabel(c.level(b))}" else "gratis"
+    /** Can this card be placed now? Every function's stage 0 is free (no points, no day gate) until it stands. */
+    fun buildable(c: ApiClient.IslandConstruction, b: IsleBuilding) = !c.standing(b)
     fun decorUnlocked(h: ApiClient.HomeIsland, item: String) = h.construction.mode == "creative" ||
         (h.items.firstOrNull { it.key == item }?.unlocked ?: true)
+    fun decorCount(h: ApiClient.HomeIsland) = h.construction.decor.count { !SpecialDecor.isSpecial(it.item) }
+    fun decorLimit(h: ApiClient.HomeIsland) = h.construction.decorLimits.getOrElse(h.construction.land) { 6 }
+    /** Card line: "gratis"/"freigeschaltet" when it can be placed, otherwise the short reason (limit "6/6", "fehlen 20 P"). */
     fun decorPrice(h: ApiClient.HomeIsland, item: String): String = when {
         h.construction.mode == "creative" -> "gratis"
+        decorFull(h) -> "${decorCount(h)}/${decorLimit(h)}"
         decorUnlocked(h, item) -> "freigeschaltet"
-        else -> "ab ${h.items.firstOrNull { it.key == item }?.unlockAt ?: 0} P"
+        else -> "fehlen ${((h.items.firstOrNull { it.key == item }?.unlockAt ?: 0) - h.score).coerceAtLeast(1)} P"
+    }
+    /** Land card: what blocks the next expansion, or its price. */
+    fun landPrice(c: ApiClient.IslandConstruction): String {
+        if (c.land >= 5) return "ganz ausgebaut"
+        if (c.mode == "creative") return "gratis"
+        val cost = c.landCosts.getOrElse(c.land) { 0 }; val day = c.landDays.getOrElse(c.land) { 0 }
+        return when {
+            c.ageDays < day -> "ab Tag $day"
+            c.available < cost -> "fehlen ${cost - c.available} P"
+            else -> "$cost P"
+        }
+    }
+    fun landBuildable(c: ApiClient.IslandConstruction) = c.land < 5 &&
+        IslandEvolution.allowed(c, c.landCosts.getOrElse(c.land) { 0 }, c.landDays.getOrElse(c.land) { 0 })
+    /** Special decoration card: "3/3" at the limit, "fehlen n P" when too expensive. */
+    fun specialPrice(c: ApiClient.IslandConstruction, key: String): String = when {
+        SpecialDecor.full(c) -> "${SpecialDecor.count(c)}/${c.specialLimit}"
+        c.mode == "creative" -> "gratis"
+        !SpecialDecor.affordable(c, key) -> "fehlen ${SpecialDecor.cost(c, key) - c.available} P"
+        else -> "${SpecialDecor.cost(c, key)} P"
     }
     /** What the next upgrade costs, for the info bar: "gratis" in creative mode, points otherwise. */
     fun upgradeCost(c: ApiClient.IslandConstruction, level: Int): String? = when {
@@ -109,12 +130,12 @@ internal object IslandBuild {
     /** The line on the Bauen button: "gratis" in creative mode, otherwise what the cheapest next step costs. */
     fun shopLine(c: ApiClient.IslandConstruction): String = when {
         c.mode == "creative" -> "gratis"
-        IsleBuilding.entries.any { (c.buildings[it.name] ?: 0) == 0 } -> "ab ${c.buildCosts.getOrElse(0) { 0 }} P"
+        // 7.9.9: a function that does not stand yet is built for free at stage 0.
+        IsleBuilding.entries.any { !c.standing(it) } -> "gratis"
         c.land < 5 -> "ab ${c.landCosts.getOrElse(c.land) { 0 }} P"
         else -> "${c.available} P"
     }
-    fun decorFull(h: ApiClient.HomeIsland) = h.construction.mode != "creative" &&
-        h.construction.decor.size >= h.construction.decorLimits.getOrElse(h.construction.land) { 6 }
+    fun decorFull(h: ApiClient.HomeIsland) = h.construction.mode != "creative" && decorCount(h) >= decorLimit(h)
 }
 
 /**
@@ -306,8 +327,10 @@ internal object BuildShelf {
     const val SPECIAL = 2
     const val LAND = 3
     val titles = listOf("Gebäude", "Deko", "Besondere Deko", "Land")
-    /** First strip index of every section: each section starts with its own heading item. */
-    fun starts(counts: List<Int>): List<Int> = counts.runningFold(0) { acc, n -> acc + n + 1 }.dropLast(1)
+    /** First strip index of every section. 7.9.9: no heading items in the strip any more (only the tabs above). */
+    fun starts(counts: List<Int>): List<Int> = counts.runningFold(0) { acc, n -> acc + n }.dropLast(1)
+    /** Width of one card plus the gap, in dp (every strip item is a card). */
+    const val ITEM_DP = 104
     /** Section of the strip item at [index]. */
     fun sectionAt(index: Int, starts: List<Int>): Int = starts.indexOfLast { it <= index }.coerceAtLeast(0)
     fun decorKeys(home: ApiClient.HomeIsland) = home.items.map { it.key }.ifEmpty { IsleDecor.labels.keys.toList() }.filter { IsleDecor.res(it) != null && !SpecialDecor.isSpecial(it) }
@@ -335,7 +358,7 @@ internal fun IslandBuildBar(
     val density = androidx.compose.ui.platform.LocalDensity.current
     var target by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Int?>(null) }
     val state = rememberScrollState()
-    fun offset(index: Int) = (0 until index).sumOf { if (it in starts) 66 else 104 }
+    fun offset(index: Int) = index * BuildShelf.ITEM_DP
     val sectionOffsets = starts.map { with(density) { offset(it).dp.roundToPx() } }
     val following by androidx.compose.runtime.remember(sectionOffsets) {
         androidx.compose.runtime.derivedStateOf(androidx.compose.runtime.structuralEqualityPolicy()) {
@@ -382,58 +405,49 @@ internal fun IslandBuildBar(
             Modifier.fillMaxWidth().horizontalScroll(state).semantics { contentDescription = "Bauleiste Streifen" }.padding(horizontal = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ShelfHeading(BuildShelf.titles[0], null)
+            // 7.9.9: one strip of cards only, no section names inside it (the tabs above follow the scroll).
+            // What can be placed now is in full colour; everything else is grey with a short reason.
             IsleBuilding.entries.forEach { b ->
-                val level = c.buildings[b.name] ?: 0
-                val stage = IslandStages.of(b, level.coerceAtLeast(1))
+                val standing = c.standing(b)
+                val stage = IslandStages.of(b, if (standing) c.level(b) else 0)
                 BuildCard(stage.name, IslandBuild.price(c, b), IslandBuild.buildable(c, b),
-                    b.label + if (level == 0) " platzieren" else " auswählen", { onBuilding(b) }, built = level > 0) {
+                    b.label + if (!standing) " platzieren" else " auswählen", { onBuilding(b) }, built = standing) {
                     PaintedIslandPlace(b, stage.level, stage.res, Modifier.fillMaxSize(.9f))
                 }
             }
-            ShelfHeading(BuildShelf.titles[1], null)
             decorKeys.forEach { key ->
                 val ok = IslandBuild.decorUnlocked(home, key) && !IslandBuild.decorFull(home)
-                BuildCard(IsleDecor.labels[key] ?: key, if (IslandBuild.decorFull(home)) "Platz voll" else IslandBuild.decorPrice(home, key), ok,
+                BuildCard(IsleDecor.labels[key] ?: key, IslandBuild.decorPrice(home, key), ok,
                     "${IsleDecor.labels[key] ?: key} platzieren", { onDecor(key) }) {
                     Image(painterResource(IsleDecor.res(key)!!), null, Modifier.fillMaxSize(.82f), contentScale = ContentScale.Fit)
                 }
             }
-            ShelfHeading(BuildShelf.titles[2], "$specialCount/${c.specialLimit}")
             SpecialDecor.items.forEach { sp ->
                 val full = SpecialDecor.full(c)
-                val price = if (c.mode == "creative") "gratis" else "${SpecialDecor.cost(c, sp.key)} P"
-                BuildCard(sp.label, if (full) "${c.specialLimit}/${c.specialLimit} voll" else price, !full && SpecialDecor.affordable(c, sp.key),
+                BuildCard(sp.label, IslandBuild.specialPrice(c, sp.key), !full && SpecialDecor.affordable(c, sp.key),
                     "Besondere Deko ${sp.label} platzieren", { onDecor(sp.key) }, special = true) {
                     Image(painterResource(sp.res), null, Modifier.fillMaxSize(.95f), contentScale = ContentScale.Fit)
                 }
             }
-            ShelfHeading(BuildShelf.titles[3], null)
             val level = c.land
-            BuildCard("Insel vergrößern", if (level >= 5) "ganz ausgebaut" else if (c.mode == "creative") "gratis" else "${c.landCosts.getOrElse(level) { 0 }} P · ab Tag ${c.landDays.getOrElse(level) { 0 }}",
-                level < 5, "Land erweitern", onLand) {
+            BuildCard("Insel vergrößern", IslandBuild.landPrice(c), IslandBuild.landBuildable(c), "Land erweitern", onLand) {
                     Image(painterResource(if (level >= 2) R.drawable.terrain_home else R.drawable.terrain_sand), null, Modifier.fillMaxSize(.92f), contentScale = ContentScale.Fit)
             }
         }
     }
 }
 
-/** A section heading inside the strip: a slim brass-edged plate, so the strip reads as one shelf with dividers. */
-@Composable
-private fun ShelfHeading(title: String, count: String?) {
-    Column(
-        Modifier.height(122.dp).width(58.dp).clip(RoundedCornerShape(14.dp))
-            .background(Brush.verticalGradient(listOf(Color(0x33FFF8E6), Color(0x14FFF8E6))))
-            .border(1.dp, IslandBuild.BrassDark.copy(alpha = .7f), RoundedCornerShape(14.dp))
-            .semantics { contentDescription = "Abschnitt $title" }.padding(horizontal = 4.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-    ) {
-        title.split(" ").forEach { word ->
-            Text(word, color = IslandBuild.Gold, fontFamily = Kit.Display, fontSize = if (word.length > 7) 9.sp else 12.sp, maxLines = 1, softWrap = false, textAlign = TextAlign.Center)
+/** Greyscale for everything that cannot be placed right now (7.9.9): same painted art, no colour. */
+internal val GreyFilter = androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) })
+
+internal fun Modifier.greyscale(on: Boolean): Modifier = if (!on) this else drawWithCache {
+    val paint = androidx.compose.ui.graphics.Paint().apply { colorFilter = GreyFilter }
+    onDrawWithContent {
+        drawIntoCanvas { canvas ->
+            canvas.saveLayer(androidx.compose.ui.geometry.Rect(androidx.compose.ui.geometry.Offset.Zero, size), paint)
+            drawContent()
+            canvas.restore()
         }
-        if (count != null) Text(count, color = Color(0xFF3B2410), fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp,
-            modifier = Modifier.padding(top = 6.dp).background(Brush.verticalGradient(listOf(IslandBuild.BrassLight, IslandBuild.BrassDark)), RoundedCornerShape(50))
-                .padding(horizontal = 6.dp, vertical = 1.dp))
     }
 }
 
@@ -441,10 +455,11 @@ private fun ShelfHeading(title: String, count: String?) {
 private fun BuildCard(name: String, price: String, enabled: Boolean, description: String, onClick: () -> Unit, built: Boolean = false, special: Boolean = false, art: @Composable () -> Unit) {
     Column(
         Modifier.width(96.dp).clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick).semantics { contentDescription = description; role = Role.Button; stateDescription = if (enabled) "baubar" else "nicht verfügbar: $price" }
+            .greyscale(!enabled).alpha(if (enabled) 1f else .72f)
             .background(Brush.verticalGradient(listOf(Color(0xFFFFF6E2), Color(0xFFF0E1C0))))
             .border(if (special) 2.5.dp else 2.dp, if (built) Isle.Teal else if (special) IslandBuild.BrassDark else Color(0xFFB9852E), RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick).semantics { contentDescription = description; role = Role.Button; if (!enabled) stateDescription = "nicht verfügbar" }
-            .alpha(if (enabled) 1f else .55f).padding(6.dp),
+            .padding(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.size(78.dp).clip(RoundedCornerShape(14.dp)).background(Brush.radialGradient(listOf(Color(0x557FA2A3), Color.Transparent))), Alignment.BottomCenter) {
@@ -637,11 +652,11 @@ internal fun IslandMenuContent(
                 }
             }
         }
-        MenuPill(overviewLabel, if (overviewLabel == "Meine Insel") R.drawable.ico_island else R.drawable.ico_map, Modifier.fillMaxWidth().padding(bottom = 10.dp), onOverview)
-        Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MenuPill("Einstellungen", R.drawable.ico_appearance, Modifier.weight(1f), onSettings)
-            MenuPill("Bauen", R.drawable.ico_build, Modifier.weight(1f), onBuild)
-        }
+        // 7.9.9: no "Übersicht", "Bauen" or "Einstellungen" pills at the bottom any more. The overview is the
+        // painted back plate at the top left of the own island, settings live under Mehr, building is the Bauen
+        // button. Only on the overview does the menu keep its way home ("Meine Insel").
+        if (overviewLabel == "Meine Insel") MenuPill(overviewLabel, R.drawable.ico_island, Modifier.fillMaxWidth().padding(bottom = 10.dp), onOverview)
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -655,5 +670,26 @@ private fun MenuPill(label: String, icon: Int, modifier: Modifier, onClick: () -
         AppIcon(icon, null, tint = IslandBuild.Cream, size = 18.dp)
         Spacer(Modifier.width(4.dp))
         Text(label, color = IslandBuild.Cream, fontFamily = Kit.Body, fontWeight = FontWeight.Bold)
+    }
+}
+
+/**
+ * 7.9.9: the way back to the overview on the own island, painted like the island's brass/wood plates
+ * (the same p_plate as the "Meine Insel" header): an arrow and "Übersicht", at least 48 dp tall.
+ */
+@Composable
+internal fun OverviewBackPlate(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier.heightIn(min = 52.dp).width(142.dp).height(52.dp).clip(RoundedCornerShape(14.dp))
+            .clickable(onClickLabel = "Zur Übersicht", onClick = onClick)
+            .semantics { contentDescription = "Zurück zur Übersicht"; role = Role.Button },
+        Alignment.Center,
+    ) {
+        Image(painterResource(R.drawable.p_plate), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+        Row(Modifier.padding(bottom = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            AppIcon(R.drawable.ico_back, null, tint = Color(0xFF3B2410), size = 20.dp)
+            Spacer(Modifier.width(4.dp))
+            Text("Übersicht", fontFamily = Kit.Display, fontSize = 17.sp, color = Color(0xFF3B2410), maxLines = 1, softWrap = false)
+        }
     }
 }
