@@ -8,8 +8,8 @@ The avatar remains visible; every application function is available from **Menü
 - The app's bottom navigation (Chats · Inseln · Mehr) is the same composable
   (`MainNavigationBar`) on every tab, the island included, and always reachable. Settings stay reachable via Mehr.
 - **Own island (7.9.6 "flow")**: no second row any more. At rest there is only the bottom navigation,
-  the back pill "‹ Übersicht" at the top left and one narrow column of round buttons at the right edge
-  above the navigation: *Menü*, *Bearbeiten* (*Fertig* in edit mode) and the bigger primary **Bauen**
+  one narrow column of round buttons at the right edge
+  above the navigation: *Menü* and the bigger primary **Bauen**
   button with its label and a price chip (cheapest next step, e.g. "ab 25 P"; "gratis" in creative mode).
   At most one contextual element is shown above the navigation; they share one bottom container and
   slide/fade into each other (180–260 ms, FastOutSlowIn), so nothing stacks and nothing jumps.
@@ -17,14 +17,14 @@ The avatar remains visible; every application function is available from **Menü
   second row of round icon buttons stays as before.
 - The own island opens zoomed in (zoom depends on land size) and cannot be zoomed out to overview
   size. Its header is a painted brass plate "Meine Insel" with a creative badge when active; the
-  back pill reads "‹ Übersicht". The overview is labelled "Übersicht · alle Inseln".
+  overview entry is available only in **Menü**. The overview is labelled "Übersicht · alle Inseln".
 
 ## Building (7.9.5, flow 7.9.6)
 
 **Bauen** (shop button) opens a slim bottom sheet (≤ 28 % of the height; it replaces the side column
-and any open actions) with painted cards in three tabs:
-*Gebäude* (the six function buildings, price or "gratis"), *Deko* (every decoration item) and
-*Land* (expand the island, new life place). Tapping a card puts the piece on the island as a local
+and any open actions) with painted cards in one continuous strip:
+*Gebäude* (the six function buildings, price or "gratis"), *Deko*, *Besondere Deko* (max 3,
+120–200 points, free in creative mode), and *Land* (expand the island). The tabs follow scrolling and animate to their section. Tapping a card puts the piece on the island as a local
 preview: the real sprite stands raised over a green/red footprint on the grid, and the round **✗ / ✓
 bubbles hang right at the piece** (under its footprint, above it near the shore) and follow it. ✓ saves,
 ✗ discards (and brings the sheet back when the piece came from it); on an impossible spot the footprint
@@ -45,12 +45,10 @@ screen, and a tap on empty ground closes it.
 A **long press** (`LONG_PRESS_MS` = 350 ms) lifts the piece straight into move mode (haptic tick, the
 sprite rises, the grid fades in) and the **same finger** carries it on without lifting; on release the
 preview stays with ✓/✗. One touch surface (`IslandTouchSurface`) handles tap, long press, edit and
-placement, so the gesture never changes hands. "Verschieben" in the actions remains the alternative. **Bearbeiten** puts the island in edit
-mode: the grid fades in, pieces wiggle, touching a piece lifts it and a drag carries it right away;
-empty life plots are shown. *Fertig* leaves it.
+placement, so the gesture never changes hands. "Verschieben" in the actions remains the alternative.. There is no separate edit mode or empty life plot any more (7.9.7).
 
 **Abreißen** always asks first. Normal mode: allowed, no points are refunded. Creative mode: free.
-Life places can be demolished from their sheet. Moving is free and never changes level or points.
+Former life places are special decoration and use the same remove confirmation. Moving is free and never changes level or points.
 
 ## Creative mode switch (7.9.6)
 
@@ -80,7 +78,7 @@ identical to what `IslandPlans.placedBuildings`/`decorPieces` draw), `unproject`
 `footprint` (diamond around a cell whose corners are cells) and the mesh. The grid is drawn as an
 **isometric diamond mesh**: its lines run along the diagonals of the lattice, so they are never
 axis-parallel and follow the oblique view of the painted island; a footprint lies exactly on that mesh.
-It is only shown on land (`IslandPlans.inside`), fades in while editing or placing and is stronger near
+It is only shown on the shared stage-specific land grid (`IslandGrid.buildableCells`, server fixture `island_grid.json`), fades in while moving or placing and is stronger near
 the held piece. The diamonds have the height/width ratio of the lattice (about .82): the stored lattice
 is square in plan and cannot be rotated without moving existing layouts, so the mesh is the lattice's own
 diagonal view. `construction.positions` and `construction.decor` live in the existing JSON ledger with

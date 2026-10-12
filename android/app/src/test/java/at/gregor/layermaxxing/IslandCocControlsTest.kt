@@ -150,22 +150,25 @@ class IslandCocControlsTest {
         rule.onAllNodesWithText("Verschieben").assertCountEquals(0)
     }
 
-    @Test fun editModeShowsTheIsometricGridAndLeavingHidesIt() {
+    @Test fun movingFromTheActionsShowsTheGridAndCancelHidesIt() {
         start(Saved(), grown = true)
         rule.onAllNodesWithContentDescription("Baufeld mit Kästchen").assertCountEquals(0)
-        rule.onAllNodesWithText("Bearbeiten")[0].performClick(); tick()
+        rule.onAllNodesWithContentDescription("Post").filter(hasClickAction())[0].performClick(); tick()
+        rule.onAllNodesWithText("Verschieben")[0].performClick(); tick()
         rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].assertExists()
-        rule.onAllNodesWithText("Fertig")[0].performClick(); tick()
+        rule.onAllNodesWithContentDescription("Bauplatzraster")[0].assertExists()
+        confirmNode.assertExists(); cancelNode.assertExists()
+        cancelNode.performClick(); tick()
         rule.onAllNodesWithContentDescription("Baufeld mit Kästchen").assertCountEquals(0)
     }
 
-    @Test fun touchingABuildingInEditModeLiftsItWithBubbles() {
+    /** 7.9.7 (D): the extra "Bearbeiten" button is gone; the right column is Menü + Bauen only. */
+    @Test fun thereIsNoEditButtonAnyMore() {
         start(Saved(), grown = true)
-        rule.onAllNodesWithText("Bearbeiten")[0].performClick(); tick()
-        rule.onAllNodesWithContentDescription("Post")[0].performTouchInput { click() }
-        tick()
-        rule.onAllNodesWithContentDescription("Bauplatzraster")[0].assertExists()
-        confirmNode.assertExists(); cancelNode.assertExists()
+        rule.onAllNodesWithText("Bearbeiten").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Bearbeiten").assertCountEquals(0)
+        rule.onAllNodesWithText("Menü")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].assertExists()
     }
 
     @Test fun buildButtonIsTheRoundShopButton() {

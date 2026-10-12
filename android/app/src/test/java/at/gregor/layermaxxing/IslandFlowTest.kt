@@ -169,10 +169,13 @@ class IslandFlowTest {
     @Test fun restStateShowsOnlyANarrowEdgeGroupAboveTheNavigation() {
         start(buildings = grown, land = 5)
         val r = root
-        for (label in listOf("Bauen", "Bearbeiten", "Menü")) {
+        for (label in listOf("Bauen", "Menü")) {
             val b = rule.onAllNodesWithText(label)[0].getBoundsInRoot()
             assertTrue("$label sits in the edge group on the right, was at ${(b.left + b.right) / 2}", ((b.left + b.right) / 2).value >= r.width.value * .75f)
         }
+        // 7.9.7: no extra "Bearbeiten" button any more (moving = long press or "Verschieben" in the actions).
+        rule.onAllNodesWithText("Bearbeiten").assertCountEquals(0)
+        rule.onAllNodesWithText("Fertig").assertCountEquals(0)
         rule.onAllNodesWithText("Chats")[0].assertExists(); rule.onAllNodesWithText("Inseln")[0].assertExists(); rule.onAllNodesWithText("Mehr")[0].assertExists()
     }
 
@@ -224,7 +227,7 @@ class IslandFlowTest {
         tapPost()
         rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].assertExists()
         tapEmptyGround(); tick(900)
-        rule.onAllNodesWithText("Bearbeiten")[0].performClick(); tick()
+        openShop(); rule.onAllNodesWithContentDescription("Bauleiste schließen")[0].performClick(); tick()
         rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].assertExists()
     }
 
@@ -264,7 +267,7 @@ class IslandFlowTest {
         rule.onAllNodesWithText("gratis")[0].assertExists()
         rule.onAllNodesWithContentDescription("Hinweis Kreativmodus")[0].assertExists()
         // nothing disappeared
-        for (label in listOf("Bauen", "Bearbeiten", "Menü", "Chats", "Inseln", "Mehr")) rule.onAllNodesWithText(label)[0].assertExists()
+        for (label in listOf("Bauen", "Menü", "Chats", "Inseln", "Mehr")) rule.onAllNodesWithText(label)[0].assertExists()
         tick(8000)
         rule.onAllNodesWithContentDescription("Hinweis Kreativmodus").assertCountEquals(0)
         // off and on again: the note is not repeated
@@ -287,7 +290,8 @@ class IslandFlowTest {
 
     @Test fun labelsOnASmallIslandAreNotCutOff() {
         start(creative = false, buildings = IsleBuilding.entries.associate { it.name to 1 }, land = 0)
-        for (name in listOf("Mein Haus", "Wörterbuch", "Gruppen")) {
+        // 7.9.7: the signs carry the stage names (Mein Haus stage 1 = "Holzhütte" ...).
+        for (name in IsleBuilding.entries.map { IslandStages.of(it, 1).name }) {
             val node = rule.onAllNodesWithText(name)[0].fetchSemanticsNode()
             val layouts = mutableListOf<TextLayoutResult>()
             node.config[SemanticsActions.GetTextLayoutResult].action!!(layouts)

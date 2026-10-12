@@ -180,7 +180,23 @@ internal interface IslandCamera {
 internal val LocalIslandCamera = androidx.compose.runtime.staticCompositionLocalOf<IslandCamera?> { null }
 
 /** Something the edit surface can pick up: a standing building or a decoration object. */
-internal data class EditTarget(val target: IslandTarget, val cell: List<Int>, val x: Float, val y: Float, val size: Float)
+internal data class EditTarget(val target: IslandTarget, val cell: List<Int>, val x: Float, val y: Float, val size: Float,
+    val res: Int? = null, val sign: String? = null) {
+    fun spriteRect(width: Float, height: Float): androidx.compose.ui.geometry.Rect {
+        val b = res?.let(SpriteBounds::of) ?: floatArrayOf(0f, 0f, 1f, 1f)
+        val box = size * width; val left = x * width - box / 2; val top = y * height - box
+        return androidx.compose.ui.geometry.Rect(left + b[0] * box, top + b[1] * box, left + b[2] * box, top + b[3] * box)
+    }
+    fun contains(at: Offset, surface: Size, dp: Float, zoom: Float): Boolean {
+        val pad = 2f * dp / zoom.coerceAtLeast(1f)
+        val rect = spriteRect(surface.width, surface.height)
+        if (rect.inflate(pad).contains(at)) return true
+        val name = sign ?: return false
+        val half = IslandSign.width(name) * dp / (2f * zoom.coerceAtLeast(1f))
+        return at.x in x * surface.width - half..x * surface.width + half &&
+            at.y in rect.bottom..rect.bottom + IslandSign.HEIGHT * dp / zoom.coerceAtLeast(1f)
+    }
+}
 
 /**
  * The build grid as cells ("Kästchen") + held piece's footprint + selection footprint, drawn between terrain
@@ -255,7 +271,6 @@ private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.tap
  *  - rest: a short tap on a piece = [onTap] (actions), a tap on empty ground = [onGround]; holding a
  *    piece still for [LONG_PRESS_MS] lifts it ([onLongPress]) and the same finger carries it right away;
  *    a drag or pinch that starts moving earlier belongs to the camera;
- *  - edit mode: touching a piece lifts it ([onLift]) and a drag carries it at once;
  *  - with a held piece (draft): a drag that starts on it carries it with the finger's offset, a touch on
  *    land elsewhere puts it there first, a touch in the water is ignored;
  *  - every position goes through [IslandGrid.nearestLandCell]: the piece never leaves the land, a finger
@@ -264,8 +279,8 @@ private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.tap
  */
 @Composable
 internal fun BoxWithConstraintsScope.IslandTouchSurface(
-    land: Int, draft: IslandDraft?, radius: Int, targets: List<EditTarget>, editing: Boolean,
-    onTap: (IslandTarget) -> Unit, onLongPress: (IslandTarget) -> Unit, onLift: (IslandTarget) -> Unit,
+    land: Int, draft: IslandDraft?, radius: Int, targets: List<EditTarget>,
+    onTap: (IslandTarget) -> Unit, onLongPress: (IslandTarget) -> Unit,
     onGround: () -> Unit, onPosition: (List<Int>) -> Unit,
 ) {
     val camera = LocalIslandCamera.current
@@ -273,9 +288,7 @@ internal fun BoxWithConstraintsScope.IslandTouchSurface(
     val currentDraft by rememberUpdatedState(draft)
     val currentTargets by rememberUpdatedState(targets)
     val currentRadius by rememberUpdatedState(radius)
-    val currentEditing by rememberUpdatedState(editing)
     val move by rememberUpdatedState(onPosition)
-    val lift by rememberUpdatedState(onLift)
     val tap by rememberUpdatedState(onTap)
     val longPress by rememberUpdatedState(onLongPress)
     val ground by rememberUpdatedState(onGround)
@@ -298,7 +311,7 @@ internal fun BoxWithConstraintsScope.IslandTouchSurface(
     }
     Box(
         Modifier.fillMaxSize()
-            .semantics { contentDescription = when { draft != null -> "Bauplatzraster"; editing -> "Bearbeitungsfläche"; else -> "Inselboden" } }
+            .semantics { contentDescription = if (draft != null) "Bauplatzraster" else "Inselboden" }
             .pointerInput(land) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -320,32 +333,20 @@ internal fun BoxWithConstraintsScope.IslandTouchSurface(
                         if (grab.value == Offset.Zero) apply(down.position)
                     } else {
                         val t = currentTargets.filter { tg ->
-                            val box = tg.size * s.width
-                            val ax = tg.x * s.width; val ay = tg.y * s.height; val pad = 6.dp.toPx()
-                            // the name sign under the foot counts as part of the building (it keeps its screen size)
-                            val sign = 26.dp.toPx() / (camera?.zoom ?: 1f).coerceAtLeast(1f)
-                            down.position.x in ax - box / 2 - pad..ax + box / 2 + pad && down.position.y in ay - box - pad..ay + sign
+                            tg.contains(down.position, s, 1.dp.toPx(), camera?.zoom ?: 1f)
                         }.maxByOrNull { it.y }
                         if (t == null) {
                             // Empty ground: a clean tap closes what is open; a drag or pinch moves the camera.
-                            if (!currentEditing && tapOrMove(down, viewConfiguration.touchSlop) == PressOutcome.TAP) ground()
+                            if (tapOrMove(down, viewConfiguration.touchSlop) == PressOutcome.TAP) ground()
                             return@awaitEachGesture
                         }
-                        if (currentEditing) {
-                            // Edit mode: a tap lifts it; a drag lifts it and carries it with the same touch.
-                            val slop = awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
-                            lift(t.target)
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (slop == null) return@awaitEachGesture
-                        } else {
-                            // Short tap = actions. Holding still = pick it up; this same finger then carries it.
-                            when (withTimeoutOrNull(LONG_PRESS_MS) { tapOrMove(down, viewConfiguration.touchSlop, LONG_PRESS_MS) } ?: PressOutcome.HELD) {
-                                PressOutcome.TAP -> { tap(t.target); return@awaitEachGesture }
-                                PressOutcome.MOVED -> return@awaitEachGesture
-                                PressOutcome.HELD -> {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    longPress(t.target)
-                                }
+                        // Short tap = actions. Holding still = pick it up; this same finger then carries it.
+                        when (withTimeoutOrNull(LONG_PRESS_MS) { tapOrMove(down, viewConfiguration.touchSlop, LONG_PRESS_MS) } ?: PressOutcome.HELD) {
+                            PressOutcome.TAP -> { tap(t.target); return@awaitEachGesture }
+                            PressOutcome.MOVED -> return@awaitEachGesture
+                            PressOutcome.HELD -> {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                longPress(t.target)
                             }
                         }
                         grab.value = anchor(t.cell) - down.position

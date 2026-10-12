@@ -28,56 +28,14 @@ internal object IslandEvolution {
         IsleBuilding.CAMPFIRE -> "Feuerkreis"
         IsleBuilding.HARBOUR -> "Strandtreff"
     }
-    fun levelName(b: IsleBuilding, level: Int) = if (level == 0) "${b.label} · noch nicht gebaut" else when(level) {
-        1 -> "${b.label} · Holzbau"
-        2 -> "${b.label} · ausgebaut"
-        else -> "${b.label} · Meisterbau"
-    }
+    fun levelName(b: IsleBuilding, level: Int) = "${IslandStages.of(b, level).name} · " + if (level == 0) "noch nicht gebaut" else "Stufe $level"
     fun allowed(c: ApiClient.IslandConstruction, cost: Int, days: Int) = c.mode == "creative" || c.available >= cost && c.ageDays >= days
 }
 
-/** Reuse Gregor's painted sprite family at EVERY stage, including the natural starter. */
+/** Reuse Gregor's painted sprite family at EVERY stage, including the natural starter (table: [IslandStages]). */
 internal object IslandArtwork {
-    fun resource(building: IsleBuilding, tier: Int): Int = when (tier.coerceIn(0, 3)) {
-        0 -> when (building) {
-            IsleBuilding.HOUSE -> R.drawable.decor_hammock
-            IsleBuilding.POST, IsleBuilding.LIGHTHOUSE -> R.drawable.decor_palm
-            IsleBuilding.LIBRARY -> R.drawable.n_crates
-            IsleBuilding.CAMPFIRE -> R.drawable.decor_campfire
-            IsleBuilding.HARBOUR -> R.drawable.n_rowboat
-        }
-        1 -> when (building) {
-            IsleBuilding.HOUSE -> R.drawable.fief_hut_stage1
-            IsleBuilding.POST -> R.drawable.lm_post
-            IsleBuilding.LIGHTHOUSE -> R.drawable.decor_lantern
-            IsleBuilding.LIBRARY -> R.drawable.lm_library
-            IsleBuilding.CAMPFIRE -> R.drawable.b_workshop
-            IsleBuilding.HARBOUR -> R.drawable.b_jetty
-        }
-        2 -> when (building) {
-            IsleBuilding.HOUSE -> R.drawable.b_house
-            IsleBuilding.POST -> R.drawable.b_post
-            IsleBuilding.LIGHTHOUSE -> R.drawable.lm_lighthouse
-            IsleBuilding.LIBRARY -> R.drawable.b_library
-            IsleBuilding.CAMPFIRE -> R.drawable.b_hall
-            IsleBuilding.HARBOUR -> R.drawable.lm_jetty
-        }
-        else -> when (building) {
-            IsleBuilding.HOUSE -> R.drawable.fief_hut_stage3
-            IsleBuilding.POST -> R.drawable.b_post
-            IsleBuilding.LIGHTHOUSE -> R.drawable.b_lighthouse
-            IsleBuilding.LIBRARY -> R.drawable.b_library
-            IsleBuilding.CAMPFIRE -> R.drawable.b_hall
-            IsleBuilding.HARBOUR -> R.drawable.lm_jetty
-        }
-    }
-
-    fun accent(building: IsleBuilding, tier: Int): Int? = if (tier == 0) when (building) {
-        IsleBuilding.POST -> R.drawable.p_env
-        IsleBuilding.LIBRARY -> R.drawable.p_book
-        IsleBuilding.HARBOUR -> R.drawable.decor_flag
-        else -> null
-    } else null
+    fun resource(building: IsleBuilding, tier: Int): Int = IslandStages.of(building, tier).res
+    fun accent(building: IsleBuilding, tier: Int): Int? = IslandStages.of(building, tier).accent
 }
 
 /** Same production artwork for the island and its upgrade preview. */
@@ -116,7 +74,7 @@ internal fun AnimatedIslandSea(modifier: Modifier = Modifier, oversized: Boolean
 @Composable
 internal fun IslandUpgradeContent(
     building: IsleBuilding?, island: ApiClient.HomeIsland, busy: Boolean,
-    onMove: () -> Unit = {}, onOpen: () -> Unit, onAction: (String) -> Unit, onDismiss: () -> Unit,
+    onAction: (String) -> Unit, onDismiss: () -> Unit,
 ) {
     val c=island.construction
     val level=building?.let { c.buildings[it.name] ?: 0 } ?: c.land
@@ -125,13 +83,13 @@ internal fun IslandUpgradeContent(
     val days=if(building==null) c.landDays else c.buildDays
     val cost=costs.getOrElse(level) { 0 }; val day=days.getOrElse(level) { 0 }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=24.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        Text(building?.label ?: "Insel vergrößern",fontSize=22.sp,color=Isle.Ink)
+        Text(building?.let { "${IslandStages.of(it, level).name} ausbauen" } ?: "Insel vergrößern",fontSize=22.sp,color=Isle.Ink)
         Text(if(c.mode=="creative") "Kreativmodus · kostenlos auf deiner echten Insel" else "${c.available} Punkte verfügbar · Tag ${c.ageDays}",color=Isle.Muted,fontSize=13.sp)
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
             if(building!=null) {
-                BuildingPreview(building,level)
-                Text("→",color=Isle.Muted,fontSize=24.sp)
-                BuildingPreview(building,(level+1).coerceAtMost(max))
+                BuildingPreview(building, level, Modifier.weight(1f))
+                Text("→", color=Isle.Muted, fontSize=24.sp, modifier=Modifier.padding(horizontal=6.dp))
+                BuildingPreview(building, (level+1).coerceAtMost(max), Modifier.weight(1f))
             } else {
                 DynamicIsland(IslandPlans.home(1,0,c),Modifier.width(125.dp),animate=false)
                 Text("→",color=Isle.Muted,fontSize=24.sp)
@@ -139,8 +97,6 @@ internal fun IslandUpgradeContent(
             }
         }
         Text(if(building==null) "Landstufe $level / $max" else IslandEvolution.levelName(building,level),color=Isle.Ink)
-        if(building!=null) Button(onClick=onOpen,modifier=Modifier.fillMaxWidth(),enabled=!busy) { Text("${building.label} öffnen") }
-        if(building!=null && level>0) OutlinedButton(onClick=onMove,enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text("Verschieben") }
         if(level<max) {
             Text(if(c.mode=="creative") "Nächster Ausbau: kostenlos" else "Nächster Ausbau: $cost Punkte · ab Tag $day. Punkte werden beim Bauen verbraucht.",color=Isle.Muted,fontSize=13.sp)
             Button(onClick={onAction(if(building==null) "expand" else "upgrade")},enabled=!busy && IslandEvolution.allowed(c,cost,day),modifier=Modifier.fillMaxWidth()) {
@@ -154,10 +110,12 @@ internal fun IslandUpgradeContent(
 }
 
 @Composable
-private fun BuildingPreview(building: IsleBuilding,level: Int) {
-    Column(horizontalAlignment=Alignment.CenterHorizontally) {
-        if (level > 0) PaintedIslandPlace(building, level, IslandArtwork.resource(building, level), Modifier.size(76.dp))
-        else Box(Modifier.size(76.dp), contentAlignment=Alignment.Center) { Text("Leer", color=Isle.Muted) }
-        Text(if(level==0) "Nicht gebaut" else "Stufe $level",color=Isle.Muted,fontSize=12.sp)
+private fun BuildingPreview(building: IsleBuilding, level: Int, modifier: Modifier = Modifier) {
+    val stage = IslandStages.of(building, level)
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        PaintedIslandPlace(building, level, stage.res, Modifier.fillMaxWidth().height(170.dp), description = "Ausbauvorschau: ${stage.name}")
+        Text(stage.name, color = Isle.Ink, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(if (level == 0) "Start" else "Stufe $level", color = Isle.Muted, fontSize = 12.sp)
+        Text(stage.look, color = Isle.Muted, fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }

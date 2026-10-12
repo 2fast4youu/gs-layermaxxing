@@ -64,6 +64,7 @@ class CreativeIslandRegressionTest {
 
     @Test fun creativeModeKeepsTheRealIslandLoadedAndTappable() {
         val api = legacyServer()
+        val errors = mutableListOf<String>()
         rule.mainClock.autoAdvance = false
         rule.setContent {
             VillageTheme(true) {
@@ -75,14 +76,18 @@ class CreativeIslandRegressionTest {
                     onCreateQuest = { _, _, _, _, _, _ -> }, onQuestDone = { _, _ -> }, onQuestDelete = {},
                     ownId = 1, startView = "home", creativeActive = true,
                     loadIsland = { id -> api.island("token", id, "creative") },
+                    onError = { errors += it },
                 )
             }
         }
         assertTrue("Build action must appear once the own island is loaded in creative mode",
             awaitAny { rule.onAllNodesWithText("Bauen").fetchSemanticsNodes().isNotEmpty() })
-        // The real island (with its existing place) is shown, not an empty creative copy.
+        // The real island (with its existing place, shown as special decoration since 7.9.7) is shown, not an empty creative copy.
         assertTrue("The existing place must stay visible and tappable in creative mode",
             awaitAny { rule.onAllNodesWithContentDescription("Altbau").filter(hasClickAction()).fetchSemanticsNodes().isNotEmpty() })
+        rule.onAllNodesWithContentDescription("Altbau").filter(hasClickAction())[0].performClick()
+        assertTrue("Unsupported legacy server gets an explanation, no dead tap", awaitAny { errors.any { "Server" in it } })
+        assertTrue("The figure stays tappable", rule.onAllNodesWithContentDescription("Du").filter(hasClickAction()).fetchSemanticsNodes().isNotEmpty())
     }
 
     /** Decoration is built from the shelf and placed freely: no fixed "+" slots, the server gets a position. */
@@ -113,15 +118,11 @@ class CreativeIslandRegressionTest {
         assertTrue(awaitAny { rule.onAllNodesWithText("Bauen").fetchSemanticsNodes().isNotEmpty() })
         // The migrated slot decoration is an ordinary tappable object now.
         assertTrue(awaitAny { rule.onAllNodesWithContentDescription("Blumen").filter(hasClickAction()).fetchSemanticsNodes().isNotEmpty() })
-        rule.onAllNodesWithText("Bearbeiten")[0].performClick()
-        repeat(20) { rule.mainClock.advanceTimeByFrame() }
         assertTrue("fixed decoration slots are gone", rule.onAllNodesWithContentDescription("Deko setzen").fetchSemanticsNodes().isEmpty())
-        rule.onAllNodesWithText("Fertig")[0].performClick()
-        repeat(20) { rule.mainClock.advanceTimeByFrame() }
         rule.onAllNodesWithText("Bauen")[0].performClick()
         repeat(20) { rule.mainClock.advanceTimeByFrame() }
-        rule.onAllNodesWithText("Deko")[0].performClick()
-        repeat(20) { rule.mainClock.advanceTimeByFrame() }
+        rule.onAllNodesWithContentDescription("Reiter Deko")[0].performClick()
+        repeat(60) { rule.mainClock.advanceTimeByFrame() }
         rule.onAllNodesWithContentDescription("Laterne platzieren")[0].performClick()
         repeat(20) { rule.mainClock.advanceTimeByFrame() }
         assertTrue(rule.onAllNodesWithContentDescription("Bauplatzraster").fetchSemanticsNodes().isNotEmpty())

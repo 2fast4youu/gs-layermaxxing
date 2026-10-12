@@ -1,6 +1,6 @@
 # Insel-Ausbau
 
-Die Insel beginnt als neu gezeichnete Sanddüne ohne Gebäude/Ruinen. Alle Grundfunktionen sind trotzdem erreichbar: Schlafplatz (Einstellungen), Briefbaum (Post), Aussichtspalme (Freunde), Treibholz (Wörterbuch), Feuerkreis (Gruppen), Strandtreff (Quests/Hafen). Antippen zeigt Öffnen und Ausbau samt Vorschau.
+Die Insel beginnt als gemalte Sanddüne ohne Gebäude/Ruinen oder Platzhalter. Alle Grundfunktionen sind trotzdem über **Menü** erreichbar: Schlafplatz (Einstellungen), Briefbaum (Post), Aussichtspalme (Freunde), Wörter am Treibholz (Wörterbuch), Feuerkreis (Gruppen), Strandtreff (Quests/Hafen). Erst gebaute Gebäude stehen auf der Insel; Antippen zeigt ihre Aktionen.
 
 ## Normalmodus
 
@@ -8,9 +8,9 @@ Die Insel beginnt als neu gezeichnete Sanddüne ohne Gebäude/Ruinen. Alle Grund
 - Ausbaukosten je Schritt: 25 / 60 / 100 Punkte. Mindest-Kontoalter: 0 / 2 / 7 Tage.
 - Land hat Stufen 0–5, Kosten 40 / 80 / 140 / 220 / 320 Punkte, Mindestalter 1 / 3 / 7 / 14 / 21 Tage.
 - Punkte stammen weiterhin ausschließlich aus bestehenden bestätigten Quests/EP. Ausbau verbraucht den verfügbaren Anteil, nicht die ursprünglichen Quests/EP. Ein später wieder geöffnetes Quest kann den verfügbaren Rest reduzieren, aber gebaute Inseln werden nicht zerstört.
-- Neue persönliche Bauplätze werden durch erworbene Landstufen freigegeben. Die persönlichen Orte sind kosmetische Gestaltung dieser gekauften Flächen; sie umgehen keine funktionalen Gebäudeausbaukosten. Existierende gespeicherte Orte bleiben erhalten.
-- Deko wird wie Gebäude in der Bauleiste (Shop-Button „Bauen“, Reiter „Deko“) gebaut und frei platziert; die festen „+“-Plätze gibt es nicht mehr (siehe `island-layout.md`). Leere Lebensort-Bauplätze erscheinen nur im Bearbeitungsmodus.
-- Gebäude, Deko und Lebensorte können abgerissen werden (Bestätigungsdialog, keine Punkte-Rückerstattung).
+- Persönliche Orte sind seit 7.9.7 **Besondere Deko**, frei platzierbar, 120–200 Punkte teuer und auf drei neue Stücke pro Insel begrenzt (auch kreativ). Vorhandene zusätzliche Stücke und eigene Namen bleiben erhalten; alte Bauplätze werden verlustfrei migriert. `PUT /api/island/places` liefert 410.
+- Die Bauleiste ist ein durchgehender horizontaler Streifen: Gebäude · Deko · Besondere Deko · Land. Abschnittsreiter folgen dem Scrollen und springen animiert zum Abschnitt. Kein Bearbeiten-/Fertig-Modus, keine leeren Bauplätze mehr.
+- Gebäude und Deko können abgerissen werden (Bestätigungsdialog, keine Punkte-Rückerstattung). Verschieben erfolgt per Langdruck oder Gebäudeaktion.
 
 ## Kreativmodus
 
@@ -30,4 +30,25 @@ Backend-Regressionsfälle stehen in `test_island_evolution.py`; Produktionsansic
 
 ## Grafikfamilie
 
-Alle Ausbaustufen verwenden die vorhandenen gemalten WebP-Assets (terrain_sand, terrain_home, Deko, Hütten und Gebäude) — keine flachen Ersatzzeichnungen. Der Start zeigt reine Sandfläche, Hängematte, Palmen/Brief, Bücher am Treibgut, Feuerkreis und Ruderboot; keine Startgebäude oder Ruinen. Insel und Ausbauvorschau teilen dieselbe Produktionskomponente `PaintedIslandPlace`.
+Alle Ausbaustufen verwenden die vorhandenen gemalten WebP-Assets (terrain_sand, terrain_home, Deko, Hütten und Gebäude) — keine flachen Ersatzzeichnungen. Die Insel zeigt am Start reine Sandfläche; die natürlichen Startstellen erscheinen nur im Menü und in der Ausbauvorschau, nicht als Platzhaltergebäude auf der Insel. Insel und Ausbauvorschau teilen dieselbe Produktionskomponente `PaintedIslandPlace`.
+
+## 7.9.7-ausbau: Stufenvertrag
+
+`IslandStages` ist die gemeinsame Tabelle für Menü, Namensschild, Gebäudeaktionen, Bauleiste und Ausbauvorschau. Die Funktion bleibt über alle Stufen gleich. Freunde und Post haben auf jeder Stufe verschiedene Icons.
+
+| Funktion | Start (0) | Holzbau (1) | Ausbau (2) | Meisterbau (3) |
+| --- | --- | --- | --- | --- |
+| Briefe | Briefbaum | Postkasten | Postfächer | Postamt |
+| Freunde & Anfragen | Aussichtspalme | Ausguck | Leuchtfeuer | Leuchtturm |
+| Wörterbuch | Wörter am Treibholz | Lesedach | Bücherstube | Bibliothek |
+| Gruppen | Feuerkreis | Treffhütte | Gemeindehaus | Festhalle |
+| Quests & Themen | Strandtreff | Bootssteg | Anleger | Hafen |
+| Profil & Einstellungen | Schlafplatz | Holzhütte | Häuschen | Landhaus |
+
+Die Bilder stammen aus der vorhandenen gemalten Assetfamilie; die Festhalle verwendet das Gemeindehaus mit Fahne. Eigene neue Grafiken sind nicht erforderlich. Die große Vorher-/Nachher-Vorschau zeigt nur Ausbau/Rückbau und Schließen, kein Öffnen oder Verschieben. Am Maximum steht „Vollständig ausgebaut“.
+
+Das Baufeld (`server/app/island_grid.json`) ist pro Landstufe derselbe Server-/Client-Vertrag: nur Sand/Wiese innerhalb der Küste. Ungültige Platzierungen werden serverseitig abgelehnt, alte Küstenpositionen deterministisch auf freie Landzellen verschoben. Das Raster zeichnet nur baubare Zellen; belegte Zellen sind dunkler. Die zusätzlich synthetisch gezeichneten braunen Stege sind entfernt (gemalte Hafen-Gebäude bleiben).
+
+Trefferflächen folgen den sichtbaren Alpha-Grenzen der WebP-Sprites (`SpriteBounds`), mit nur 2 dp Rand in Bildschirmgröße. Die kleinen gemalten Namensschilder sitzen am sichtbaren Fuß, bleiben beim Zoomen gleich groß und haben eigene passende Trefferflächen. „Übersicht“ steht auf der eigenen Insel ausschließlich im Menü; Android Zurück bleibt funktionsfähig.
+
+Regressionsbelege: `IslandAusbauTest`, `IslandBuildGridTest`, `IslandFlowTest` und Backend `test_v12_ausbau.py`. `VillageVisualReview.ausbau*` rendert Produktionsansichten nach ausgeführten Interaktionen; JVM-Simulationen, keine Geräteaufnahmen. Deployment und Handyprüfung bleiben separate Schritte.

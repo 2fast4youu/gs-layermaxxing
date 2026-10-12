@@ -39,4 +39,10 @@ internal object SpecialDecor {
     fun full(c: ApiClient.IslandConstruction) = count(c) >= c.specialLimit
     fun cost(c: ApiClient.IslandConstruction, key: String) = c.specialCosts[key] ?: defaultCosts[key] ?: 0
     fun affordable(c: ApiClient.IslandConstruction, key: String) = c.mode == "creative" || c.available >= cost(c, key)
+
+    /** Old plot cells (server ISLAND_PLOT_POSITIONS), only to show places of a server without the ledger. */
+    private val plotCells = listOf(listOf(10, 6), listOf(6, 8), listOf(14, 8), listOf(5, 13), listOf(15, 13), listOf(7, 4), listOf(13, 4), listOf(8, 15), listOf(12, 15))
+    fun legacyPlaces(places: Map<Int, ApiClient.LifePlace>): List<ApiClient.IslandDecor> = places.mapNotNull { (plot, p) ->
+        plotCells.getOrNull(plot)?.let { ApiClient.IslandDecor(200 + plot, "place_" + p.kind, it, name = p.name) }
+    }
 }
