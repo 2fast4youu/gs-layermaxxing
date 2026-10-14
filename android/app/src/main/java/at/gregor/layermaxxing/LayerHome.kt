@@ -289,6 +289,15 @@ fun LayerHome(
     val tabs = appMode.tabs()
     val creativeEligible = CreativeMode.eligible(status?.serverRole, status?.creativeEntitled == true)
     val creativeActive = creativeEligible && creativeSwitch
+    // Publish the selected island mode immediately, including switches made in Settings.
+    LaunchedEffect(token, creativeActive, status?.userId) {
+        val id = status?.userId ?: return@LaunchedEffect
+        runCatching {
+            val selected = api.island(token, id, if (creativeActive) "creative" else "normal")
+            // Servers without island construction just keep showing the real island.
+            if (selected.construction.supported) api.islandAction(token, selected.construction, "activate", null)
+        }.onFailure { error = ApiErrors.friendly(it.message) }
+    }
     // The valley reads from the ledger of the current mode: creative builds live
     // in their own ledger and vanish from view the moment the mode goes off.
     LaunchedEffect(creativeActive, token) { castleBuilds = store.fiefBuilds(creativeActive) }
@@ -359,6 +368,10 @@ fun LayerHome(
     val edgeToEdgePlace = tab == MainTab.CASTLES && hub == null && topicScope == null && openThreadFriend == null && !peopleOpen && !sparksOpen
     val worldStyle = tab == MainTab.CASTLES
     val worldRoom = worldStyle && !edgeToEdgePlace
+    val chatsBadge = requestInbox.size + conversations.count { it.hasNews } + Sparks.unopenedCount(sparkInbox)
+    // The island tab keeps exactly the same bottom navigation as every other tab (same theme too).
+    val appColors = MaterialTheme.colorScheme
+    val appTypography = MaterialTheme.typography
     VillageTheme(worldStyle) {
     Box(Modifier.fillMaxSize()) {
     Scaffold(
@@ -379,21 +392,7 @@ fun LayerHome(
             )
         },
         bottomBar = {
-            if (!fullScreenPlace && !worldStyle) NavigationBar {
-                tabs.forEach { item -> NavigationBarItem(
-                    selected = tab == item, onClick = { tab = item; openThreadFriend = null }, icon = {
-                        val count = when (item) {
-                            MainTab.CHATS -> requestInbox.size + conversations.count { it.hasNews } +
-                                Sparks.unopenedCount(sparkInbox)
-                            else -> 0
-                        }
-                        androidx.compose.material3.BadgedBox(badge = { if (count > 0) androidx.compose.material3.Badge { Text(if (count > 9) "9+" else "$count") } }) {
-                            AppIcon(AppIcons.tab(item), null, size = 24.dp)
-                        }
-                    },
-                    label = { Text(item.label) },
-                ) }
-            }
+            if (!fullScreenPlace && !worldStyle) MainNavigationBar(tabs, tab, chatsBadge) { tab = it; openThreadFriend = null }
         },
     ) { padding ->
         // Consuming the scaffold insets here lets imePadding() below add exactly the
@@ -428,7 +427,17 @@ fun LayerHome(
                     onRespondFriend = { id, accept -> act { api.respondFriend(token, id, accept) } },
                     ownColor = status?.displayColor ?: "#17A2A6",
                     glossary = { GlossaryScreen(api, token) },
-                    loadIsland = { id -> api.island(token, id) },
+                    loadIsland = { id -> api.island(token, id, if (id == status?.userId) { if (creativeActive) "creative" else "normal" } else null) },
+                    creativeActive = creativeActive,
+                    creativeEligible = creativeEligible,
+                    onCreativeSwitch = { store.setCreativeMode(it); creativeSwitch = it },
+                    changeConstruction = { state, request -> api.islandAction(token, state, request) },
+                    mainNavigation = {
+                        MaterialTheme(colorScheme = appColors, typography = appTypography) {
+                            MainNavigationBar(tabs, tab, chatsBadge) { tab = it; openThreadFriend = null }
+                        }
+                    },
+                    onSettings = { hub = "settings" },
                     saveDecor = { decor -> api.setDecor(token, decor) },
                     savePlaces = { places -> api.setPlaces(token, places) },
                     saveHere = { plot, status -> api.setHere(token, plot, status) },
@@ -531,6 +540,7 @@ fun LayerHome(
                     topics = topics,
                     epLine = epLineFor(ep, status?.userId, threadFriend),
                     creativeActive = creativeActive,
+                    islandInfo = islands?.friends?.firstOrNull { it.friendId == threadFriend.id },
                     quests = quests, label = friendLabels[threadFriend.id],
                     onLabel = { label -> saveFriendLabel(threadFriend.id, label) },
                     onQuestDone = { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } },
@@ -691,11 +701,7 @@ private fun AppChrome(
             }
         }
         Spacer(Modifier.weight(1f))
-        Box(
-            Modifier.size(48.dp).clip(RoundedCornerShape(50)).clickable(onClick = onRefresh)
-                .semantics { contentDescription = "Aktualisieren"; role = Role.Button },
-            contentAlignment = Alignment.Center,
-        ) { AppIcon(R.drawable.ico_refresh, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 23.dp) }
+
     }
 }
 
@@ -1700,5 +1706,25 @@ private fun NoticeToast(message: String, onDismiss: () -> Unit, modifier: Modifi
         AppIcon(R.drawable.ico_warning, null, tint = Color(0xFFF2C14E), size = 18.dp)
         Spacer(Modifier.width(10.dp))
         Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.inverseOnSurface, fontSize = 14.sp, maxLines = 3)
+    }
+}
+
+
+/**
+ * The app's main navigation. One composable for every tab, the island included, so the
+ * bar never changes when the user enters the island (island actions get their own row above).
+ */
+@Composable
+internal fun MainNavigationBar(tabs: List<MainTab>, selected: MainTab, chatsBadge: Int, onSelect: (MainTab) -> Unit) {
+    NavigationBar {
+        tabs.forEach { item -> NavigationBarItem(
+            selected = selected == item, onClick = { onSelect(item) }, icon = {
+                val count = if (item == MainTab.CHATS) chatsBadge else 0
+                androidx.compose.material3.BadgedBox(badge = { if (count > 0) androidx.compose.material3.Badge { Text(if (count > 9) "9+" else "$count") } }) {
+                    AppIcon(AppIcons.tab(item), null, size = 24.dp)
+                }
+            },
+            label = { Text(item.label) },
+        ) }
     }
 }

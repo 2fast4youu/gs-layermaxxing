@@ -27,7 +27,7 @@ def test_server_info_and_role_header(tmp_path, monkeypatch):
             "role": "test",
             "version": "4.0.0",
             "warning": "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN",
-            "features": ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places"],
+            "features": ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories"],
         }
         assert client.get("/health").headers["X-Layermaxxing-Role"] == "test"
 

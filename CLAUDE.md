@@ -1,10 +1,12 @@
 # GS Layermaxxing — Arbeitskontext für Claude Code
 
-Arbeite ausschließlich im Repository `/home/veit/projects/gs-layermaxxing` und auf Branch `gerfried`.
+Arbeite ausschließlich im Worktree `/home/veit/projects/gs-layermaxxing-gregor` und auf Branch `gerfried-erweiterung`.
+
+`gerfried-erweiterung` ist Gerfrieds Feature-Branch und basiert auf Gregors `gregor-erweiterung` (Gregor arbeitet dort am Design, Gerfried an Features). Gregors Testserver zieht `gregor-erweiterung` automatisch; Änderungen gehen daher erst nach grünen Gates per Merge dorthin, nie direkt per Push.
 
 ## Ziel
 
-Dies ist Veits parallel installierbare Android-Test-App mit eigenem FastAPI-Testserver. Bewahre die bestehende Produktlogik und liefere kleine, vollständig getestete vertikale Änderungen.
+Dies ist Gerfrieds parallel installierbare Android-Test-App mit eigenem FastAPI-Testserver. Bewahre die bestehende Produktlogik und liefere kleine, vollständig getestete vertikale Änderungen.
 
 ## Projektstruktur
 
@@ -17,7 +19,7 @@ Dies ist Veits parallel installierbare Android-Test-App mit eigenem FastAPI-Test
 
 ## Unverhandelbare Regeln
 
-- Branch bleibt `gerfried`; nicht auf `main` arbeiten.
+- Branch bleibt `gerfried-erweiterung`; nicht auf `main` und nicht direkt auf `gregor-erweiterung` arbeiten. Regelmäßig `gregor-erweiterung` in den Branch mergen (Konfliktschwerpunkte: `server/app/main.py`, `LayerHome.kt`, `CastlesScreen.kt`, `VillageHud.kt`).
 - Test-App bleibt parallel installierbar: `applicationId at.gregor.layermaxxing.gerfried`, Label `GS Layermaxxing Gerfried`.
 - Gerfried-Testserver: `https://layermaxxing.derkellner.duckdns.org`.
 - Produktions-URL darf ohne explizite Konfiguration `https://example.invalid/` bleiben; niemals eine echte Produktionsadresse raten.

@@ -149,6 +149,7 @@ internal fun ThreadScreen(
     label: String? = null,
     onLabel: (String?) -> Unit = {},
     onQuestDone: (ApiClient.Quest, Boolean) -> Unit = { _, _ -> },
+    islandInfo: ApiClient.IslandInfo? = null,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -191,11 +192,17 @@ internal fun ThreadScreen(
     var selectedChat by remember(friend.id, token) { mutableStateOf<ApiClient.ChatMessage?>(null) }
     var quote by remember(friend.id, token) { mutableStateOf<String?>(null) }
     var sending by remember(friend.id, token) { mutableStateOf(false) }
+    var selectedIds by remember(friend.id, token) { mutableStateOf<Set<Long>>(emptySet()) }
+    var confirmDeleteSelected by remember(friend.id, token) { mutableStateOf(false) }
+    var downloadMessageId by androidx.compose.runtime.saveable.rememberSaveable(friend.id, token) { mutableStateOf<Long?>(null) }
+    var emojiCompose by remember(friend.id, token) { mutableStateOf(false) }
+    var emojiReaction by remember(friend.id, token) { mutableStateOf<ApiClient.ChatMessage?>(null) }
     val clipboard = LocalClipboardManager.current
     val chatsEnabled = settings?.chatsEnabled == true
     val letterAction = LetterAccess.forSettings(settings)
     val listState = rememberLazyListState()
 
+    BackHandler(enabled = selectedIds.isNotEmpty()) { selectedIds = emptySet() }
     // A sheet is a place: back closes it before it leaves the conversation.
     BackHandler(enabled = pageOpen && !roomOpen && !topicsOpen && !rulesOpen) { pageOpen = false }
     BackHandler(enabled = roomOpen || infoOpen || topicsOpen || rulesOpen) {
@@ -204,7 +211,7 @@ internal fun ThreadScreen(
 
     suspend fun reloadChat() {
         if (!chatsEnabled) { chat = emptyList(); return }
-        runCatching { api.chatMessages(token, friend.id) }.onSuccess { chat = it; threadError = null }
+        runCatching { api.chatMessages(token, friend.id) }.onSuccess { chat = it; selectedIds = selectedIds.intersect(it.filterNot { message -> message.deleted }.map { message -> message.id }.toSet()); threadError = null }
             .onFailure { threadError = it.message }
     }
     LaunchedEffect(friend.id, token, chatsEnabled) { while (true) { reloadChat(); delay(5_000) } }
@@ -243,6 +250,28 @@ internal fun ThreadScreen(
             if (bytes == null) threadError = "Foto konnte nicht gelesen werden" else sendMedia("image", bytes, "image/jpeg")
         }
     }
+    var cameraPath by androidx.compose.runtime.saveable.rememberSaveable(friend.id, token) { mutableStateOf<String?>(null) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val file = cameraPath?.let { java.io.File(it) }
+        cameraPath = null
+        if (success && file != null) scope.launch {
+            try {
+                val bytes = preparePhoto(context, android.net.Uri.fromFile(file))
+                if (bytes == null) threadError = "Foto konnte nicht gelesen werden" else sendMedia("image", bytes, "image/jpeg")
+            } finally { file.delete() }
+        } else file?.delete()
+    }
+    fun launchCamera() {
+        try {
+            val dir = java.io.File(context.cacheDir, "chatphotos").apply { mkdirs() }
+            val file = java.io.File.createTempFile("capture-", ".jpg", dir)
+            cameraPath = file.path
+            camera.launch(androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.chatphotos", file))
+        } catch (_: android.content.ActivityNotFoundException) {
+            cameraPath?.let { java.io.File(it).delete() }; cameraPath = null
+            threadError = "Keine Kamera-App verfügbar"
+        }
+    }
     fun startRecording() {
         if (recorder.start()) { recording = true; recordMs = 0 } else threadError = "Aufnahme nicht möglich"
     }
@@ -251,6 +280,19 @@ internal fun ThreadScreen(
     }
     LaunchedEffect(friend.id) { while (true) { now = Instant.now().epochSecond; delay(20_000) } }
 
+    val saveDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val messageId = downloadMessageId
+        downloadMessageId = null
+        if (uri != null && messageId != null) scope.launch {
+            runCatching {
+                val bytes = loadAttachment(messageId)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                        ?: error("Datei konnte nicht gespeichert werden")
+                }
+            }.onSuccess { notice = "Datei gespeichert" }.onFailure { threadError = it.message }
+        }
+    }
     val openedIds = opened.keys.toSet()
     val opportunities = EpOpportunities.forFriend(
         friend.id, friend.name, letters, settings?.epEnabled == true, epLinkedLetterIds, dismissedEpLetters.keys,
@@ -259,7 +301,7 @@ internal fun ThreadScreen(
     val plan = composerPlan(letterAction, chatsEnabled, conversationTopics.count { it.completedAt == null })
     val groups = Conversations.groupedLetters(letters, openedIds)
     val band = Conversations.sealBand(groups)
-    val entries = Conversations.threadEntries(chat, letters, ownUserId, openedIds)
+    val entries = Conversations.threadEntries(chat, emptyList(), ownUserId, openedIds)
     val items = Conversations.withDayMarks(ChatTools.filterEntries(entries, query), now)
 
     var jumped by remember(friend.id, token) { mutableStateOf(false) }
@@ -279,7 +321,7 @@ internal fun ThreadScreen(
             menu = menu,
             topicsBadge = conversationTopics.count { it.completedAt == null },
             lettersBadge = letters.size,
-            lettersUrgent = band.any { it.bucket != LetterBucket.IN_TRANSIT },
+            lettersUrgent = false,
             onMenu = { menu = it },
             onBack = onBack,
             onSearch = { searchOpen = true },
@@ -294,28 +336,15 @@ internal fun ThreadScreen(
             online = presence?.online == true,
             chatDays = presence?.chatDays ?: 0,
         )
-        // Anything that waits for my answer sits directly under the head, in the
-        // conversation it belongs to, and is answerable without any navigation.
-        requests.forEach { request ->
-            ThreadRequestCard(request, onRespond)
-        }
-        settings?.outgoingProposal?.let { proposal ->
-            Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Dein Regelvorschlag wartet auf ${friend.name}", Modifier.weight(1f),
-                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                TextButton(onClick = { act { api.withdrawFriendshipSettings(token, proposal.id) } }) {
-                    Text("Zurückziehen", fontSize = 12.sp)
-                }
-            }
-        }
-        // Not a permanent second bar any more: the door to the Briefraum moved into
-        // the head, so this strip only appears while a letter actually asks for
-        // something — released, or waiting for exactly my approval.
+        if (selectedIds.isNotEmpty()) SelectionToolbar(
+            count = selectedIds.size, onCancel = { selectedIds = emptySet() },
+            onCopy = {
+                clipboard.setText(AnnotatedString(chat.filter { it.id in selectedIds }.joinToString("\n") { ChatExtras.previewText(it) }))
+                selectedIds = emptySet(); notice = "Nachrichten kopiert"
+            },
+            canDelete = ChatSelection.canDeleteAll(chat, selectedIds, ownUserId),
+            onDelete = { confirmDeleteSelected = true },
+        )
         if (searchOpen) Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             androidx.compose.material3.TextField(
                 query, { query = it }, Modifier.weight(1f), singleLine = true,
@@ -331,15 +360,10 @@ internal fun ThreadScreen(
             items.indexOfFirst { it is TimelineItem.Entry && it.entry is ThreadEntry.Chat && it.entry.message.id == id }
                 .takeIf { it >= 0 }?.let { scope.launch { listState.animateScrollToItem(it) } }
         }
-        val actionable = band.filter { it.bucket != LetterBucket.IN_TRANSIT }
-        if (actionable.isNotEmpty()) SealBandRow(
-            band = actionable,
-            onJump = { letterId ->
-                Conversations.timelineIndexOf(items, letterId)?.let { index ->
-                    pulseLetterId = letterId
-                    scope.launch { listState.animateScrollToItem(index) }
-                }
-            },
+        ChatActionHint(
+            ChatCalm.hint(band, requests.size, settings?.outgoingProposal != null,
+                quests.count { it.targetType == "friend" && it.targetId == friend.id && it.completedAt == null }),
+            onOpen = { pageOpen = true },
         )
         Box(Modifier.weight(1f).fillMaxWidth().chatWallpaper()) {
         if (items.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -358,8 +382,12 @@ internal fun ThreadScreen(
                     is TimelineItem.Entry -> when (val entry = item.entry) {
                         is ThreadEntry.Chat -> ThreadChatBubble(
                             entry.message, entry.outgoing,
-                            onActions = { if (!entry.message.deleted) selectedChat = entry.message },
-                            onSwipeReply = if (chatsEnabled && !entry.message.deleted) ({ quote = ChatExtras.previewText(entry.message) }) else null,
+                            onActions = {
+                                if (selectedIds.isNotEmpty()) selectedIds = ChatSelection.toggle(selectedIds, entry.message.id)
+                                else if (!entry.message.deleted) selectedChat = entry.message
+                            },
+                            selectionMode = selectedIds.isNotEmpty(), selected = entry.message.id in selectedIds,
+                            onSwipeReply = if (chatsEnabled && selectedIds.isEmpty() && !entry.message.deleted) ({ quote = ChatExtras.previewText(entry.message) }) else null,
                             ownUserId = ownUserId,
                             glossary = glossary,
                             onTerm = { glossaryOpen = it },
@@ -369,30 +397,18 @@ internal fun ThreadScreen(
                             },
                             media = { msg, tint ->
                                 when (msg.kind) {
-                                    "image" -> ChatPhoto({ loadAttachment(msg.id) }, Harbour.palette()) { photoView = it }
-                                    "voice" -> VoiceNote(msg.text.ifBlank { "Sprachnachricht" }, { loadAttachment(msg.id) }, tint, Harbour.palette())
+                                    "image" -> ChatPhoto({ loadAttachment(msg.id) }, Harbour.palette(), onLongPress = {
+                                        if (selectedIds.isNotEmpty()) selectedIds = ChatSelection.toggle(selectedIds, msg.id) else selectedChat = msg
+                                    }) { bitmap ->
+                                        if (selectedIds.isNotEmpty()) selectedIds = ChatSelection.toggle(selectedIds, msg.id) else photoView = bitmap
+                                    }
+                                    "voice" -> VoiceNote(msg.text.ifBlank { "Sprachnachricht" }, { loadAttachment(msg.id) }, tint, Harbour.palette(),
+                                        onLongPress = { if (selectedIds.isNotEmpty()) selectedIds = ChatSelection.toggle(selectedIds, msg.id) else selectedChat = msg },
+                                        onSelect = if (selectedIds.isNotEmpty()) ({ selectedIds = ChatSelection.toggle(selectedIds, msg.id) }) else null)
                                 }
                             },
                         )
-                        // A letter is an event in the flow, not a block in it: the
-                        // row says what happened and hands over to the Briefraum,
-                        // where the whole letter and all its actions live.
-                        is ThreadEntry.Letter -> Column(
-                            Modifier.fillMaxWidth(),
-                            horizontalAlignment = if (entry.outgoing) Alignment.End else Alignment.Start,
-                        ) {
-                            LetterActivityRow(
-                                message = entry.message,
-                                state = entry.state,
-                                now = now,
-                                outgoing = entry.outgoing,
-                                pulsing = pulseLetterId == entry.id,
-                                onOpenRoom = { roomFocusLetterId = entry.id; roomOpen = true },
-                            )
-                            opportunities[entry.id]?.let { opportunity ->
-                                EpOpportunityCard(opportunity, onProposeEp)
-                            }
-                        }
+                        is ThreadEntry.Letter -> Unit // Letters live exclusively in the friend card/letter room.
                     }
                 }
             }
@@ -412,7 +428,8 @@ internal fun ThreadScreen(
         threadError?.let {
             Text(ApiErrors.friendly(it), Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
-        quote?.let { quoted ->
+        androidx.compose.animation.AnimatedVisibility(visible = quote != null, enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(), exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()) {
+            val quoted = quote.orEmpty()
             Row(
                 Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp)
                     .background(Harbour.palette().card, RoundedCornerShape(12.dp))
@@ -472,6 +489,8 @@ internal fun ThreadScreen(
                 recording = recording,
                 recordLabel = ChatExtras.voiceLabel(recordMs),
                 onStickers = { stickersOpen = !stickersOpen },
+                onEmoji = { emojiCompose = true },
+                onCamera = { launchCamera() },
                 onPhoto = { photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                 onRecord = {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording()
@@ -487,6 +506,7 @@ internal fun ThreadScreen(
                 },
             ),
             onCompose = { onComposeLetter(friend.id) },
+            onQuest = { questDraft = ChatExtras.QuestDraft("", "", "hike", 20) },
             onRules = { rulesOpen = true },
             onSend = {
                 scope.launch {
@@ -512,7 +532,7 @@ internal fun ThreadScreen(
     selectedChat?.let { message ->
         ModalBottomSheet(onDismissRequest = { selectedChat = null }) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-                ReactionBar(ChatExtras.myReaction(message.reactions, ownUserId), Harbour.palette()) { emoji ->
+                ReactionBar(ChatExtras.myReaction(message.reactions, ownUserId), Harbour.palette(), onMore = { selectedChat = null; emojiReaction = message }) { emoji ->
                     val next = ChatExtras.toggledReaction(ChatExtras.myReaction(message.reactions, ownUserId), emoji)
                     selectedChat = null
                     scope.launch { runCatching { api.reactChat(token, friend.id, message.id, next) }.onSuccess { reloadChat() }.onFailure { threadError = it.message } }
@@ -521,6 +541,11 @@ internal fun ThreadScreen(
                     ChatExtras.previewText(message).take(300), Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     maxLines = 4, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                SheetAction(R.drawable.ico_check, "Auswählen") { selectedIds = setOf(message.id); selectedChat = null }
+                if (message.hasAttachment && message.kind in listOf("image", "voice")) SheetAction(R.drawable.ico_download, "Speichern unter …") {
+                    downloadMessageId = message.id; selectedChat = null
+                    saveDocument.launch(ChatSelection.fileName(message))
+                }
                 SheetAction(R.drawable.ico_reply, "Antworten", enabled = chatsEnabled) { quote = ChatExtras.previewText(message); selectedChat = null }
                 if (message.kind == "text") SheetAction(R.drawable.ico_copy, "Kopieren") { clipboard.setText(AnnotatedString(ChatTools.parseReply(message.text).second)); selectedChat = null }
                 if (ChatExtras.canEdit(message, ownUserId, now)) SheetAction(R.drawable.ico_edit, "Bearbeiten") {
@@ -531,9 +556,6 @@ internal fun ThreadScreen(
                     scope.launch { runCatching { api.pinChat(token, friend.id, message.id, message.pinnedAt == null) }.onSuccess { reloadChat() }.onFailure { threadError = it.message } }
                 }
                 if (message.kind == "text") SheetAction(R.drawable.ico_points, "Als gemeinsame Quest") { questDraft = ChatExtras.questDraft(message.text); selectedChat = null }
-                if (message.kind == "text" && onLetterFromChat != null) SheetAction(R.drawable.ico_letter, "Als Brief verschicken", enabled = letterAction.enabled) {
-                    onLetterFromChat(friend.id, ChatTools.parseReply(message.text).second); selectedChat = null
-                }
                 if (ChatExtras.canDelete(message, ownUserId)) SheetAction(R.drawable.ico_delete, "Löschen") { confirmDeleteChat = message; selectedChat = null }
                 Text(
                     "Gesendet ${socialDate(message.createdAt)}" + (message.readAt?.let { " · gelesen ${socialDate(it)}" } ?: ""),
@@ -543,6 +565,26 @@ internal fun ThreadScreen(
             }
         }
     }
+    if (confirmDeleteSelected) ConfirmDialog(
+        "${selectedIds.size} Nachrichten löschen?", "Sie werden für euch beide gelöscht.",
+        {
+            confirmDeleteSelected = false
+            val ids = selectedIds.toSet()
+            scope.launch {
+                runCatching {
+                    ids.forEach { id -> chat.firstOrNull { it.id == id }?.takeIf { ChatExtras.canDelete(it, ownUserId) }?.let { api.deleteChat(token, friend.id, it.id) } }
+                    reloadChat(); selectedIds = emptySet()
+                }.onFailure { reloadChat(); threadError = it.message }
+            }
+        }, { confirmDeleteSelected = false },
+    )
+    if (emojiCompose) EmojiPicker("Emoji", onDismiss = { emojiCompose = false }) { emoji -> text += emoji; emojiCompose = false }
+    emojiReaction?.let { message -> EmojiPicker("Reaktion", onDismiss = { emojiReaction = null }) { emoji ->
+        emojiReaction = null
+        val latest = chat.firstOrNull { it.id == message.id } ?: message
+        val next = ChatExtras.toggledReaction(ChatExtras.myReaction(latest.reactions, ownUserId), emoji)
+        scope.launch { runCatching { api.reactChat(token, friend.id, message.id, next) }.onSuccess { reloadChat() }.onFailure { threadError = it.message } }
+    } }
     questDraft?.let { draft ->
         ChatQuestDialog(friend.name, draft, onCreate = { q: ChatExtras.QuestDraft ->
             questDraft = null
@@ -564,17 +606,30 @@ internal fun ThreadScreen(
             },
         ) { confirmDeleteChat = null }
     }
-    if (pageOpen) FriendPage(
-        friend = friend, settings = settings, label = label,
-        quests = quests.filter { it.targetType == "friend" && it.targetId == friend.id },
-        lettersCount = letters.size,
-        openTopics = conversationTopics.count { it.completedAt == null },
-        epLine = epLine,
-        onBack = { pageOpen = false }, onLabel = onLabel,
-        onNewQuest = { questDraft = ChatExtras.QuestDraft("", "", "hike", 20) }, onQuestDone = onQuestDone,
-        onLetters = { roomFocusLetterId = null; roomOpen = true },
-        onTopics = { topicsOpen = true }, onRules = { rulesOpen = true },
-    )
+    if (pageOpen) ModalBottomSheet(onDismissRequest = { pageOpen = false },
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Isle.Card) {
+        FriendSheet(
+            friend, islandInfo, label, onLabel, letters, opened,
+            quests.filter { it.targetType == "friend" && it.targetId == friend.id },
+            conversationTopics.count { it.completedAt == null },
+            onChat = { pageOpen = false }, onLetter = { pageOpen = false; onComposeLetter(friend.id) },
+            onOpenLetter = { pageOpen = false; roomFocusLetterId = it.id; roomOpen = true },
+            onLockedTap = { pageOpen = false; roomFocusLetterId = it.id; roomOpen = true },
+            onTopics = { pageOpen = false; topicsOpen = true }, onVisit = null,
+            onNewQuest = { pageOpen = false; questDraft = ChatExtras.QuestDraft("", "", "hike", 20) },
+            onQuestDone = onQuestDone, letterEnabled = letterAction.enabled,
+            onLetters = { pageOpen = false; roomFocusLetterId = null; roomOpen = true },
+            extra = {
+                requests.forEach { ThreadRequestCard(it, onRespond) }
+                settings?.outgoingProposal?.let { proposal ->
+                    Text("Dein Regelvorschlag wartet auf ${friend.name}")
+                    TextButton(onClick = { act { api.withdrawFriendshipSettings(token, proposal.id) } }) { Text("Zurückziehen") }
+                }
+                TextButton(onClick = { pageOpen = false; rulesOpen = true }) { Text("Freundschaftsregeln") }
+                Text(epLine, fontSize = 12.sp)
+            },
+        )
+    }
     if (roomOpen) LetterRoom(
         friendName = friend.name,
         letters = letters,
@@ -689,7 +744,7 @@ internal fun ThreadHeader(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 val typing = presenceLine == "schreibt gerade …"
                 Text(
-                    presenceLine ?: if (topicsBadge > 0) "$topicsBadge offene Themen · Freund-Seite" else "Antippen: Name, Quests, Regeln",
+                    presenceLine ?: "Freundesansicht öffnen",
                     fontSize = 11.sp, maxLines = 1,
                     color = if (typing) Color(0xFF9BE3C2) else p.onHead.copy(alpha = .7f),
                     fontStyle = if (typing) FontStyle.Italic else FontStyle.Normal,
@@ -806,6 +861,7 @@ private fun sealIcon(bucket: LetterBucket): Int = when (bucket) {
  * switched-off genre leaves no dead button behind, only the way to the rules.
  */
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 internal fun Composer(
     plan: ComposerPlan,
     text: String,
@@ -814,7 +870,15 @@ internal fun Composer(
     onRules: () -> Unit,
     onSend: () -> Unit,
     extras: ComposerExtras? = null,
+    onQuest: (() -> Unit)? = null,
 ) {
+    var attachmentsOpen by remember { mutableStateOf(false) }
+    if (attachmentsOpen) ModalBottomSheet(onDismissRequest = { attachmentsOpen = false }) {
+        ChatAttachmentMenu(plan, extras,
+            onLetter = { attachmentsOpen = false; onCompose() },
+            onQuest = onQuest?.let { quest -> { attachmentsOpen = false; quest() } },
+            onClose = { attachmentsOpen = false })
+    }
     Column(Modifier.fillMaxWidth().imePadding()) {
         plan.blockedReason?.let { reason ->
             Row(
@@ -862,11 +926,14 @@ internal fun Composer(
                     .padding(start = 2.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (extras != null && plan.inputEnabled) Box(
-                    Modifier.size(40.dp).clip(CircleShape).clickable(onClick = extras.onStickers)
-                        .semantics { contentDescription = if (extras.stickersOpen) "Sticker schließen" else "Sticker"; role = Role.Button },
-                    contentAlignment = Alignment.Center,
-                ) { AppIcon(if (extras.stickersOpen) R.drawable.ico_keyboard else R.drawable.ico_emoji, null, tint = if (extras.stickersOpen) p.sea else p.inkSoft, size = 22.dp) }
+                Box(Modifier.size(44.dp).clip(CircleShape).clickable(enabled = plan.inputEnabled || plan.sealVisible) { attachmentsOpen = true }
+                    .semantics { contentDescription = "Anhänge und Aktionen"; role = Role.Button }, contentAlignment = Alignment.Center) {
+                    Text("+", fontSize = 28.sp, color = p.sea)
+                }
+                if (extras?.onEmoji != null && plan.inputEnabled) Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClick = extras.onEmoji)
+                    .semantics { contentDescription = "Emoji auswählen"; role = Role.Button }, contentAlignment = Alignment.Center) {
+                    AppIcon(R.drawable.ico_emoji, null, tint = p.inkSoft, size = 22.dp)
+                }
                 androidx.compose.material3.TextField(
                     value = text,
                     onValueChange = onText,
@@ -885,16 +952,7 @@ internal fun Composer(
                         disabledIndicatorColor = Color.Transparent, cursorColor = p.sea,
                     ),
                 )
-                if (plan.sealVisible) Box(
-                    Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable(onClick = onCompose)
-                        .semantics { contentDescription = LetterAccess.LABEL_LONG; role = Role.Button },
-                    contentAlignment = Alignment.Center,
-                ) { AppIcon(R.drawable.ico_letter, null, tint = p.wax, size = 22.dp) }
-                if (extras != null && plan.inputEnabled && text.isBlank()) Box(
-                    Modifier.size(40.dp).clip(CircleShape).clickable(onClick = extras.onPhoto)
-                        .semantics { contentDescription = "Foto senden"; role = Role.Button },
-                    contentAlignment = Alignment.Center,
-                ) { AppIcon(R.drawable.ico_camera, null, tint = p.inkSoft, size = 22.dp) }
+
             }
             if (plan.inputEnabled && extras != null && text.isBlank()) {
                 // Empty field: the round button records a bottle post instead of sending.
@@ -935,6 +993,8 @@ internal class ComposerExtras(
     val onPhoto: () -> Unit,
     val onRecord: () -> Unit,
     val onStopRecord: (send: Boolean) -> Unit,
+    val onCamera: (() -> Unit)? = null,
+    val onEmoji: (() -> Unit)? = null,
 )
 
 /**
@@ -1143,6 +1203,7 @@ internal fun ThreadChatBubble(
     onTerm: (ApiClient.GlossaryTerm) -> Unit = {},
     onReact: (String) -> Unit = {},
     media: @Composable (ApiClient.ChatMessage, Color) -> Unit = { _, _ -> },
+    selectionMode: Boolean = false, selected: Boolean = false,
 ) {
     val (quoted, body) = ChatTools.parseReply(message.text)
     val p = Harbour.palette()
@@ -1153,6 +1214,7 @@ internal fun ThreadChatBubble(
     val emojiOnly = message.kind == "text" && ChatTools.isEmojiOnly(body)
     val chips = ChatExtras.reactionChips(message.reactions, ownUserId)
     var drag by remember(message.id) { mutableStateOf(0f) }
+    val smoothDrag by androidx.compose.animation.core.animateFloatAsState(drag, androidx.compose.animation.core.spring(stiffness = 650f), label = "reply-swipe")
     val swipe = Modifier.pointerInput(message.id, onSwipeReply) {
         if (onSwipeReply == null) return@pointerInput
         detectHorizontalDragGestures(
@@ -1163,10 +1225,11 @@ internal fun ThreadChatBubble(
     val time = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(message.createdAt))
     val meta = (if (message.editedAt != null && !message.deleted) "bearbeitet · " else "") + time
     Column(
-        Modifier.fillMaxWidth().then(swipe).graphicsLayer { translationX = drag }
+        Modifier.fillMaxWidth().background(if (selected) p.sea.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(12.dp)).then(swipe).graphicsLayer { translationX = smoothDrag }
             .padding(start = if (outgoing) 56.dp else 2.dp, end = if (outgoing) 2.dp else 56.dp),
         horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
     ) {
+        if (selectionMode) Text(if (selected) "✓ Ausgewählt" else "○ Auswählen", fontSize = 11.sp, color = p.seaDeep, modifier = Modifier.clickable(onClick = onActions))
         when {
             message.deleted -> Text(
                 "Nachricht gelöscht · $time",
@@ -1175,7 +1238,7 @@ internal fun ThreadChatBubble(
             )
             // A sticker or a lone emoji sits on the paper, not text in a box.
             sticker != null || (emojiOnly && quoted == null) -> Column(
-                Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = onActions, onLongClick = onActions).padding(4.dp),
+                Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = onActions, onLongClick = onActions, onDoubleClick = { if (selectionMode) onActions() else onReact("❤️") }).padding(4.dp),
                 horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
             ) {
                 if (sticker != null) HarbourSticker(sticker, 104.dp) else Text(body, fontSize = 34.sp)
@@ -1184,7 +1247,8 @@ internal fun ThreadChatBubble(
             else -> Box(
                 Modifier.clip(shape).background(bubble)
                     .border(1.dp, if (outgoing) Color.Transparent else p.line, shape)
-                    .combinedClickable(onClick = onActions, onLongClick = onActions),
+                    .combinedClickable(onClick = onActions, onLongClick = onActions, onDoubleClick = { if (selectionMode) onActions() else onReact("❤️") })
+                    .semantics { if (message.kind == "image") contentDescription = "Foto – Nachrichtenaktionen" else if (message.kind == "voice") contentDescription = "Sprachnachricht – Nachrichtenaktionen" },
             ) {
                 Column(Modifier.padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 6.dp).width(IntrinsicSize.Max)) {
                     quoted?.let {
@@ -1208,14 +1272,15 @@ internal fun ThreadChatBubble(
                             var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
                             Text(
                                 annotated, fontSize = 15.sp, lineHeight = 20.sp, color = onBubble, onTextLayout = { layout = it },
-                                modifier = Modifier.widthIn(min = 40.dp).pointerInput(hits) {
+                                modifier = Modifier.widthIn(min = 40.dp).pointerInput(hits, selectionMode, onActions, onReact) {
                                     detectTapGestures(
                                         onLongPress = { onActions() },
+                                        onDoubleTap = { if (selectionMode) onActions() else onReact("❤️") },
                                         onTap = { pos ->
                                             val offset = layout?.getOffsetForPosition(pos)
                                             val hit = offset?.let { o -> hits.firstOrNull { o in it.start until it.end } }
                                             val term = hit?.let { h -> glossary.firstOrNull { it.id == h.termId } }
-                                            if (term != null) onTerm(term) else onActions()
+                                            if (selectionMode) onActions() else if (term != null) onTerm(term) else onActions()
                                         },
                                     )
                                 },
@@ -1273,7 +1338,7 @@ internal fun DayMark(label: String) {
 
 /** One full-width action row in a message's action sheet. */
 @Composable
-private fun SheetAction(icon: Int, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun SheetAction(icon: Int, label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp).semantics { role = Role.Button },

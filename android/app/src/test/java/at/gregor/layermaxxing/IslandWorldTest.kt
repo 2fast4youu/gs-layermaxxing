@@ -76,10 +76,6 @@ class IslandWorldTest {
             // Buildings (named pieces) and plots; rim trees stand on the painted coast by design.
             IslandPlans.home(1L, score).pieces.filter { it.name != null }
                 .forEach { assertTrue("$score ${it.name}", IslandPlans.inside(it.x, it.y, s, .95f)) }
-            LifePlaces.plots.forEach { (px, py) ->
-                val (x, y) = IslandPlans.onLand(px, py, s)
-                assertTrue("$score plot", IslandPlans.inside(x, y, s, .95f))
-            }
         }
     }
 
@@ -91,10 +87,72 @@ class IslandWorldTest {
         placed.values.forEach { assertTrue(IslandPlans.inside(it.x, it.y, IslandPlans.landScale(0), .95f)) }
     }
 
-    @Test fun freshIslandShowsLogRuinsAndFullIslandFinishedBuildings() {
-        val fresh = IslandPlans.home(1L, 0).pieces.map { it.res }.toSet()
-        val built = IslandPlans.home(1L, 999).pieces.map { it.res }.toSet()
-        assertTrue(R.drawable.lm_post_ruin in fresh && R.drawable.lm_post !in fresh)
-        assertTrue(R.drawable.lm_post in built && R.drawable.lm_post_ruin !in built)
+    @Test fun freshIslandHasNoBuildingsOrStandIns() {
+        val fresh = IslandPlans.home(1L, 500, ApiClient.IslandConstruction())
+        assertTrue("A starter island must really be empty", fresh.pieces.isEmpty())
+        assertTrue(IslandPlans.placedBuildings(500, ApiClient.IslandConstruction()).isEmpty())
+        val built = IslandPlans.home(1L, 0, ApiClient.IslandConstruction(buildings=mapOf("POST" to 3), land=4))
+        assertEquals(1, built.pieces.count { it.name != null })
+        assertEquals(3, built.pieces.first { it.name == "Post" }.tier)
+    }
+
+    @Test fun firstBuildAndExpansionHaveDistinctPaintedArtwork() {
+        IsleBuilding.entries.forEach { building ->
+            org.junit.Assert.assertNotEquals(building.name, IslandArtwork.resource(building, 0), IslandArtwork.resource(building, 1))
+            org.junit.Assert.assertNotEquals(building.name, IslandArtwork.resource(building, 1), IslandArtwork.resource(building, 2))
+        }
+    }
+
+    @Test fun normalPreviewRequiresPointsAndTimeButCreativeIsFree() {
+        val earned = ApiClient.IslandConstruction(available=100,ageDays=1)
+        assertTrue(IslandEvolution.allowed(earned,60,0))
+        assertTrue(!IslandEvolution.allowed(earned,60,2))
+        assertTrue(!IslandEvolution.allowed(earned,120,0))
+        assertTrue(IslandEvolution.allowed(earned.copy(mode="creative",available=0),320,21))
+    }
+    @Test fun movedBuildingsRenderAtPersistedGridPositionWithoutChangingProgress() {
+        val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 2),land=3,spent=85,positions=mapOf("POST" to listOf(14,11)))
+        val piece=IslandPlans.placedBuildings(0,c).getValue(IsleBuilding.POST)
+        val expected=IslandPlans.onLand(.7f,.55f,IslandPlans.constructionScale(3))
+        assertEquals(expected.first,piece.x,.0001f);assertEquals(expected.second,piece.y,.0001f)
+        assertEquals(2,piece.tier);assertEquals(1,IslandPlans.placedBuildings(0,c).size)
+        assertEquals(85,c.spent)
+    }
+
+    @Test fun placementBlocksSeaBuildingsAndOccupiedDecorOrSpecialDecor() {
+        val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)))
+        assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(0,0)))
+        assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(11,11)))
+        assertTrue(IslandLayout.valid(c,IsleBuilding.POST,listOf(10,11)))
+        // A former life place is special decoration now and blocks like a building.
+        val withDecor=c.copy(decor=listOf(ApiClient.IslandDecor(0,"flowers",listOf(8,9),0), ApiClient.IslandDecor(200,"place_home",listOf(10,6),name="Zuhause")))
+        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(8,9)))
+        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(10,6)))
+        assertTrue(!IslandLayout.valid(withDecor,IsleBuilding.POST,listOf(12,6)))
+        assertTrue(!IslandLayout.validDecor(withDecor,listOf(12,9),special=true))
+        // Creative mode builds on the same island: places and decoration still block.
+        assertTrue(!IslandLayout.valid(withDecor.copy(mode="creative"),IsleBuilding.POST,listOf(8,9)))
+    }
+    @Test fun freeDecorationFollowsTheSameGridRulesAsTheServer() {
+        val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)),land=5,
+            decor=listOf(ApiClient.IslandDecor(100,"bench",listOf(12,14))))
+        assertTrue(!IslandLayout.validDecor(c,listOf(0,0)))              // sea
+        assertTrue(!IslandLayout.validDecor(c,listOf(11,12)))            // on the building
+        assertTrue(!IslandLayout.validDecor(c,listOf(12,15)))            // on other decor
+        assertTrue(IslandLayout.validDecor(c,listOf(12,15),ignoreId=100)) // moving itself
+        assertTrue(IslandLayout.validDecor(c,listOf(6,14)))
+        val draft=IslandDraft(IslandTarget.Decor("palm"),listOf(6,14))
+        val preview=IslandLayout.preview(ApiClient.HomeIsland(1,emptyMap(),0,emptyList(),construction=c),draft)
+        assertEquals(2,preview.construction.decor.size)
+        val free=IslandLayout.freeCell(listOf(11,12)) { IslandLayout.validDecor(c,it) }
+        assertTrue(IslandLayout.validDecor(c,free))
+    }
+    @Test fun buildingFootprintsScaleWithLandSoAdjacentGridCellsDoNotOverlap() {
+        for(land in 0..5) for(tier in 1..3) {
+            val c=ApiClient.IslandConstruction(buildings=IsleBuilding.entries.associate { it.name to tier },land=land)
+            IslandPlans.placedBuildings(0,c).values.forEach { p ->
+                assertTrue(p.size <= IslandLayout.separation(c)/20f*IslandPlans.constructionScale(land))
+            }
+        }
     }
 }

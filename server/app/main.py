@@ -26,7 +26,9 @@ APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
-SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places"]
+SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories"]
+# 7.9.9: the four glossary categories (the first one is the default for old clients and old rows).
+GLOSSARY_CATEGORIES = ("Begriffe", "Witze", "Sprüche", "Zitate")
 # One-time creative entitlement for the accounts that already exist on the test
 # server when this version first starts. The marker row makes the migration
 # idempotent: later restarts and newly registered accounts stay unentitled.
@@ -251,6 +253,16 @@ def initialize_database() -> None:
             PRIMARY KEY(user_id,plot),
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS island_construction (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            mode TEXT NOT NULL CHECK(mode IN ('normal','creative')),
+            state TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY(user_id,mode)
+        );
+        CREATE TABLE IF NOT EXISTS island_mode (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            mode TEXT NOT NULL DEFAULT 'normal'
+        );
         CREATE TABLE IF NOT EXISTS island_here (
             user_id INTEGER PRIMARY KEY,
             plot INTEGER,
@@ -378,6 +390,10 @@ def initialize_database() -> None:
             FOREIGN KEY(actor_id) REFERENCES users(id) ON DELETE CASCADE
         );
         """)
+        # 7.9.9: glossary categories. Existing words become "Begriffe"; nothing is deleted.
+        add_columns(conn, "glossary_terms", {"category": "TEXT NOT NULL DEFAULT 'Begriffe'"})
+        conn.execute("UPDATE glossary_terms SET category='Begriffe' WHERE category IS NULL OR category NOT IN (%s)"
+                     % ",".join("?" * len(GLOSSARY_CATEGORIES)), GLOSSARY_CATEGORIES)
 
         accepted = conn.execute(
             "SELECT sender_id,recipient_id,created_at FROM friend_requests WHERE status='accepted'"
@@ -613,6 +629,19 @@ class PlacesUpdate(BaseModel):
     places: dict[str, PlaceIn] = Field(default_factory=dict)
 
 
+class IslandAction(BaseModel):
+    mode: str = "normal"
+    action: str
+    building: str | None = None
+    expected_revision: int = Field(ge=0)
+    position: list[int] | None = None
+    # Free decoration (decor_place/decor_move/decor_remove).
+    item: str | None = None
+    decor_id: int | None = None
+    # Optional own name of a special decoration (former life place), e.g. "Coden am Berg".
+    name: str | None = Field(default=None, max_length=40)
+
+
 class HereUpdate(BaseModel):
     plot: int | None = None
     status: str = Field(default="", max_length=60)
@@ -626,6 +655,8 @@ class DecorUpdate(BaseModel):
 class GlossaryTermCreate(BaseModel):
     term: str = Field(min_length=1, max_length=80)
     explanation: str = Field(min_length=1, max_length=2000)
+    # 7.9.9: optional for old clients (they always create "Begriffe").
+    category: str = "Begriffe"
 
 
 class GlossaryExplanationWrite(BaseModel):
@@ -1597,7 +1628,7 @@ def decor_of(conn: sqlite3.Connection, user_id: int) -> dict[str, str]:
 PLACE_KINDS = ("home", "bude", "uni", "hut", "club", "station", "city", "desk", "work", "cafe")
 # Plot n becomes buildable at PLOT_UNLOCKS[n] points (plot 0 = the home island's house).
 PLOT_UNLOCKS = (0, 0, 0, 40, 80, 120, 200, 300, 450)
-DEFAULT_PLACES = {0: ("home", "Zuhause")}
+DEFAULT_PLACES = {}  # A new island is a sand mound, never a prebuilt house.
 
 
 def places_of(conn: sqlite3.Connection, user_id: int) -> dict[str, dict]:
@@ -1611,7 +1642,8 @@ def places_of(conn: sqlite3.Connection, user_id: int) -> dict[str, dict]:
 def life_island(conn: sqlite3.Connection, user_id: int, score: int, own: bool) -> dict:
     out = {
         "places": places_of(conn, user_id),
-        "plots": sum(1 for at in PLOT_UNLOCKS if score >= at),
+        "plots": max((0, 3, 5, 7, 8, 9)[island_state(conn, user_id, "normal")["land"]],
+                     max((int(p) + 1 for p in places_of(conn, user_id)), default=0)),
         "plot_unlocks": list(PLOT_UNLOCKS),
         "place_kinds": list(PLACE_KINDS),
     }
@@ -1621,45 +1653,387 @@ def life_island(conn: sqlite3.Connection, user_id: int, score: int, own: bool) -
     return out
 
 
-@app.get("/api/island/{user_id}")
-def island_of(user_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
-    with db() as conn:
-        if user_id != user["id"] and (blocked(conn, user["id"], user_id) or not are_friends(conn, user["id"], user_id)):
-            raise HTTPException(404, "Insel nicht gefunden")
-        qp, ep = own_score(conn, user_id)
-        score = qp + EP_WEIGHT * ep
-        return {
-            "user_id": user_id, "decor": decor_of(conn, user_id), "score": score,
+# One real island per user. Creative mode is a free *way of building* on that
+# same island (no point/day/unlock gates), never a second world: legacy rows with
+# mode='creative' stay stored untouched but are no longer read, so normal islands
+# keep exactly their earned state and nothing vanishes when the mode is switched.
+ISLAND_BUILDINGS = ("HOUSE", "POST", "LIGHTHOUSE", "LIBRARY", "CAMPFIRE", "HARBOUR")
+BUILD_COSTS = (25, 60, 100)
+BUILD_DAYS = (0, 2, 7)
+# 7.9.9-start: every function's stage 0 (hammock, letter tree, ...) is built for free ("build").
+# Stage 0 is not a level: those pieces are listed in state["starters"]; buildings[b] stays the
+# upgrade level 1..3 exactly as before, so existing ledgers keep their meaning and nothing is refunded.
+STARTER_COST = 0
+LAND_COSTS = (40, 80, 140, 220, 320)
+LAND_DAYS = (1, 3, 7, 14, 21)
+# Default spots lie inside the build grid of every land stage (7.9.7: the old coast spots were in the water).
+ISLAND_DEFAULT_POSITIONS = {"HOUSE": [10, 6], "POST": [4, 9], "LIGHTHOUSE": [16, 9], "LIBRARY": [13, 14], "CAMPFIRE": [7, 14], "HARBOUR": [10, 15]}
+ISLAND_PLOT_POSITIONS = [(10,6),(6,8),(14,8),(5,13),(15,13),(7,4),(13,4),(8,15),(12,15)]
+ISLAND_DECOR_POSITIONS = [(8,9),(12,9),(7,11),(13,11),(9,12),(11,12)]
+
+
+# THE build grid, shared with the app (IslandGrid.kt) and pinned in server/app/island_grid.json:
+# a lattice point (0..20, island-local, scaled with the land like the painted terrain) is buildable
+# when it lies on the sand/meadow inside the painted rocks and shore. The edge margin is constant on
+# screen, so it is a little wider in lattice cells on a small island. Positions keep their 7.9.4 format.
+GRID_STEPS = 20
+GRID_CX, GRID_CY, GRID_RX, GRID_RY = .5, .47, .37, .33
+GRID_EDGE = .035
+
+
+def grid_buildable(x, y, land):
+    if not (0 <= x <= GRID_STEPS and 0 <= y <= GRID_STEPS):
+        return False
+    r = 1.0 - GRID_EDGE / land_factor(land)
+    u = ((x / GRID_STEPS - GRID_CX) / GRID_RX) ** 2 + ((y / GRID_STEPS - GRID_CY) / GRID_RY) ** 2
+    return u <= r * r
+
+
+def grid_cells(land):
+    return [[i, j] for i in range(GRID_STEPS + 1) for j in range(GRID_STEPS + 1) if grid_buildable(i, j, land)]
+
+
+# Special decoration (7.9.7): the former life places ("Bauplätze") are expensive decoration, placed
+# freely like any decoration, at most three per island. Points are spent in normal mode.
+SPECIAL_DECOR = {"place_home": 120, "place_bude": 120, "place_uni": 160, "place_hut": 160,
+                 "place_club": 160, "place_station": 200, "place_city": 200, "place_desk": 200}
+SPECIAL_DECOR_LIMIT = 3
+
+
+def is_special(d):
+    return str(d.get("item", "")).startswith("place_")
+
+
+def island_building_blocks(state, position):
+    x,y = position
+    clearance = (3 / (.46,.58,.70,.82,.92,1.0)[state["land"]]) ** 2
+    return any((x-p[0])**2+(y-p[1])**2 < clearance for b in standing(state)
+               for p in [state.get("positions", {}).get(b, ISLAND_DEFAULT_POSITIONS[b])])
+
+
+def standing(state):
+    """Function buildings that stand on the island: upgraded (level 1..3) or free stage-0 pieces."""
+    built = {b for b, level in state.get("buildings", {}).items() if level > 0}
+    return sorted((built | set(state.get("starters", []))) & set(ISLAND_DEFAULT_POSITIONS))
+
+
+# Clearances (squared later) in island-local grid cells, scaled inversely with land size.
+DECOR_BUILDING_GAP = 2.4
+DECOR_DECOR_GAP = 1.5
+DECOR_LIMITS = (6, 8, 10, 12, 14, 16)
+
+
+def land_factor(land):
+    return (.46, .58, .70, .82, .92, 1.0)[max(0, min(5, land))]
+
+
+def island_state(conn, user_id, mode="normal"):
+    # `mode` is kept for call-site readability only: both modes build on the real island.
+    row = conn.execute("SELECT state FROM island_construction WHERE user_id=? AND mode='normal'", (user_id,)).fetchone()
+    state = json.loads(row[0]) if row else {"buildings": {}, "land": 0, "spent": 0, "revision": 0}
+    if "decor" not in state:
+        # Lazy, lossless migration: slot decoration becomes freely placed objects at
+        # exactly their old slot positions. island_decor rows are never deleted.
+        state["decor"] = [{"id": int(slot), "item": item, "slot": int(slot),
+                           "position": list(ISLAND_DECOR_POSITIONS[int(slot)])}
+                          for slot, item in decor_of(conn, user_id).items() if int(slot) < len(ISLAND_DECOR_POSITIONS)]
+    if not state.get("places_migrated"):
+        # 7.9.7, lazy and lossless: every life place becomes a special decoration at its old plot
+        # (name kept). island_places rows are never deleted; more than three old ones all stay.
+        known = {d.get("plot") for d in state["decor"] if is_special(d)}
+        for r in conn.execute("SELECT plot,kind,name FROM island_places WHERE user_id=? ORDER BY plot", (user_id,)):
+            plot = int(r["plot"])
+            if plot in known:
+                continue
+            pos = ISLAND_PLOT_POSITIONS[plot] if plot < len(ISLAND_PLOT_POSITIONS) else (10, 10)
+            state["decor"].append({"id": 200 + plot, "item": "place_" + r["kind"], "name": r["name"] or "",
+                                   "plot": plot, "position": list(pos)})
+        state["places_migrated"] = True
+    normalize_layout(state)
+    return state
+
+
+def nearest_free_cell(state, position, kind, ignore_building=None, ignore_decor=None):
+    """Nearest buildable cell (shared grid) where the piece is not blocked; deterministic."""
+    x, y = position
+    cells = sorted(grid_cells(state["land"]), key=lambda c: ((c[0] - x) ** 2 + (c[1] - y) ** 2, c[1], c[0]))
+    for cell in cells:
+        if not placement_blocked(state, cell, kind, ignore_building, ignore_decor):
+            return cell
+    return cells[0]
+
+
+def normalize_layout(state):
+    """Pieces never stand outside the buildable grid of the current land: old coast spots (the water
+    in 7.9.6) and spots left outside after shrinking move to the nearest free buildable cell."""
+    land = state.get("land", 0)
+    positions = state.setdefault("positions", {})
+    for b in standing(state):
+        if True:
+            p = positions.get(b, ISLAND_DEFAULT_POSITIONS[b])
+            if not grid_buildable(p[0], p[1], land):
+                positions[b] = nearest_free_cell(state, p, "building", ignore_building=b)
+    for d in state.get("decor", []):
+        p = d["position"]
+        if not grid_buildable(p[0], p[1], land):
+            d["position"] = nearest_free_cell(state, p, "building" if is_special(d) else "decor", ignore_decor=d["id"])
+    return state
+
+
+def legacy_decor(state):
+    """Slot view for old clients and old renders: only objects that still stand on their slot."""
+    return {str(d["slot"]): d["item"] for d in state.get("decor", [])
+            if d.get("slot") is not None and list(d["position"]) == list(ISLAND_DECOR_POSITIONS[d["slot"]])}
+
+
+def island_occupied(conn, user_id):
+    plots = ISLAND_PLOT_POSITIONS
+    return [plots[int(p)] for p in places_of(conn, user_id) if int(p) < len(plots)]
+
+
+def placement_blocked(state, position, kind, ignore_building=None, ignore_decor=None):
+    """Clearances in grid cells (divided by the land factor). kind "building" = function building or
+    special decoration (big pieces), "decor" = ordinary decoration."""
+    x, y = position
+    f = land_factor(state["land"])
+    big = (3 / f) ** 2
+    gap_b = (DECOR_BUILDING_GAP / f) ** 2
+    gap_d = (DECOR_DECOR_GAP / f) ** 2
+    starters = set(state.get("starters", []))
+    # 7.9.9: stage-0 pieces (hammock, palm, ...) are small: they keep only the decoration gap to big
+    # pieces, so all six fit on the starter island.
+    small = ignore_building is not None and ignore_building in starters
+    for b in standing(state):
+        if b != ignore_building:
+            bx, by = state.get("positions", {}).get(b, ISLAND_DEFAULT_POSITIONS[b])
+            gap = gap_b if kind != "building" or small or b in starters else big
+            if (x - bx) ** 2 + (y - by) ** 2 < gap:
+                return "Bauplatz ist durch ein Gebäude belegt"
+    for d in state.get("decor", []):
+        if d["id"] == ignore_decor:
+            continue
+        gap = (gap_b if small else big if kind == "building" else gap_b) if is_special(d) else (gap_b if kind == "building" else gap_d)
+        if (x - d["position"][0]) ** 2 + (y - d["position"][1]) ** 2 < gap:
+            return "Hier steht schon Deko"
+    return None
+
+
+def decor_blocked(conn, user_id, state, position, ignore_id=None, special=False):
+    return placement_blocked(state, position, "building" if special else "decor", ignore_decor=ignore_id)
+
+
+def valid_island_cell(position, land=5):
+    if position is None or len(position) != 2:
+        raise HTTPException(422, "Ungültiger Bauplatz")
+    x, y = position
+    if not grid_buildable(x, y, land):
+        raise HTTPException(422, "Bauplatz liegt außerhalb der bebaubaren Fläche")
+    return x, y
+
+
+def check_island_mode(conn, user_id, mode):
+    if mode not in ("normal", "creative"):
+        raise HTTPException(422, "Unbekannter Inselmodus")
+    entitlement = conn.execute("SELECT creative_entitled FROM users WHERE id=?", (user_id,)).fetchone()
+    if mode == "creative" and (SERVER_ROLE != "test" or not entitlement or not entitlement[0]):
+        raise HTTPException(403, "Kreativmodus ist für dieses Konto nicht freigeschaltet")
+
+
+def construction_view(conn, user_id, mode, score):
+    state = island_state(conn, user_id, mode)
+    created = conn.execute("SELECT created_at FROM users WHERE id=?", (user_id,)).fetchone()[0]
+    return {**state, "starters": sorted(state.get("starters", [])), "starter_cost": STARTER_COST,
+            "mode": mode, "available": max(0, score - state["spent"]),
+            "age_days": max(0, (now_ts() - created) // 86400),
+            "build_costs": list(BUILD_COSTS), "build_days": list(BUILD_DAYS),
+            "land_costs": list(LAND_COSTS), "land_days": list(LAND_DAYS), "decor_limits": list(DECOR_LIMITS),
+            "special_costs": dict(SPECIAL_DECOR), "special_limit": SPECIAL_DECOR_LIMIT, "grid_version": 2}
+
+
+def island_view(conn, user_id, own, mode=None):
+    if mode is None:
+        row = conn.execute("SELECT mode FROM island_mode WHERE user_id=?", (user_id,)).fetchone()
+        mode = row[0] if row else "normal"
+        # Entitlement revocation never exposes a stale creative world.
+        if mode == "creative":
+            entitlement = conn.execute("SELECT creative_entitled FROM users WHERE id=?", (user_id,)).fetchone()
+            if SERVER_ROLE != "test" or not entitlement[0]:
+                mode = "normal"
+    qp, ep = own_score(conn, user_id)
+    score = qp + EP_WEIGHT * ep
+    return {"user_id": user_id, "decor": legacy_decor(island_state(conn, user_id)), "score": score,
             "items": [{"key": k, "unlock_at": v, "unlocked": score >= v} for k, v in DECOR_ITEMS.items()],
-            # Where the owner's figure stands is private: only the owner gets "here".
-            **life_island(conn, user_id, score, own=user_id == user["id"]),
-        }
+            **life_island(conn, user_id, score, own=own),
+            "construction": construction_view(conn, user_id, mode, score)}
+
+
+@app.get("/api/island/{user_id}")
+def island_of(user_id: int, mode: str | None = None, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        own = user_id == user["id"]
+        if not own and (blocked(conn, user["id"], user_id) or not are_friends(conn, user["id"], user_id)):
+            raise HTTPException(404, "Insel nicht gefunden")
+        if mode is not None:
+            if not own:
+                raise HTTPException(403, "Nur der Besitzer kann den Inselmodus wählen")
+            check_island_mode(conn, user_id, mode)
+        return island_view(conn, user_id, own, mode)
+
+
+@app.post("/api/island/construction")
+def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_user)) -> dict:
+    with db() as conn:
+        # Reserve the SQLite writer before reading revision/balance (atomic retry protection).
+        conn.execute("BEGIN IMMEDIATE")
+        uid = user["id"]
+        check_island_mode(conn, uid, payload.mode)
+        state = island_state(conn, uid, payload.mode)
+        if payload.action == "activate":
+            # Switching views is idempotent and cannot invalidate a concurrent build revision.
+            conn.execute("INSERT INTO island_mode(user_id,mode) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET mode=excluded.mode", (uid, payload.mode))
+            return island_view(conn, uid, True, payload.mode)
+        if state["revision"] != payload.expected_revision:
+            raise HTTPException(409, "Die Insel wurde inzwischen geändert. Bitte neu laden.")
+        view = construction_view(conn, uid, payload.mode, sum(v * w for v, w in zip(own_score(conn, uid), (1, EP_WEIGHT))))
+        cost = 0
+        day = 0
+        level = 0
+        starters = state.setdefault("starters", [])
+        was_starter = payload.building in starters
+        if payload.action == "build":
+            # Stage 0 of a function: free, no day gate, placed like any new building.
+            if payload.building not in ISLAND_BUILDINGS:
+                raise HTTPException(422, "Unbekannter Funktionsort")
+            if payload.building in standing(state):
+                raise HTTPException(422, "Dieses Gebäude steht schon auf deiner Insel")
+            if payload.position is None:
+                raise HTTPException(422, "Ungültiger Bauplatz")
+            cost, day = STARTER_COST, 0
+            starters.append(payload.building)
+        elif payload.action == "upgrade":
+            if payload.building not in ISLAND_BUILDINGS:
+                raise HTTPException(422, "Unbekannter Funktionsort")
+            level = state["buildings"].get(payload.building, 0)
+            if level >= 3:
+                raise HTTPException(422, "Höchste Ausbaustufe erreicht")
+            cost, day = BUILD_COSTS[level], BUILD_DAYS[level]
+            state["buildings"][payload.building] = level + 1
+            if was_starter:
+                starters.remove(payload.building)
+        elif payload.action == "move":
+            if payload.building not in ISLAND_BUILDINGS or payload.building not in standing(state) or payload.position is None:
+                raise HTTPException(422, "Nur vorhandene Gebäude können verschoben werden")
+        elif payload.action == "expand":
+            land = state["land"]
+            if land >= len(LAND_COSTS):
+                raise HTTPException(422, "Die Insel ist bereits vollständig erweitert")
+            cost, day = LAND_COSTS[land], LAND_DAYS[land]
+            state["land"] += 1
+        elif payload.action == "demolish":
+            # Allowed in both modes; normal mode never refunds spent points.
+            if payload.building not in ISLAND_BUILDINGS or payload.building not in standing(state):
+                raise HTTPException(422, "Nur vorhandene Gebäude können abgerissen werden")
+            state["buildings"].pop(payload.building, None)
+            if was_starter:
+                starters.remove(payload.building)
+            state.get("positions", {}).pop(payload.building, None)
+        elif payload.action in ("decor_place", "decor_move", "decor_remove"):
+            decor = state.setdefault("decor", [])
+            target = next((d for d in decor if d["id"] == payload.decor_id), None)
+            if payload.action != "decor_place" and target is None:
+                raise HTTPException(422, "Diese Deko gibt es nicht")
+            if payload.action == "decor_remove":
+                decor.remove(target)
+            else:
+                x, y = valid_island_cell(payload.position, state["land"])
+                special = payload.item in SPECIAL_DECOR if target is None else is_special(target)
+                if payload.action == "decor_place":
+                    if payload.item not in DECOR_ITEMS and payload.item not in SPECIAL_DECOR:
+                        raise HTTPException(422, "Unbekannte Deko")
+                    if special:
+                        # Global rule in both modes; more than three old ones are kept, never new ones.
+                        if sum(1 for d in decor if is_special(d)) >= SPECIAL_DECOR_LIMIT:
+                            raise HTTPException(422, f"Höchstens {SPECIAL_DECOR_LIMIT} besondere Deko pro Insel")
+                        cost = SPECIAL_DECOR[payload.item]
+                    elif payload.mode == "normal":
+                        score = sum(v * w for v, w in zip(own_score(conn, uid), (1, EP_WEIGHT)))
+                        if DECOR_ITEMS[payload.item] > score:
+                            raise HTTPException(403, "Diese Deko ist noch nicht freigeschaltet")
+                        if sum(1 for d in decor if not is_special(d)) >= DECOR_LIMITS[state["land"]]:
+                            raise HTTPException(403, "Für mehr Deko zuerst die Insel erweitern")
+                reason = decor_blocked(conn, uid, state, [x, y], ignore_id=None if target is None else target["id"], special=special)
+                if reason:
+                    raise HTTPException(422, reason)
+                if target is None:
+                    # Free objects get ids >= 100; migrated slot objects keep their slot number.
+                    obj = {"id": max([99] + [d["id"] for d in decor]) + 1, "item": payload.item, "position": [x, y]}
+                    if special:
+                        obj["name"] = " ".join((payload.name or "").split())
+                    decor.append(obj)
+                else:
+                    target["position"] = [x, y]
+        elif payload.action == "downgrade" and payload.mode == "creative":
+            if payload.building not in ISLAND_BUILDINGS:
+                raise HTTPException(422, "Unbekannter Funktionsort")
+            current = state["buildings"].get(payload.building, 0)
+            if current == 1:
+                # Back from stage 1 to the free stage-0 piece on the same spot.
+                state["buildings"].pop(payload.building, None)
+                if not was_starter:
+                    starters.append(payload.building)
+            elif current > 1:
+                state["buildings"][payload.building] = current - 1
+            elif was_starter:
+                starters.remove(payload.building)
+                state.get("positions", {}).pop(payload.building, None)
+        elif payload.action == "shrink" and payload.mode == "creative":
+            if state["land"] <= 0:
+                raise HTTPException(422, "Die Insel ist bereits am kleinsten")
+            state["land"] = max(0, state["land"] - 1)
+            starters_now = set(state.get("starters", []))
+            pieces = [(b, state.get("positions", {}).get(b,ISLAND_DEFAULT_POSITIONS[b])) for b in standing(state)]
+            def clearance(b, q):
+                return ((DECOR_BUILDING_GAP if b in starters_now or q in starters_now else 3) / land_factor(state["land"])) ** 2
+            if any((p[0]-r[0])**2+(p[1]-r[1])**2 < clearance(b, q) for i,(b,p) in enumerate(pieces) for q,r in pieces[i+1:]):
+                raise HTTPException(422, "Zum Verkleinern zuerst Gebäude verschieben oder zurückbauen")
+        elif payload.action != "activate":
+            raise HTTPException(422, "Unbekannte Ausbauaktion")
+        # Legacy upgrades retain their location; new construction and relocation must validate.
+        relocating = payload.action in ("move", "build") or (payload.action == "upgrade" and payload.building in ISLAND_BUILDINGS and
+            ((level == 0 and not was_starter) or payload.position is not None and payload.position != state.get("positions", {}).get(payload.building, ISLAND_DEFAULT_POSITIONS[payload.building])))
+        if relocating:
+            if payload.building not in ISLAND_BUILDINGS:
+                raise HTTPException(422, "Ungültiger Bauplatz")
+            x, y = valid_island_cell(payload.position if payload.position is not None else ISLAND_DEFAULT_POSITIONS[payload.building], state["land"])
+            # Same island in both modes, so other buildings, special and ordinary decoration always block.
+            reason = placement_blocked(state, [x, y], "building", ignore_building=payload.building)
+            if reason:
+                raise HTTPException(422, "Bauplatz ist bereits belegt" if "Gebäude" in reason else "Bauplatz ist durch einen Ort oder Deko belegt")
+            state.setdefault("positions", {})[payload.building] = [x, y]
+        elif payload.action == "upgrade" and was_starter:
+            # A stage-0 piece grows into a big building: if it now stands too close, it moves to the
+            # nearest free cell (deterministic, like normalize_layout); nothing is ever lost.
+            here = state.get("positions", {}).get(payload.building, ISLAND_DEFAULT_POSITIONS[payload.building])
+            if placement_blocked(state, here, "building", ignore_building=payload.building):
+                state.setdefault("positions", {})[payload.building] = nearest_free_cell(state, here, "building", ignore_building=payload.building)
+        if payload.mode == "normal":
+            if view["age_days"] < day:
+                raise HTTPException(403, f"Dieser Ausbau ist ab Tag {day} möglich")
+            if view["available"] < cost:
+                raise HTTPException(403, f"Für diesen Ausbau fehlen {cost - view['available']} Punkte")
+            state["spent"] += cost
+        state["revision"] += 1
+        normalize_layout(state)
+        conn.execute("INSERT INTO island_construction(user_id,mode,state) VALUES (?,'normal',?) ON CONFLICT(user_id,mode) DO UPDATE SET state=excluded.state", (uid, json.dumps(state)))
+        # Builds never republish the active mode: a late response cannot switch it back.
+        return island_view(conn, uid, True, payload.mode)
 
 
 @app.put("/api/island/places")
 def set_places(payload: PlacesUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
-    with db() as conn:
-        qp, ep = own_score(conn, user["id"])
-        score = qp + EP_WEIGHT * ep
-        clean: dict[int, tuple[str, str]] = {}
-        for plot, place in payload.places.items():
-            if not plot.isdigit() or not 0 <= int(plot) < len(PLOT_UNLOCKS):
-                raise HTTPException(422, "Unbekannter Bauplatz")
-            if PLOT_UNLOCKS[int(plot)] > score:
-                raise HTTPException(403, "Dieses Bauland ist noch nicht frei")
-            if place.kind not in PLACE_KINDS:
-                raise HTTPException(422, "Unbekanntes Gebäude")
-            clean[int(plot)] = (place.kind, " ".join(place.name.split()))
-        conn.execute("DELETE FROM island_places WHERE user_id=?", (user["id"],))
-        conn.executemany("INSERT INTO island_places(user_id,plot,kind,name) VALUES (?,?,?,?)",
-                         [(user["id"], p, k, n) for p, (k, n) in clean.items()])
-        # Remember that the player has decided (an emptied island stays empty);
-        # the figure leaves a place that no longer exists.
-        conn.execute("INSERT OR IGNORE INTO island_here(user_id,plot,status,updated_at) VALUES (?,NULL,'',?)", (user["id"], now_ts()))
-        here = conn.execute("SELECT plot FROM island_here WHERE user_id=?", (user["id"],)).fetchone()["plot"]
-        if here is not None and here not in clean:
-            conn.execute("UPDATE island_here SET plot=NULL,status='' WHERE user_id=?", (user["id"],))
-        return {"ok": True, **life_island(conn, user["id"], score, own=True)}
+    # 7.9.7: building plots are gone; life places are special decoration in the construction ledger.
+    # Old rows stay untouched (they were migrated losslessly), so this legacy write can no longer delete them.
+    raise HTTPException(410, "Bauplätze gibt es nicht mehr: Orte sind jetzt besondere Deko in der Bauleiste. Bitte die App aktualisieren.")
 
 
 @app.put("/api/island/here")
@@ -1681,6 +2055,7 @@ def set_here(payload: HereUpdate, user: sqlite3.Row = Depends(current_user)) -> 
 @app.put("/api/island/decor")
 def set_decor(payload: DecorUpdate, user: sqlite3.Row = Depends(current_user)) -> dict:
     with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         qp, ep = own_score(conn, user["id"])
         score = qp + EP_WEIGHT * ep
         clean: dict[int, str] = {}
@@ -1691,10 +2066,20 @@ def set_decor(payload: DecorUpdate, user: sqlite3.Row = Depends(current_user)) -
                 raise HTTPException(422, "Unbekannte Deko")
             if DECOR_ITEMS[item] > score:
                 raise HTTPException(403, "Diese Deko ist noch nicht freigeschaltet")
+            if slot not in decor_of(conn,user["id"]) and island_building_blocks(island_state(conn,user["id"],"normal"),ISLAND_DECOR_POSITIONS[int(slot)]):
+                raise HTTPException(422, "Dekoplatz ist durch ein Inselgebäude belegt")
             clean[int(slot)] = item
         conn.execute("DELETE FROM island_decor WHERE user_id=?", (user["id"],))
         conn.executemany("INSERT INTO island_decor(user_id,slot,item) VALUES (?,?,?)",
                          [(user["id"], s_, i_) for s_, i_ in clean.items()])
+        # Old clients still edit slots: keep an already migrated ledger in step (free objects stay).
+        row = conn.execute("SELECT state FROM island_construction WHERE user_id=? AND mode='normal'", (user["id"],)).fetchone()
+        if row and "decor" in json.loads(row[0]):
+            st = json.loads(row[0])
+            st["decor"] = [d for d in st["decor"] if d.get("slot") is None] + [
+                {"id": s_, "item": i_, "slot": s_, "position": list(ISLAND_DECOR_POSITIONS[s_])} for s_, i_ in sorted(clean.items())]
+            st["revision"] = st.get("revision", 0) + 1
+            conn.execute("UPDATE island_construction SET state=? WHERE user_id=? AND mode='normal'", (json.dumps(st), user["id"]))
     return {"ok": True, "decor": {str(k): v for k, v in clean.items()}}
 
 
@@ -1715,7 +2100,7 @@ def islands(user: sqlite3.Row = Depends(current_user)) -> dict:
             score = qp + EP_WEIGHT * ep + chat
             level = island_level(score)
             nxt = ISLAND_THRESHOLDS[level] if level < len(ISLAND_THRESHOLDS) else None
-            result.append({"friend_id": f["id"], "qp": qp, "ep": ep, "chat": chat, "score": score, "level": level, "next_at": nxt})
+            result.append({"friend_id": f["id"], "qp": qp, "ep": ep, "chat": chat, "score": score, "level": level, "next_at": nxt, "island": island_view(conn, f["id"], False)})
         own_qp = int(conn.execute("""SELECT COALESCE(SUM(q.points),0) FROM quests q WHERE q.completed_at IS NOT NULL AND
                                   ((q.peer_user_id IS NOT NULL AND (q.creator_id=? OR q.peer_user_id=?)) OR EXISTS(
                                   SELECT 1 FROM group_members gm WHERE gm.group_id=q.group_id AND gm.user_id=?))""",
@@ -1731,22 +2116,33 @@ def islands(user: sqlite3.Row = Depends(current_user)) -> dict:
 # dictionary, not private messages); only authors edit or delete their own text.
 # ---------------------------------------------------------------------------
 
+def check_glossary_category(category: str) -> str:
+    if category not in GLOSSARY_CATEGORIES:
+        raise HTTPException(422, "Kategorie muss Begriffe, Witze, Sprüche oder Zitate sein")
+    return category
+
+
 def glossary_key(term: str) -> str:
     return " ".join(term.split()).casefold()
 
 
-def glossary_view(conn: sqlite3.Connection, user_id: int, term_id: int | None = None) -> list[dict]:
-    where = "WHERE t.id=?" if term_id is not None else ""
+def glossary_view(conn: sqlite3.Connection, user_id: int, term_id: int | None = None, category: str | None = None) -> list[dict]:
+    where, args = [], []
+    if term_id is not None:
+        where.append("t.id=?"); args.append(term_id)
+    if category is not None:
+        where.append("t.category=?"); args.append(category)
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
     terms = conn.execute(f"""SELECT t.*,u.name creator_name FROM glossary_terms t
-                         JOIN users u ON u.id=t.creator_id {where} ORDER BY t.term_key""",
-                         (term_id,) if term_id is not None else ()).fetchall()
+                         JOIN users u ON u.id=t.creator_id {clause} ORDER BY t.term_key""", args).fetchall()
     result = []
     for t in terms:
         rows = conn.execute("""SELECT e.*,u.name author_name FROM glossary_explanations e
                             JOIN users u ON u.id=e.author_id WHERE e.term_id=? ORDER BY e.created_at,e.id""",
                             (t["id"],)).fetchall()
         result.append({
-            "id": t["id"], "term": t["term"], "creator_name": t["creator_name"], "created_at": t["created_at"],
+            "id": t["id"], "term": t["term"], "category": t["category"] or "Begriffe",
+            "creator_name": t["creator_name"], "created_at": t["created_at"],
             "can_delete": t["creator_id"] == user_id and all(r["author_id"] == user_id for r in rows),
             "explanations": [{
                 "id": r["id"], "text": r["text"], "author_name": r["author_name"],
@@ -1757,9 +2153,16 @@ def glossary_view(conn: sqlite3.Connection, user_id: int, term_id: int | None = 
 
 
 @app.get("/api/glossary")
-def list_glossary(user: sqlite3.Row = Depends(current_user)) -> list[dict]:
+def list_glossary(category: str | None = None, user: sqlite3.Row = Depends(current_user)) -> list[dict]:
+    if category is not None:
+        check_glossary_category(category)
     with db() as conn:
-        return glossary_view(conn, user["id"])
+        return glossary_view(conn, user["id"], category=category)
+
+
+@app.get("/api/glossary/categories")
+def glossary_categories(user: sqlite3.Row = Depends(current_user)) -> list[str]:
+    return list(GLOSSARY_CATEGORIES)
 
 
 @app.post("/api/glossary", status_code=201)
@@ -1767,13 +2170,14 @@ def create_glossary_term(payload: GlossaryTermCreate, user: sqlite3.Row = Depend
     term, text = " ".join(payload.term.split()), payload.explanation.strip()
     if not term or not text:
         raise HTTPException(422, "Wort und Erklärung dürfen nicht leer sein")
+    category = check_glossary_category(payload.category)
     ts = now_ts()
     with db() as conn:
         existing = conn.execute("SELECT id FROM glossary_terms WHERE term_key=?", (glossary_key(term),)).fetchone()
         # An existing word gains another explanation instead of a duplicate entry.
         term_id = existing["id"] if existing else int(conn.execute(
-            "INSERT INTO glossary_terms(term,term_key,creator_id,created_at) VALUES (?,?,?,?)",
-            (term, glossary_key(term), user["id"], ts)).lastrowid)
+            "INSERT INTO glossary_terms(term,term_key,creator_id,created_at,category) VALUES (?,?,?,?,?)",
+            (term, glossary_key(term), user["id"], ts, category)).lastrowid)
         conn.execute("INSERT INTO glossary_explanations(term_id,author_id,text,created_at,updated_at) VALUES (?,?,?,?,?)",
                      (term_id, user["id"], text, ts, ts))
         return {"id": term_id, "merged": existing is not None}

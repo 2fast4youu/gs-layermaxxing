@@ -3,6 +3,7 @@ package at.gregor.layermaxxing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
@@ -44,3 +45,18 @@ internal fun Modifier.worldTap(label: String? = null, onClick: () -> Unit): Modi
 
 @Composable
 internal fun rememberHitboxDebug(): Boolean = LocalHitboxDebug.current
+
+/** [worldTap] with a long press (edit/move): the long press bypasses the double-tap gate. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+internal fun Modifier.worldPress(label: String? = null, longLabel: String? = null, onLongClick: (() -> Unit)?, onClick: () -> Unit): Modifier = composed {
+    val debug = LocalHitboxDebug.current
+    val source = remember { MutableInteractionSource() }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    this
+        .then(if (DebugMode.showsHitboxes(debug)) Modifier.background(DebugMode.HitboxFill).border(1.5.dp, DebugMode.HitboxLine) else Modifier)
+        .combinedClickable(
+            interactionSource = source, indication = null, onClickLabel = label, onLongClickLabel = longLabel,
+            onLongClick = onLongClick?.let { long -> { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); long() } },
+            onClick = onClick,
+        )
+}

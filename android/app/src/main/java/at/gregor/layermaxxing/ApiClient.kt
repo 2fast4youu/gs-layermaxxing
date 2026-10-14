@@ -104,6 +104,8 @@ class ApiClient(
     )
     data class GlossaryTerm(
         val id: Long, val term: String, val creatorName: String, val explanations: List<GlossaryExplanation>, val canDelete: Boolean,
+        /** 7.9.9: Begriffe, Witze, Sprüche or Zitate; old servers send none (= Begriffe). */
+        val category: String = GlossaryCategories.DEFAULT,
     )
 
     data class Quest(
@@ -111,7 +113,7 @@ class ApiClient(
         val creatorId: Long, val creatorName: String, val targetType: String, val targetName: String, val targetId: Long?,
         val createdAt: Long, val completedAt: Long?, val completedByName: String?, val canDelete: Boolean,
     )
-    data class IslandInfo(val friendId: Long, val qp: Int, val ep: Int, val score: Int, val level: Int, val nextAt: Int?)
+    data class IslandInfo(val friendId: Long, val qp: Int, val ep: Int, val score: Int, val level: Int, val nextAt: Int?, val island: HomeIsland? = null)
     data class Islands(val qp: Int, val friends: List<IslandInfo>, val score: Int = qp)
     data class DecorItem(val key: String, val unlockAt: Int, val unlocked: Boolean)
     data class HomeIsland(
@@ -122,6 +124,32 @@ class ApiClient(
         val plotUnlocks: List<Int> = emptyList(),
         /** Only on the own island: where my figure stands (null = on the plaza). */
         val here: Here? = null,
+        val construction: IslandConstruction = IslandConstruction(),
+    )
+    data class IslandConstruction(
+        val mode: String = "normal", val buildings: Map<String, Int> = emptyMap(),
+        val land: Int = 0, val spent: Int = 0, val revision: Int = 0,
+        val available: Int = 0, val ageDays: Int = 0,
+        val buildCosts: List<Int> = listOf(25, 60, 100), val buildDays: List<Int> = listOf(0, 2, 7),
+        val landCosts: List<Int> = listOf(40, 80, 140, 220, 320), val landDays: List<Int> = listOf(1, 3, 7, 14, 21),
+        val positions: Map<String, List<Int>> = emptyMap(),
+        /** Freely placed decoration on the real island (old slot decor migrated server-side). */
+        val decor: List<IslandDecor> = emptyList(),
+        val decorLimits: List<Int> = listOf(6, 8, 10, 12, 14, 16),
+        /** False when the server answers without a construction block (no island building yet). */
+        val supported: Boolean = true,
+        /** Special decoration (former life places, 7.9.7): price per item and the global limit per island. */
+        val specialCosts: Map<String, Int> = SpecialDecor.defaultCosts,
+        val specialLimit: Int = SpecialDecor.LIMIT,
+        /** 7.9.9: functions standing at their free stage 0 (hammock, letter tree, …); not a level. */
+        val starters: Set<String> = emptySet(),
+    )
+    /** [name] = own name of a special decoration ("Coden am Berg"), empty for ordinary decoration. */
+    data class IslandDecor(val id: Int, val item: String, val position: List<Int>, val slot: Int? = null, val name: String = "")
+    /** One construction write: building, land or free decoration. */
+    data class IslandRequest(
+        val action: String, val building: String? = null, val item: String? = null,
+        val decorId: Int? = null, val position: List<Int>? = null, val name: String? = null,
     )
     data class LifePlace(val kind: String, val name: String)
     data class Here(val plot: Int?, val status: String)
@@ -479,14 +507,26 @@ class ApiClient(
         Islands(j.optInt("qp"), score = j.optInt("score", j.optInt("qp")), friends = (0 until arr.length()).map { i ->
             val f = arr.getJSONObject(i)
             IslandInfo(f.getLong("friend_id"), f.getInt("qp"), f.getInt("ep"), f.getInt("score"), f.getInt("level"),
-                if (f.isNull("next_at")) null else f.getInt("next_at"))
+                if (f.isNull("next_at")) null else f.getInt("next_at"), f.optJSONObject("island")?.let(::parseHomeIsland))
         })
     }
-    suspend fun island(token: String, userId: Long): HomeIsland = io {
-        val j = execute(authorized(token, "api/island/$userId").get().build())
+    suspend fun island(token: String, userId: Long, mode: String? = null): HomeIsland = io {
+        parseHomeIsland(execute(authorized(token, "api/island/$userId" + (mode?.let { "?mode=$it" } ?: "")).get().build()))
+    }
+    suspend fun islandAction(token: String, state: IslandConstruction, action: String, building: String?): HomeIsland =
+        islandAction(token, state, IslandRequest(action, building))
+    suspend fun islandAction(token: String, state: IslandConstruction, request: IslandRequest): HomeIsland = io {
+        val position = request.position ?: request.building?.let { state.positions[it] }
+        parseHomeIsland(execute(authorized(token, "api/island/construction").post(
+            JSONObject().put("mode", state.mode).put("action", request.action).put("building", request.building ?: JSONObject.NULL)
+                .put("item", request.item ?: JSONObject.NULL).put("decor_id", request.decorId ?: JSONObject.NULL)
+                .apply { request.name?.let { put("name", it) } }
+                .put("expected_revision", state.revision).put("position", position?.let { org.json.JSONArray(it) } ?: JSONObject.NULL).body()).build()))
+    }
+    internal fun parseHomeIsland(j: JSONObject): HomeIsland {
         val d = j.getJSONObject("decor")
         val items = j.getJSONArray("items")
-        HomeIsland(
+        return HomeIsland(
             j.getLong("user_id"), d.keys().asSequence().associate { it.toInt() to d.getString(it) }, j.getInt("score"),
             (0 until items.length()).map { i -> items.getJSONObject(i).let { DecorItem(it.getString("key"), it.getInt("unlock_at"), it.getBoolean("unlocked")) } },
             places = j.optJSONObject("places")?.let { p ->
@@ -495,6 +535,21 @@ class ApiClient(
             plots = j.optInt("plots", 0),
             plotUnlocks = j.optJSONArray("plot_unlocks")?.let { a -> (0 until a.length()).map { a.getInt(it) } }.orEmpty(),
             here = j.optJSONObject("here")?.let { h -> Here(if (h.isNull("plot")) null else h.getInt("plot"), h.optString("status")) },
+            construction = j.optJSONObject("construction")?.let { c ->
+                fun ints(key: String, fallback: List<Int>) = c.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: fallback
+                IslandConstruction(c.optString("mode", "normal"), c.optJSONObject("buildings")?.let { b -> b.keys().asSequence().associateWith { b.getInt(it) } }.orEmpty(),
+                    c.optInt("land"), c.optInt("spent"), c.optInt("revision"), c.optInt("available"), c.optInt("age_days"),
+                    ints("build_costs", listOf(25,60,100)), ints("build_days", listOf(0,2,7)), ints("land_costs", listOf(40,80,140,220,320)), ints("land_days", listOf(1,3,7,14,21)),
+                    c.optJSONObject("positions")?.let { p -> p.keys().asSequence().associateWith { k -> p.getJSONArray(k).let { listOf(it.getInt(0),it.getInt(1)) } } }.orEmpty(),
+                    decor = c.optJSONArray("decor")?.let { a -> (0 until a.length()).map { i -> a.getJSONObject(i).let { d ->
+                        IslandDecor(d.getInt("id"), d.getString("item"), d.getJSONArray("position").let { listOf(it.getInt(0), it.getInt(1)) },
+                            if (d.isNull("slot") || !d.has("slot")) null else d.getInt("slot"), d.optString("name", ""))
+                    } } }.orEmpty(),
+                    decorLimits = ints("decor_limits", listOf(6, 8, 10, 12, 14, 16)),
+                    specialCosts = c.optJSONObject("special_costs")?.let { s -> s.keys().asSequence().associateWith { s.getInt(it) } } ?: SpecialDecor.defaultCosts,
+                    specialLimit = c.optInt("special_limit", SpecialDecor.LIMIT),
+                    starters = c.optJSONArray("starters")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty())
+            } ?: IslandConstruction(supported = false),
         )
     }
     suspend fun setPlaces(token: String, places: Map<Int, LifePlace>) = unitCall(
@@ -530,9 +585,9 @@ class ApiClient(
 
     // Shared, community-edited glossary (plain text by design: it is a public dictionary).
     suspend fun glossary(token: String): List<GlossaryTerm> = array(token, "api/glossary", ::parseGlossaryTerm)
-    suspend fun addGlossaryTerm(token: String, term: String, explanation: String): Long = io {
+    suspend fun addGlossaryTerm(token: String, term: String, explanation: String, category: String = GlossaryCategories.DEFAULT): Long = io {
         execute(authorized(token, "api/glossary").post(
-            JSONObject().put("term", term.trim()).put("explanation", explanation.trim()).body()
+            JSONObject().put("term", term.trim()).put("explanation", explanation.trim()).put("category", GlossaryCategories.normalize(category)).body()
         ).build()).getLong("id")
     }
     suspend fun addGlossaryExplanation(token: String, termId: Long, text: String) = unitCall(
@@ -617,7 +672,8 @@ class ApiClient(
                 e.optLong("created_at"), e.optLong("updated_at"), e.optBoolean("mine"),
             )
         }
-        return GlossaryTerm(json.getLong("id"), json.getString("term"), json.optString("creator_name"), explanations, json.optBoolean("can_delete"))
+        return GlossaryTerm(json.getLong("id"), json.getString("term"), json.optString("creator_name"), explanations, json.optBoolean("can_delete"),
+            GlossaryCategories.normalize(json.optString("category", GlossaryCategories.DEFAULT)))
     }
 
     private fun parseTopic(json: JSONObject): Topic {

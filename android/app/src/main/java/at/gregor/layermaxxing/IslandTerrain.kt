@@ -20,22 +20,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * Islands are assembled at runtime: one painted, EMPTY terrain base (coast,
@@ -55,6 +45,10 @@ internal data class IslandPiece(
     val size: Float,
     val sway: Boolean = false,
     val name: String? = null,
+    val primitive: IsleBuilding? = null,
+    val tier: Int = 0,
+    /** Picked up for moving (long press / placement): drawn raised above its footprint. */
+    val lifted: Boolean = false,
 )
 
 internal data class IslandPlan(
@@ -96,7 +90,7 @@ internal object IslandPlans {
         else -> .3f
     }
     /** How green the land is (0 = bare sand bank, 1 = full meadow) for a land scale. */
-    fun meadow(landScale: Float): Float = ((landScale - .3f) / .7f).coerceIn(0f, 1f)
+    fun meadow(landScale: Float): Float = ((landScale - .46f) / (1f - .46f)).coerceIn(0f, 1f)
     /** Things on a small island shrink a little so the sand bank is not crammed. */
     fun pieceScale(landScale: Float): Float = .6f + .4f * landScale
     /**
@@ -123,27 +117,13 @@ internal object IslandPlans {
     /** Home: the menu buildings around a plaza. Anchors were picked so paths and lawns never cross. */
     /** The app's own places sit at the coast; the inland plots belong to the player's real life (LifePlaces). */
     val homeBuildings = linkedMapOf(
-        IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.lm_lighthouse, .88f, .44f, .105f, name = "Freunde"),
-        IsleBuilding.POST to IslandPiece(R.drawable.lm_post, .12f, .47f, .105f, name = "Post"),
-        IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.lm_campfire, .28f, .80f, .10f, name = "Gruppen"),
-        IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library, .74f, .79f, .10f, name = "Wörterbuch"),
-        IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty, .51f, .85f, .115f, name = "Hafen"),
-    )
-    /** Stufe-1-Ruinen: unter diesem Punktestand steht die primitive Baumstamm-Version. */
-    val ruinCosts = mapOf(
-        IsleBuilding.CAMPFIRE to 25,   // Feuerstelle zuerst – die günstige Keimzelle
-        IsleBuilding.POST to 60,
-        IsleBuilding.HARBOUR to 100,
-        IsleBuilding.LIBRARY to 160,
-        IsleBuilding.LIGHTHOUSE to 240,
-    )
-    /** The same buildings as level-1 ruins; anchors and sizes are identical. */
-    private val homeRuins = linkedMapOf(
-        IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.lm_lighthouse_ruin, .88f, .44f, .105f, name = "Freunde"),
-        IsleBuilding.POST to IslandPiece(R.drawable.lm_post_ruin, .12f, .47f, .105f, name = "Post"),
-        IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.lm_campfire_ruin, .28f, .80f, .10f, name = "Gruppen"),
-        IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library_ruin, .74f, .79f, .10f, name = "Wörterbuch"),
-        IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty_ruin, .51f, .85f, .115f, name = "Hafen"),
+        // 7.9.7: default spots are cells of the build grid of every land stage (the old coast spots were in the water).
+        IsleBuilding.HOUSE to IslandPiece(R.drawable.b_house, .50f, .30f, .11f, name = "Mein Haus"),
+        IsleBuilding.LIGHTHOUSE to IslandPiece(R.drawable.lm_lighthouse, .80f, .45f, .105f, name = "Freunde"),
+        IsleBuilding.POST to IslandPiece(R.drawable.lm_post, .20f, .45f, .105f, name = "Post"),
+        IsleBuilding.CAMPFIRE to IslandPiece(R.drawable.lm_campfire, .35f, .70f, .10f, name = "Gruppen"),
+        IsleBuilding.LIBRARY to IslandPiece(R.drawable.lm_library, .65f, .70f, .10f, name = "Wörterbuch"),
+        IsleBuilding.HARBOUR to IslandPiece(R.drawable.lm_jetty, .50f, .75f, .115f, name = "Hafen"),
     )
     val plaza = Offset(.5f, .55f)
     /** Small decoration lawns ringing the plaza, clear of the building plots. */
@@ -153,34 +133,28 @@ internal object IslandPlans {
      * Where each app building stands for a score: ruin or finished sprite, moved onto the
      * grown land and sized for it. Sprites, signs and touch targets all read from here.
      */
-    fun placedBuildings(score: Int): Map<IsleBuilding, IslandPiece> {
-        val s = landScale(score)
-        val ps = pieceScale(s)
-        return homeBuildings.mapValues { (b, piece) ->
-            // Insel-Ausbau Scheibe 1: below its price a building shows its primitive log-hut look.
-            val p = if (score < (ruinCosts[b] ?: 0)) homeRuins[b] ?: piece else piece
-            val (lx, ly) = onLand(p.x, p.y, s)
-            p.copy(x = lx, y = ly, size = p.size * ps)
+    fun constructionScale(land: Int): Float = listOf(.46f, .58f, .70f, .82f, .92f, 1f)[land.coerceIn(0, 5)]
+
+    fun placedBuildings(score: Int, construction: ApiClient.IslandConstruction? = null): Map<IsleBuilding, IslandPiece> {
+        val s = construction?.let { constructionScale(it.land) } ?: landScale(score)
+        return homeBuildings.filter { (b, _) -> if (construction != null) construction.standing(b) else score >= 25 }.mapValues { (b, p) ->
+            val tier = if (construction != null) construction.buildings[b.name] ?: 0 else if (score >= 25) 1 else 0
+            val position = construction?.positions?.get(b.name)
+            val (x, y) = onLand(position?.get(0)?.div(20f) ?: p.x, position?.get(1)?.div(20f) ?: p.y, s)
+            p.copy(res = IslandArtwork.resource(b, tier), x = x, y = y, size = (p.size * (.9f + tier * .16f)).coerceAtMost(.145f),
+                primitive = b.takeIf { tier == 0 }, tier = tier)
         }
     }
 
-    fun home(seed: Long, score: Int = Int.MAX_VALUE): IslandPlan {
-        // The painted base already carries coast, rocks and bushes; a few calm trees frame the plots.
-        val nature = listOf(
+    fun home(seed: Long, score: Int = 0, construction: ApiClient.IslandConstruction? = null): IslandPlan {
+        val s = construction?.let { constructionScale(it.land) } ?: landScale(score)
+        val nature = if (s < .7f) emptyList() else listOf(
             IslandPiece(R.drawable.n_pine, .17f, .30f, .07f, sway = true),
             IslandPiece(R.drawable.n_pine, .83f, .29f, .065f, sway = true),
             IslandPiece(R.drawable.n_tree, .14f, .66f, .07f, sway = true),
             IslandPiece(R.drawable.n_cypress, .88f, .66f, .06f, sway = true),
-        )
-        val s = landScale(score)
-        val ps = pieceScale(s)
-        val buildings = placedBuildings(score).values.toList()
-        // A bare sand bank carries no trees yet; they return once the meadow has grown in.
-        val grown = if (meadow(s) < .3f) emptyList() else nature.map { n ->
-            val (lx, ly) = onLand(n.x, n.y, s)
-            n.copy(x = lx, y = ly, size = n.size * ps)
-        }
-        return IslandPlan(seed, 1f, buildings + grown, emptyList(), landScale = s)
+        ).map { n -> val (x,y) = onLand(n.x,n.y,s); n.copy(x=x,y=y) }
+        return IslandPlan(seed, 1f, placedBuildings(score, construction).values.toList() + nature, emptyList(), landScale = s)
     }
 
     /** What a friendship island holds at each level, placed on the painted clearings. */
@@ -221,12 +195,18 @@ internal fun DynamicIsland(
     plan: IslandPlan,
     modifier: Modifier = Modifier,
     animate: Boolean = true,
+    /** Edit mode: buildings and decoration wiggle a little, like movable pieces in a base-builder. */
+    wobble: Boolean = false,
+    /** 0..1: how far a lifted (held) piece has risen off the ground. */
+    lift: Float = 1f,
+    /** Drawn between terrain and sprites, so sprites cover grid and footprint (the footprint lies on the ground). */
+    underlay: @Composable BoxWithConstraintsScope.() -> Unit = {},
     overlay: @Composable BoxWithConstraintsScope.() -> Unit = {},
 ) {
     val t = rememberInfiniteTransition(label = "isle")
-    val time by if (animate) t.animateFloat(0f, 1f, infiniteRepeatable(tween(6000, easing = LinearEasing), RepeatMode.Restart), label = "time")
-    else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val sway by if (animate) t.animateFloat(-1f, 1f, infiniteRepeatable(tween(5200), RepeatMode.Reverse), label = "sway")
+    else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val wiggle by if (wobble) t.animateFloat(-1f, 1f, infiniteRepeatable(tween(190), RepeatMode.Reverse), label = "wiggle")
     else remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     BoxWithConstraints(modifier.aspectRatio(IslandPlans.ASPECT)) {
         val w = maxWidth; val h = maxHeight
@@ -247,30 +227,40 @@ internal fun DynamicIsland(
             transformOrigin = TransformOrigin(IslandPlans.LAND_CX, IslandPlans.LAND_CY)
         }
         val green = IslandPlans.meadow(ls)
+        // Painted bare sand and painted meadow share the app's existing coast/detail style.
+        // Do not replace these with geometric Canvas terrain: it breaks the visual family.
         if (green < 1f) Image(painterResource(R.drawable.terrain_sand), null, landLayer, contentScale = ContentScale.FillBounds)
-        if (green > 0f) Image(
-            painterResource(R.drawable.terrain_home), null, landLayer.graphicsLayer { alpha = green },
-            contentScale = ContentScale.FillBounds,
-        )
+        if (green > 0f) Image(painterResource(R.drawable.terrain_home), null,
+            landLayer.graphicsLayer { alpha = green }, contentScale = ContentScale.FillBounds)
         Canvas(Modifier.fillMaxSize()) {
             // Soft contact shadows ground every part on the grass.
             plan.pieces.forEach { pc ->
-                val sw = size.width * pc.size * .62f
+                val sw = size.width * pc.size * (if (pc.lifted) .82f else .62f)
                 val px = (if (plan.mirror) 1f - pc.x else pc.x) * size.width
                 drawOval(
-                    Color(0x26000000),
+                    if (pc.lifted) Color(0x44000000) else Color(0x26000000),
                     topLeft = Offset(px - sw / 2, pc.y * size.height - sw * .12f),
                     size = androidx.compose.ui.geometry.Size(sw, sw * .24f),
                 )
             }
         }
+        underlay()
         plan.pieces.sortedBy { it.y }.forEachIndexed { i, p ->
             val box: Dp = w * p.size
-            Image(
-                painterResource(p.res), p.name, contentScale = ContentScale.Fit, alignment = Alignment.BottomCenter,
+            val building = p.name?.let { name -> IsleBuilding.entries.firstOrNull { it.label == name } }
+            PaintedIslandPlace(building, p.tier, p.res, description = p.name,
                 modifier = Modifier.offset(x = w * (if (plan.mirror) 1f - p.x else p.x) - box / 2, y = h * p.y - box).size(box)
                     .then(
-                        if (p.sway) Modifier.graphicsLayer {
+                        if (p.lifted) Modifier.graphicsLayer {
+                            // Picked up: rises off the ground a little and grows, like a held game piece.
+                            translationY = -box.toPx() * .16f * lift; scaleX = 1f + .08f * lift; scaleY = 1f + .08f * lift
+                            rotationZ = wiggle * 1.2f * lift
+                            transformOrigin = TransformOrigin(.5f, 1f)
+                        } else if (wobble && p.name != null) Modifier.graphicsLayer {
+                            // Edit mode: movable pieces wiggle, neighbours out of phase.
+                            rotationZ = wiggle * (if (i % 2 == 0) 1.6f else -1.6f)
+                            transformOrigin = TransformOrigin(.5f, 1f)
+                        } else if (p.sway || p.primitive == IsleBuilding.POST || p.primitive == IsleBuilding.LIGHTHOUSE) Modifier.graphicsLayer {
                             rotationZ = sway * (1.4f + (i % 3) * .5f)
                             transformOrigin = TransformOrigin(.5f, 1f)
                         } else Modifier,

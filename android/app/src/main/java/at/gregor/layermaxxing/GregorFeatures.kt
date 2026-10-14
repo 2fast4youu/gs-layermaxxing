@@ -16,15 +16,23 @@ data class DictionaryRow(
     val key: String, val term: String, val builtIn: GlossaryEntry?, val shared: ApiClient.GlossaryTerm?,
 )
 
+/** 7.9.9: the glossary's four categories, mirrored from the server (GLOSSARY_CATEGORIES). */
+object GlossaryCategories {
+    const val DEFAULT = "Begriffe"
+    val all = listOf("Begriffe", "Witze", "Sprüche", "Zitate")
+    fun normalize(category: String?): String = category?.takeIf { it in all } ?: DEFAULT
+}
+
 object Dictionary {
-    /** Built-in terms first, then community words, both alphabetical; search covers terms and every explanation. */
-    fun rows(shared: List<ApiClient.GlossaryTerm>, query: String): List<DictionaryRow> {
+    /** Built-in terms first, then community words, both alphabetical; search covers terms and every explanation.
+     *  [category] null = all; built-in app terms are "Begriffe". */
+    fun rows(shared: List<ApiClient.GlossaryTerm>, query: String, category: String? = null): List<DictionaryRow> {
         val q = query.trim()
         fun hit(vararg parts: String) = q.isEmpty() || parts.any { it.contains(q, ignoreCase = true) }
-        val builtIn = AppGlossary.entries.filter { hit(it.term, it.meaning, it.action) }
+        val builtIn = AppGlossary.entries.filter { category == null || category == GlossaryCategories.DEFAULT }.filter { hit(it.term, it.meaning, it.action) }
             .sortedBy { it.term.lowercase() }
             .map { DictionaryRow("app-${it.term}", it.term, it, null) }
-        val community = shared.filter { t -> hit(t.term, *t.explanations.map { it.text }.toTypedArray()) }
+        val community = shared.filter { category == null || it.category == category }.filter { t -> hit(t.term, *t.explanations.map { it.text }.toTypedArray()) }
             .sortedBy { it.term.lowercase() }
             .map { DictionaryRow("word-${it.id}", it.term, null, it) }
         return builtIn + community

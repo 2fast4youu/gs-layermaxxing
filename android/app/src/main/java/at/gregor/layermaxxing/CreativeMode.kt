@@ -11,8 +11,8 @@ package at.gregor.layermaxxing
  * status refresh, so a revoked entitlement or a production server wins
  * immediately, whatever the switch says.
  *
- * The mode never touches a server value: builds go into a separate local
- * ledger, the treasury keeps showing the real accepted EP, and letters keep
+ * Castle builds go into a separate local
+ * ledger; island builds have a separate server ledger. The treasury keeps showing the real accepted EP, and letters keep
  * using the real friendship, letter and release gates.
  */
 object CreativeMode {
