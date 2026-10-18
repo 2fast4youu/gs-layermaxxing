@@ -245,60 +245,131 @@ internal fun IslandSideActions(shopLine: String, onBuild: () -> Unit, onMenu: ()
 }
 
 /**
- * The tapped piece's actions, hanging right at it (Clash of Clans): its name on a small sign and one
- * pill of round icon buttons (Öffnen, Ausbauen with the price on the button, Verschieben, Abreißen).
+ * 7.9.10: the island's warm menu materials (the painted plates, signs and harbour paper), shared by the
+ * piece actions, the upgrade sheet and the stage lines, so building menus never fall back to flat
+ * Material surfaces.
+ */
+internal object IslandWood {
+    val Ink = Color(0xFF3B2410)
+    val InkSoft = Color(0xFF6E4E2C)
+    val Paper = Brush.verticalGradient(listOf(Color(0xFFFFF7E4), Color(0xFFF1E0BC)))
+    val PaperEdge = Color(0xFFB9852E)
+    val Wood = Brush.verticalGradient(listOf(Color(0xFF86592F), Color(0xFF5B3A1C)))
+    val Brass = Brush.verticalGradient(listOf(IslandBuild.BrassLight, IslandBuild.BrassDark))
+    val Brick = Color(0xFFA4533F)
+    val Moss = Color(0xFF4F8F66)
+}
+
+/**
+ * The stage of a building at a glance: three small isometric diamonds (stage 1–3) on the island's brass,
+ * filled up to [level]; stage 0 shows them empty ("Start"). Read out as "Stufe 2 von 3".
+ */
+@Composable
+internal fun StagePips(level: Int, modifier: Modifier = Modifier, light: Boolean = false) {
+    val on = IslandBuild.BrassLight; val off = if (light) Color(0x55FFF3DC) else Color(0x403B2410)
+    val edge = if (light) Color(0xFFFFF3DC) else IslandWood.InkSoft
+    Row(modifier.semantics { contentDescription = if (level <= 0) "Start, noch keine Ausbaustufe" else "Stufe $level von 3" },
+        horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+        for (i in 1..3) androidx.compose.foundation.Canvas(Modifier.size(width = 11.dp, height = 9.dp)) {
+            val p = androidx.compose.ui.graphics.Path().apply {
+                moveTo(size.width / 2, 0f); lineTo(size.width, size.height / 2); lineTo(size.width / 2, size.height); lineTo(0f, size.height / 2); close()
+            }
+            drawPath(p, if (i <= level) on else off)
+            drawPath(p, edge.copy(alpha = .8f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        }
+    }
+}
+
+/**
+ * The tapped piece's actions, hanging right at it (Clash of Clans). 7.9.10 in the painted island family:
+ * the name on the brass plate (Lilita) with its stage diamonds, below it one strip of harbour paper with
+ * round brass-rimmed buttons and their labels (Nunito); the price sits as a brass chip on "Ausbauen".
  * Compact on purpose: no bottom card, nothing stacked.
  */
 @Composable
-internal fun PieceActionBar(title: String, subtitle: String?, actions: List<SelectionAction>) {
+internal fun PieceActionBar(title: String, subtitle: String?, actions: List<SelectionAction>, level: Int? = null) {
     Column(Modifier.semantics { contentDescription = "Gebäudeaktionen" }, horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(
-            Modifier.shadow(4.dp, RoundedCornerShape(50)).background(Color(0xF2243A3F), RoundedCornerShape(50))
-                .border(1.dp, Color(0x99E6D3A3), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(title, color = IslandBuild.Cream, fontFamily = Kit.Display, fontSize = 15.sp, maxLines = 1, softWrap = false)
-            if (subtitle != null) Text(" · $subtitle", color = IslandBuild.Gold, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, maxLines = 1, softWrap = false)
+        Box(Modifier.shadow(5.dp, RoundedCornerShape(12.dp)).height(46.dp).widthIn(min = 150.dp), Alignment.Center) {
+            Image(painterResource(R.drawable.p_plate), null, Modifier.matchParentSize(), contentScale = ContentScale.FillBounds)
+            Column(Modifier.padding(horizontal = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(title, color = IslandWood.Ink, fontFamily = Kit.Display, fontSize = 16.sp, lineHeight = 17.sp, maxLines = 1, softWrap = false)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (level != null) { StagePips(level); Spacer(Modifier.width(5.dp)) }
+                    if (subtitle != null) Text(subtitle, color = IslandWood.InkSoft, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold, fontSize = 10.5.sp,
+                        lineHeight = 11.sp, maxLines = 1, softWrap = false)
+                }
+            }
         }
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(6.dp))
         Row(
-            Modifier.shadow(8.dp, RoundedCornerShape(28.dp))
-                .background(Brush.verticalGradient(listOf(Color(0xF22B4449), Color(0xF21E3236))), RoundedCornerShape(28.dp))
-                .border(1.5.dp, Color(0x88E6D3A3), RoundedCornerShape(28.dp)).padding(horizontal = 6.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            Modifier.shadow(8.dp, RoundedCornerShape(22.dp)).background(IslandWood.Paper, RoundedCornerShape(22.dp))
+                .border(2.dp, IslandWood.PaperEdge, RoundedCornerShape(22.dp)).padding(horizontal = 8.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             actions.forEach { a ->
                 Column(
                     // wide enough for every label ("Verschieben" was cut off at a fixed 60 dp)
                     Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = a.label, onClick = a.onClick)
-                        .widthIn(min = 58.dp).padding(horizontal = 3.dp, vertical = 2.dp).semantics { role = Role.Button },
+                        .widthIn(min = 62.dp).padding(horizontal = 3.dp, vertical = 2.dp).semantics { role = Role.Button },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Box(contentAlignment = Alignment.BottomCenter) {
                         Box(
-                            Modifier.padding(bottom = if (a.detail != null) 7.dp else 0.dp).size(42.dp).shadow(4.dp, CircleShape)
-                                .background(Brush.verticalGradient(listOf(a.tone.copy(alpha = .92f), a.tone)), CircleShape)
-                                .border(2.dp, Color(0xFFFFF3DC), CircleShape),
+                            Modifier.padding(bottom = if (a.detail != null) 8.dp else 0.dp).size(44.dp).shadow(4.dp, CircleShape)
+                                .background(Brush.verticalGradient(listOf(a.tone.copy(alpha = .86f), a.tone)), CircleShape)
+                                .border(2.5.dp, IslandWood.Brass, CircleShape),
                             Alignment.Center,
-                        ) { AppIcon(a.icon, null, tint = if (a.dark) Color(0xFF3B2410) else Color.White, size = 22.dp) }
+                        ) { AppIcon(a.icon, null, tint = if (a.dark) IslandWood.Ink else IslandBuild.Cream, size = 22.dp) }
                         // The price sits on the button itself, like the cost on a base-builder's upgrade button.
-                        if (a.detail != null) Text(a.detail, color = Color(0xFF3B2410), fontSize = 9.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold, maxLines = 1,
-                            softWrap = false, modifier = Modifier.background(Color(0xFFFFF3DC), RoundedCornerShape(50)).padding(horizontal = 6.dp))
+                        if (a.detail != null) PriceChip(a.detail)
                     }
-                    Text(a.label, color = IslandBuild.Cream, fontSize = 10.5.sp, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
-                        modifier = Modifier.padding(top = 2.dp))
+                    Text(a.label, color = IslandWood.Ink, fontSize = 11.sp, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold, maxLines = 1, softWrap = false,
+                        modifier = Modifier.padding(top = 3.dp))
                 }
             }
         }
     }
 }
 
-/** The short placement hint at the top: shown when a piece is picked up, then it fades away. */
+/**
+ * The placement hint at the top: shown when a piece is picked up, then it fades away. [warning] = the spot
+ * is impossible and the hint says why (it stays until the piece stands somewhere possible).
+ */
 @Composable
-internal fun PlacementHint(text: String, modifier: Modifier = Modifier) {
-    Text(text, color = IslandBuild.Cream, fontFamily = Kit.Body, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false,
-        modifier = modifier.shadow(6.dp, RoundedCornerShape(50)).background(Color(0xF2243A3F), RoundedCornerShape(50))
-            .border(1.dp, Color(0x99E6D3A3), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp))
+internal fun PlacementHint(text: String, modifier: Modifier = Modifier, warning: Boolean = false) {
+    // A pill on one line (radius >= half its height); when it wraps the corners stay clear of the text.
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier.shadow(6.dp, shape).background(if (warning) Brush.verticalGradient(listOf(Color(0xF2B45E48), Color(0xF28E3F2E))) else IslandWood.Wood, shape)
+            .border(1.5.dp, if (warning) Color(0xFFFFE1C8) else IslandBuild.BrassLight, shape).padding(horizontal = 14.dp, vertical = 7.dp)
+            .semantics(mergeDescendants = true) { contentDescription = if (warning) "Hier nicht möglich: $text" else text },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (warning) { AppIcon(R.drawable.ico_info, null, tint = IslandBuild.Cream, size = 16.dp); Spacer(Modifier.width(6.dp)) }
+        // One line normally; with a large system font on a narrow phone it wraps instead of being cut off (7.9.10).
+        Text(text, color = IslandBuild.Cream, fontFamily = Kit.Body, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 3,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+/**
+ * The island's main button in a menu (7.9.10): brass plate gradient, dark ink in Lilita, a darker rim. Disabled
+ * it turns into plain paper with muted ink, so the reason line above it stays the thing to read.
+ */
+@Composable
+internal fun IslandWoodButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, secondary: Boolean = false) {
+    val shape = RoundedCornerShape(16.dp)
+    Box(
+        modifier.heightIn(min = 52.dp).shadow(if (enabled && !secondary) 6.dp else 0.dp, shape)
+            .background(when { !enabled -> Brush.verticalGradient(listOf(Color(0xFFEDE3CF), Color(0xFFE2D5BA))); secondary -> IslandWood.Paper; else -> IslandWood.Brass }, shape)
+            .border(2.dp, if (enabled) IslandWood.Ink.copy(alpha = if (secondary) .55f else .8f) else Color(0x553B2410), shape)
+            .clip(shape).clickable(enabled = enabled, onClickLabel = label, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp).semantics { role = Role.Button },
+        Alignment.Center,
+    ) {
+        Text(label, color = if (enabled) IslandWood.Ink else IslandWood.InkSoft.copy(alpha = .7f), fontFamily = if (secondary) Kit.Body else Kit.Display,
+            fontWeight = if (secondary) FontWeight.ExtraBold else null, fontSize = if (secondary) 15.sp else 17.sp, maxLines = 1, softWrap = false)
+    }
 }
 
 /** One-time note after the creative mode was switched on in the island menu. */
@@ -648,8 +719,9 @@ internal fun IslandMenuContent(
                             PaintedIslandPlace(b, level, stage.res, Modifier.fillMaxSize(.9f))
                             AppIcon(stage.icon, "${stage.name} – ${stage.function}", Modifier.align(Alignment.TopEnd), tint = Isle.TealDark, size = 16.dp)
                         }
-                        Text(stage.name, fontFamily = Kit.Display, fontSize = 13.sp, color = Isle.Ink, maxLines = 2, textAlign = TextAlign.Center)
-                        Text(stage.subtitle, fontSize = 10.5.sp, color = Isle.Muted, fontFamily = Kit.Body, maxLines = 2, textAlign = TextAlign.Center)
+                        Text(stage.name, fontFamily = Kit.Display, fontSize = 13.sp, color = IslandWood.Ink, maxLines = 2, textAlign = TextAlign.Center)
+                        StagePips(level, Modifier.padding(vertical = 2.dp))
+                        Text(stage.subtitle, fontSize = 10.5.sp, color = IslandWood.InkSoft, fontFamily = Kit.Body, maxLines = 2, textAlign = TextAlign.Center)
                     }
                 }
             }

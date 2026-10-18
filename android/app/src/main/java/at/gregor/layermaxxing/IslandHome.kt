@@ -160,8 +160,8 @@ internal fun HubIsland(
     selected: IslandTarget? = null,
     onGround: (() -> Unit)? = null,
     selectionBar: (@Composable () -> Unit)? = null,
-    /** Grid cells where the held piece may not stand (darker). */
-    blockedCells: Set<List<Int>> = emptySet(),
+    /** While a piece is held: every other piece's footprint, outlined in quiet red (7.9.10). */
+    obstacles: List<IslandLayout.Obstacle> = emptyList(),
 ) {
     val liftedBuilding = (placement?.target as? IslandTarget.Building)?.building
     val liftedDecor = (placement?.target as? IslandTarget.Decor)?.let { it.id ?: IslandLayout.DRAFT_DECOR_ID }
@@ -180,6 +180,10 @@ internal fun HubIsland(
         is IslandTarget.Decor -> IsleDecor.share(t.item) * IslandPlans.pieceScale(plan.landScale) / IslandPlans.pieceScale(1f)
     }
     val surfaceActive = placement != null
+    // 7.9.10: the held piece's footprint in grid cells, the same rule the server checks.
+    val heldRings = placement?.let { IslandLayout.rings(life?.construction ?: ApiClient.IslandConstruction(), it.target) } ?: 0
+    // 7.9.10: the held harbour only ever stands on (and is drawn over) the coast cells.
+    val coastOnly = liftedBuilding == IsleBuilding.HARBOUR
     // Picked up: the sprite rises and grows a little (the shadow darkens with it in DynamicIsland).
     val lift by androidx.compose.animation.core.animateFloatAsState(if (placement != null) 1f else 0f,
         androidx.compose.animation.core.tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "lift")
@@ -191,11 +195,14 @@ internal fun HubIsland(
                         is IslandTarget.Building -> placed[t.building]
                         is IslandTarget.Decor -> decorObjects.firstOrNull { it.first.id == t.id }?.second
                     }
-                    piece?.let { Triple(it.x, it.y, IslandGrid.radiusFor(it.size, land)) }
+                    // The footprint lies behind the sprite's foot (its front tip is the foot), like the grid rule.
+                    piece?.let { val r = IslandLayout.rings(life?.construction ?: ApiClient.IslandConstruction(), t)
+                        Triple(it.x, it.y - r * IslandGrid.step(land), r + .5f) }
                 }
                 IslandGridUnderlay(land, showGrid = placement != null, focus = placement?.position,
-                    focusRadius = placement?.let { IslandGrid.radiusFor(sizeOf(it.target), land) } ?: 1, valid = placementValid, selection = outline,
-                    blocked = if (placement != null) blockedCells else emptySet())
+                    focusRings = heldRings, valid = placementValid, selection = outline,
+                    obstacles = if (placement != null) obstacles else emptyList(),
+                    coastOnly = coastOnly)
             }
         },
     ) {
@@ -211,11 +218,11 @@ internal fun HubIsland(
             } else emptyList()
             fun decorOf(t: IslandTarget.Decor) = decorObjects.firstOrNull { it.first.id == t.id }?.first
             IslandTouchSurface(
-                land, placement, placement?.let { IslandGrid.radiusFor(sizeOf(it.target), land) } ?: 1, targets,
+                land, placement, heldRings + 1, targets,
                 onTap = { t -> gate { when (t) { is IslandTarget.Building -> onBuilding(t.building); is IslandTarget.Decor -> decorOf(t)?.let { d -> onDecor?.invoke(d) } } } },
                 onLongPress = { t -> when (t) { is IslandTarget.Building -> onBuildingLongPress?.invoke(t.building); is IslandTarget.Decor -> decorOf(t)?.let { d -> onDecorLongPress?.invoke(d) } } },
                 onGround = { onGround?.let { g -> gate { g() } } },
-                onPosition = onPosition,
+                onPosition = onPosition, coastOnly = coastOnly,
             )
         }
         if (life != null && showFigure) {
@@ -295,7 +302,8 @@ internal fun HubIsland(
             val size = sizeOf(draft.target)
             val z = LocalIslandZoom.current().coerceAtLeast(1f)
             val rowW = 120.dp; val rowH = PlacementBubbleSize
-            val bottom = ay + IslandGrid.step(land) * IslandGrid.radiusFor(size, land)
+            // the footprint's front tip is half a cell below the foot
+            val bottom = ay + IslandGrid.step(land) * .5f
             val flip = PlacementBubbles.flipAbove(bottom, (rowH / z) / h)
             val cx = (w * ax).coerceIn(rowW / z / 2, w - rowW / z / 2)
             val top = if (!flip) h * bottom + 2.dp else h * ay - w * size * 1.3f - rowH / z - 2.dp

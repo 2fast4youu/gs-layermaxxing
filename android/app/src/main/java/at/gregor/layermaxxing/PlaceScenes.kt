@@ -194,10 +194,15 @@ internal fun PlaceStage(
         // Under the sign: what it is and which stage, plus how it looks now.
         Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 70.dp, start = 68.dp, end = 12.dp)) {
             val stage = IslandStages.of(place, level)
-            Text("${stage.subtitle} · ${stage.look}", fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, color = Color(0xFFFFF6E5), maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.background(Color(0x66000000), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp)
-                    .semantics { contentDescription = "Stufe: ${stage.subtitle}" })
+            // 7.9.10: a small paper strip with the stage diamonds instead of a dark overlay pill.
+            Row(Modifier.shadow(2.dp, RoundedCornerShape(50)).background(IslandWood.Paper, RoundedCornerShape(50))
+                .border(1.dp, IslandWood.PaperEdge.copy(alpha = .7f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                StagePips(level); Spacer(Modifier.width(6.dp))
+                Text("${stage.subtitle} · ${stage.look}", fontFamily = Body, fontWeight = FontWeight.ExtraBold, fontSize = 11.5.sp, color = IslandWood.Ink, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { contentDescription = "Stufe: ${stage.subtitle}" })
+            }
         }
         action?.let { (label, onClick) -> GoldButton(label, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 18.dp), onClick) }
     }

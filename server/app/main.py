@@ -1693,6 +1693,41 @@ def grid_cells(land):
     return [[i, j] for i in range(GRID_STEPS + 1) for j in range(GRID_STEPS + 1) if grid_buildable(i, j, land)]
 
 
+def grid_coast(x, y, land):
+    """7.9.10: the rim of the build grid (a buildable cell next to a non-buildable one) is the coast; only
+    there may the harbour stand."""
+    return grid_buildable(x, y, land) and any(not grid_buildable(x + dx, y + dy, land) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+
+
+def coast_cells(land):
+    return [c for c in grid_cells(land) if grid_coast(c[0], c[1], land)]
+
+
+# 7.9.10: THE occupancy rule, shared with the app (IslandLayout.kt) and pinned in island_grid.json. A piece
+# occupies the lattice cells of its footprint: a diamond of |di| + |dj| <= rings grid cells whose front tip
+# is its spot (where the sprite's foot stands), drawn exactly like that while moving; two pieces may not share
+# a cell and there is no other clearance.
+# The sprites keep their size while the lattice scales with the land, so a small island needs more rings.
+# Every pair the 7.9.9 distance rule accepted still fits (test_v14_placement), so no saved layout breaks.
+FOOTPRINT_RINGS = {
+    "big": (2, 2, 1, 1, 1, 1),      # function buildings at stage 1..3 and special decoration
+    "starter": (1, 1, 1, 1, 1, 1),  # free stage-0 pieces (hammock, letter tree, ...)
+    "decor": (1, 1, 1, 0, 0, 0),    # ordinary decoration
+}
+
+
+def rings_of(kind, land):
+    return FOOTPRINT_RINGS["big" if kind == "special" else kind][max(0, min(5, land))]
+
+
+def footprint_cells(position, rings):
+    """The cells a piece occupies. Its spot is where the sprite's foot stands, i.e. the FRONT tip of the
+    isometric footprint: the diamond lies behind it (its middle is `rings` cells further up the lattice)."""
+    x, y = position
+    cy = y - rings
+    return {(x + dx, cy + dy) for dx in range(-rings, rings + 1) for dy in range(-rings, rings + 1) if abs(dx) + abs(dy) <= rings}
+
+
 # Special decoration (7.9.7): the former life places ("Bauplätze") are expensive decoration, placed
 # freely like any decoration, at most three per island. Points are spent in normal mode.
 SPECIAL_DECOR = {"place_home": 120, "place_bude": 120, "place_uni": 160, "place_hut": 160,
@@ -1705,10 +1740,8 @@ def is_special(d):
 
 
 def island_building_blocks(state, position):
-    x,y = position
-    clearance = (3 / (.46,.58,.70,.82,.92,1.0)[state["land"]]) ** 2
-    return any((x-p[0])**2+(y-p[1])**2 < clearance for b in standing(state)
-               for p in [state.get("positions", {}).get(b, ISLAND_DEFAULT_POSITIONS[b])])
+    """Legacy decoration slots: does a standing building's footprint cover the slot's decoration footprint?"""
+    return any(building_footprint(state, b) & footprint_cells(position, rings_of("decor", state["land"])) for b in standing(state))
 
 
 def standing(state):
@@ -1717,9 +1750,6 @@ def standing(state):
     return sorted((built | set(state.get("starters", []))) & set(ISLAND_DEFAULT_POSITIONS))
 
 
-# Clearances (squared later) in island-local grid cells, scaled inversely with land size.
-DECOR_BUILDING_GAP = 2.4
-DECOR_DECOR_GAP = 1.5
 DECOR_LIMITS = (6, 8, 10, 12, 14, 16)
 
 
@@ -1753,31 +1783,58 @@ def island_state(conn, user_id, mode="normal"):
     return state
 
 
+NO_FREE_CELL = "Kein freier Platz auf der Insel – zuerst etwas verschieben oder abreißen"
+
+
 def nearest_free_cell(state, position, kind, ignore_building=None, ignore_decor=None):
-    """Nearest buildable cell (shared grid) where the piece is not blocked; deterministic."""
+    """Nearest buildable cell (shared grid) where the piece is not blocked; deterministic. The harbour
+    only looks at coast cells. None when there is no free cell at all (never an occupied one)."""
     x, y = position
-    cells = sorted(grid_cells(state["land"]), key=lambda c: ((c[0] - x) ** 2 + (c[1] - y) ** 2, c[1], c[0]))
+    cells = sorted(coast_cells(state["land"]) if ignore_building == "HARBOUR" else grid_cells(state["land"]),
+                   key=lambda c: ((c[0] - x) ** 2 + (c[1] - y) ** 2, c[1], c[0]))
     for cell in cells:
         if not placement_blocked(state, cell, kind, ignore_building, ignore_decor):
             return cell
-    return cells[0]
+    return None
 
 
-def normalize_layout(state):
+def free_cell_or_422(state, position, kind, ignore_building=None, ignore_decor=None):
+    cell = nearest_free_cell(state, position, kind, ignore_building, ignore_decor)
+    if cell is None:
+        raise HTTPException(422, NO_FREE_CELL)
+    return cell
+
+
+def normalize_layout(state, strict=False):
     """Pieces never stand outside the buildable grid of the current land: old coast spots (the water
-    in 7.9.6) and spots left outside after shrinking move to the nearest free buildable cell."""
+    in 7.9.6) and spots left outside after shrinking move to the nearest free buildable cell. Without a
+    free cell a piece is never put onto a taken one: on read it stays where it was (legacy data is kept
+    as it is), in a write ([strict]) the action is refused with 422 before anything is stored."""
     land = state.get("land", 0)
     positions = state.setdefault("positions", {})
+
+    def place(p, kind, **ignore):
+        cell = nearest_free_cell(state, p, kind, **ignore)
+        if cell is None and strict:
+            raise HTTPException(422, NO_FREE_CELL)
+        return cell or p
+
     for b in standing(state):
-        if True:
-            p = positions.get(b, ISLAND_DEFAULT_POSITIONS[b])
-            if not grid_buildable(p[0], p[1], land):
-                positions[b] = nearest_free_cell(state, p, "building", ignore_building=b)
+        p = positions.get(b, ISLAND_DEFAULT_POSITIONS[b])
+        if not grid_buildable(p[0], p[1], land):
+            positions[b] = place(p, "building", ignore_building=b)
     for d in state.get("decor", []):
         p = d["position"]
         if not grid_buildable(p[0], p[1], land):
-            d["position"] = nearest_free_cell(state, p, "building" if is_special(d) else "decor", ignore_decor=d["id"])
+            d["position"] = place(p, "building" if is_special(d) else "decor", ignore_decor=d["id"])
     return state
+
+
+def overlapping_pairs(state):
+    """Every pair of pieces whose footprints share a cell (keys "b:POST" / "d:101")."""
+    prints = [("b:" + b, building_footprint(state, b)) for b in standing(state)] + \
+             [("d:%s" % d["id"], decor_footprint(state, d)) for d in state.get("decor", [])]
+    return {(k1, k2) for i, (k1, p) in enumerate(prints) for k2, q in prints[i + 1:] if p & q}
 
 
 def legacy_decor(state):
@@ -1791,30 +1848,43 @@ def island_occupied(conn, user_id):
     return [plots[int(p)] for p in places_of(conn, user_id) if int(p) < len(plots)]
 
 
+def building_footprint(state, b):
+    position = state.get("positions", {}).get(b, ISLAND_DEFAULT_POSITIONS[b])
+    return footprint_cells(position, rings_of("starter" if b in state.get("starters", []) else "big", state["land"]))
+
+
+def decor_footprint(state, d):
+    return footprint_cells(d["position"], rings_of("special" if is_special(d) else "decor", state["land"]))
+
+
 def placement_blocked(state, position, kind, ignore_building=None, ignore_decor=None):
-    """Clearances in grid cells (divided by the land factor). kind "building" = function building or
-    special decoration (big pieces), "decor" = ordinary decoration."""
-    x, y = position
-    f = land_factor(state["land"])
-    big = (3 / f) ** 2
-    gap_b = (DECOR_BUILDING_GAP / f) ** 2
-    gap_d = (DECOR_DECOR_GAP / f) ** 2
+    """Footprint overlap (FOOTPRINT_RINGS), nothing else. kind "building" = function building or special
+    decoration, "decor" = ordinary decoration. The piece that is being moved ([ignore_building] /
+    [ignore_decor]) never blocks itself, so its old spot is free for it."""
     starters = set(state.get("starters", []))
-    # 7.9.9: stage-0 pieces (hammock, palm, ...) are small: they keep only the decoration gap to big
-    # pieces, so all six fit on the starter island.
+    # 7.9.9: stage-0 pieces (hammock, palm, ...) are small, so all six fit on the starter island.
     small = ignore_building is not None and ignore_building in starters
+    mine = footprint_cells(position, rings_of("decor" if kind != "building" else "starter" if small else "big", state["land"]))
     for b in standing(state):
-        if b != ignore_building:
-            bx, by = state.get("positions", {}).get(b, ISLAND_DEFAULT_POSITIONS[b])
-            gap = gap_b if kind != "building" or small or b in starters else big
-            if (x - bx) ** 2 + (y - by) ** 2 < gap:
-                return "Bauplatz ist durch ein Gebäude belegt"
+        if b != ignore_building and building_footprint(state, b) & mine:
+            return "Bauplatz ist durch ein Gebäude belegt"
     for d in state.get("decor", []):
-        if d["id"] == ignore_decor:
-            continue
-        gap = (gap_b if small else big if kind == "building" else gap_b) if is_special(d) else (gap_b if kind == "building" else gap_d)
-        if (x - d["position"][0]) ** 2 + (y - d["position"][1]) ** 2 < gap:
+        if d["id"] != ignore_decor and decor_footprint(state, d) & mine:
             return "Hier steht schon Deko"
+    return None
+
+
+def building_spot_error(state, position, building):
+    """Why a function building may not stand at [position] (None = it may): the grid, the coast rule of the
+    harbour and footprint overlap. The building itself never blocks its own old spot."""
+    x, y = position
+    if not grid_buildable(x, y, state["land"]):
+        return "Bauplatz liegt außerhalb der bebaubaren Fläche"
+    if building == "HARBOUR" and not grid_coast(x, y, state["land"]):
+        return "Der Hafen kann nur an der Küste stehen"
+    reason = placement_blocked(state, [x, y], "building", ignore_building=building)
+    if reason:
+        return "Bauplatz ist bereits belegt" if "Gebäude" in reason else "Bauplatz ist durch einen Ort oder Deko belegt"
     return None
 
 
@@ -1847,7 +1917,7 @@ def construction_view(conn, user_id, mode, score):
             "age_days": max(0, (now_ts() - created) // 86400),
             "build_costs": list(BUILD_COSTS), "build_days": list(BUILD_DAYS),
             "land_costs": list(LAND_COSTS), "land_days": list(LAND_DAYS), "decor_limits": list(DECOR_LIMITS),
-            "special_costs": dict(SPECIAL_DECOR), "special_limit": SPECIAL_DECOR_LIMIT, "grid_version": 2}
+            "special_costs": dict(SPECIAL_DECOR), "special_limit": SPECIAL_DECOR_LIMIT, "grid_version": 3}
 
 
 def island_view(conn, user_id, own, mode=None):
@@ -1894,6 +1964,7 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             return island_view(conn, uid, True, payload.mode)
         if state["revision"] != payload.expected_revision:
             raise HTTPException(409, "Die Insel wurde inzwischen geändert. Bitte neu laden.")
+        overlaps_before = overlapping_pairs(state)
         view = construction_view(conn, uid, payload.mode, sum(v * w for v, w in zip(own_score(conn, uid), (1, EP_WEIGHT))))
         cost = 0
         day = 0
@@ -1990,11 +2061,9 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             if state["land"] <= 0:
                 raise HTTPException(422, "Die Insel ist bereits am kleinsten")
             state["land"] = max(0, state["land"] - 1)
-            starters_now = set(state.get("starters", []))
-            pieces = [(b, state.get("positions", {}).get(b,ISLAND_DEFAULT_POSITIONS[b])) for b in standing(state)]
-            def clearance(b, q):
-                return ((DECOR_BUILDING_GAP if b in starters_now or q in starters_now else 3) / land_factor(state["land"])) ** 2
-            if any((p[0]-r[0])**2+(p[1]-r[1])**2 < clearance(b, q) for i,(b,p) in enumerate(pieces) for q,r in pieces[i+1:]):
+            # On the smaller land the footprints have more rings: buildings must not overlap afterwards.
+            prints = [building_footprint(state, b) for b in standing(state)]
+            if any(p & q for i, p in enumerate(prints) for q in prints[i + 1:]):
                 raise HTTPException(422, "Zum Verkleinern zuerst Gebäude verschieben oder zurückbauen")
         elif payload.action != "activate":
             raise HTTPException(422, "Unbekannte Ausbauaktion")
@@ -2005,17 +2074,24 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             if payload.building not in ISLAND_BUILDINGS:
                 raise HTTPException(422, "Ungültiger Bauplatz")
             x, y = valid_island_cell(payload.position if payload.position is not None else ISLAND_DEFAULT_POSITIONS[payload.building], state["land"])
-            # Same island in both modes, so other buildings, special and ordinary decoration always block.
-            reason = placement_blocked(state, [x, y], "building", ignore_building=payload.building)
+            # Same island in both modes, so other buildings, special and ordinary decoration always block;
+            # the harbour only stands on the coast (7.9.10).
+            reason = building_spot_error(state, [x, y], payload.building)
             if reason:
-                raise HTTPException(422, "Bauplatz ist bereits belegt" if "Gebäude" in reason else "Bauplatz ist durch einen Ort oder Deko belegt")
+                raise HTTPException(422, reason)
             state.setdefault("positions", {})[payload.building] = [x, y]
         elif payload.action == "upgrade" and was_starter:
             # A stage-0 piece grows into a big building: if it now stands too close, it moves to the
             # nearest free cell (deterministic, like normalize_layout); nothing is ever lost.
             here = state.get("positions", {}).get(payload.building, ISLAND_DEFAULT_POSITIONS[payload.building])
             if placement_blocked(state, here, "building", ignore_building=payload.building):
-                state.setdefault("positions", {})[payload.building] = nearest_free_cell(state, here, "building", ignore_building=payload.building)
+                state.setdefault("positions", {})[payload.building] = free_cell_or_422(state, here, "building", ignore_building=payload.building)
+        if payload.action in ("expand", "shrink") and "HARBOUR" in standing(state):
+            # The coast moves with the land: a harbour that would now stand inland (or outside) goes to the
+            # nearest free coast cell, deterministically. Saved inland harbours are otherwise never moved.
+            here = state.get("positions", {}).get("HARBOUR", ISLAND_DEFAULT_POSITIONS["HARBOUR"])
+            if building_spot_error(state, here, "HARBOUR"):
+                state.setdefault("positions", {})["HARBOUR"] = free_cell_or_422(state, here, "building", ignore_building="HARBOUR")
         if payload.mode == "normal":
             if view["age_days"] < day:
                 raise HTTPException(403, f"Dieser Ausbau ist ab Tag {day} möglich")
@@ -2023,7 +2099,12 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
                 raise HTTPException(403, f"Für diesen Ausbau fehlen {cost - view['available']} Punkte")
             state["spent"] += cost
         state["revision"] += 1
-        normalize_layout(state)
+        normalize_layout(state, strict=payload.action in ("expand", "shrink"))
+        # 7.9.10 safety net: no write ever stores a new footprint collision (e.g. footprints that grow when
+        # the land shrinks, decoration included). Old overlaps of legacy data are not made worse, only kept.
+        if overlapping_pairs(state) - overlaps_before:
+            raise HTTPException(422, "Zum Verkleinern zuerst Gebäude oder Deko verschieben – sonst würden sich Flächen überlappen"
+                                if payload.action == "shrink" else "Bauplatz ist bereits belegt")
         conn.execute("INSERT INTO island_construction(user_id,mode,state) VALUES (?,'normal',?) ON CONFLICT(user_id,mode) DO UPDATE SET state=excluded.state", (uid, json.dumps(state)))
         # Builds never republish the active mode: a late response cannot switch it back.
         return island_view(conn, uid, True, payload.mode)

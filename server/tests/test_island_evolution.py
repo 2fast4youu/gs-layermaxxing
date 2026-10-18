@@ -249,8 +249,9 @@ def test_creative_shrink_never_saves_overlapping_layout_or_loses_buildings(tmp_p
         for b,p in [('POST',[8,9]),('HOUSE',[12,9])]:
             r=c.post('/api/island/construction',headers=auth(a),json={'mode':'creative','action':'upgrade','building':b,'position':p,'expected_revision':current['construction']['revision']})
             assert r.status_code==200,r.text;current=r.json()
-        for _ in range(2): current=action(c,a,current,action='shrink',building=None,mode='creative').json()
-        assert current['construction']['land']==3
+        # 7.9.10 footprints: 4 cells apart fit down to land 2 (1 ring each), land 1 (2 rings each) would overlap.
+        for _ in range(3): current=action(c,a,current,action='shrink',building=None,mode='creative').json()
+        assert current['construction']['land']==2
         assert action(c,a,current,action='shrink',building=None,mode='creative').status_code==422
         assert state(c,a,'creative')['construction']==current['construction']
         assert current['construction']['buildings']=={'POST':1,'HOUSE':1}
