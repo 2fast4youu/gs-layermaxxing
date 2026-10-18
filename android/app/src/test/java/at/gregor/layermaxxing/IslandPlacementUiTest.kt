@@ -77,8 +77,9 @@ class IslandPlacementUiTest {
         tick(1200)
         return saved
     }
-    private fun grown(level: Int = 2, available: Int = 500, mode: String = "creative") = ApiClient.IslandConstruction(mode = mode, available = available, ageDays = 21,
-        buildings = IsleBuilding.entries.associate { it.name to level }, land = 5, decor = decor)
+    /** [version] = the server's grid_version: the 7.9.10 footprint tests pin 3, the default is the current rule. */
+    private fun grown(level: Int = 2, available: Int = 500, mode: String = "creative", version: Int = PlacementRule.CURRENT) = ApiClient.IslandConstruction(mode = mode, available = available, ageDays = 21,
+        buildings = IsleBuilding.entries.associate { it.name to level }, land = 5, decor = decor, gridVersion = version)
     private fun underlayState(): String? = rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
     private fun lift(label: String) { rule.onAllNodesWithContentDescription(label).filter(hasClickAction())[0].performTouchInput { longClick() }; tick() }
     private fun groundTap(cell: List<Int>) = rule.onAllNodesWithContentDescription("Bauplatzraster")[0].performTouchInput {
@@ -105,17 +106,18 @@ class IslandPlacementUiTest {
     }
 
     @Test fun aForeignFootprintTurnsThePreviewRedAndSaysWhy() {
-        val c = grown()
+        val c = grown(version = PlacementRule.DIAMONDS)
         start(c)
         lift("Post")
-        // the house footprint (10,6 with one ring on land 5)
+        // version 3: the house footprint (10,6 with one ring on land 5)
         groundTap(listOf(10, 7)); tick()
         confirm.assertIsNotEnabled()
         rule.onAllNodesWithContentDescription("Hier nicht möglich: Belegt – rot markierte Fläche")[0].assertExists()
     }
 
     @Test fun theHarbourSnapsToTheCoastATakenCoastCellIsRedAndAFreeOneConfirms() {
-        val c = grown()
+        // version 3: the campfire's one-ring footprint covers the coast cell (6,14); version 4 is IslandRasterUiTest
+        val c = grown(version = PlacementRule.DIAMONDS)
         val saved = start(c)
         lift("Hafen")
         assertEquals("8 belegte Flächen rot markiert · Küstenfelder markiert", underlayState())

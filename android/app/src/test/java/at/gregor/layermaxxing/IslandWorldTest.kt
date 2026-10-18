@@ -119,8 +119,9 @@ class IslandWorldTest {
         assertEquals(85,c.spent)
     }
 
+    /** Version 3 (7.9.10 rings); version 4 and 2 are pinned in IslandRasterTest. */
     @Test fun placementBlocksSeaBuildingsAndOccupiedDecorOrSpecialDecor() {
-        val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)))
+        val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)),gridVersion=PlacementRule.DIAMONDS)
         assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(0,0)))
         assertTrue(!IslandLayout.valid(c,IsleBuilding.HOUSE,listOf(11,11)))
         assertTrue(IslandLayout.valid(c,IsleBuilding.POST,listOf(10,11)))
@@ -133,9 +134,10 @@ class IslandWorldTest {
         // Creative mode builds on the same island: places and decoration still block.
         assertTrue(!IslandLayout.valid(withDecor.copy(mode="creative"),IsleBuilding.POST,listOf(8,9)))
     }
+    /** Version 3 (7.9.10 rings); version 4 and 2 are pinned in IslandRasterTest. */
     @Test fun freeDecorationFollowsTheSameGridRulesAsTheServer() {
         val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)),land=5,
-            decor=listOf(ApiClient.IslandDecor(100,"bench",listOf(12,14))))
+            decor=listOf(ApiClient.IslandDecor(100,"bench",listOf(12,14))),gridVersion=PlacementRule.DIAMONDS)
         assertTrue(!IslandLayout.validDecor(c,listOf(0,0)))              // sea
         assertTrue(!IslandLayout.validDecor(c,listOf(11,10)))            // on the building's footprint (behind its foot)
         assertTrue(!IslandLayout.validDecor(c,listOf(12,14)))            // on other decor
@@ -152,10 +154,11 @@ class IslandWorldTest {
         assertTrue(IslandLayout.validDecor(c,free))
     }
     @Test fun buildingFootprintsScaleWithLandSoAdjacentGridCellsDoNotOverlap() {
-        // 7.9.10: two buildings whose footprints touch (2·rings+1 cells apart) stand far enough apart that their
-        // visible sprites (SpriteBounds) do not cover each other substantially, on every land and stage.
+        // 7.9.10 (version 3): two buildings whose footprints touch (2·rings+1 cells apart) stand far enough apart that
+        // their visible sprites (SpriteBounds) do not cover each other substantially, on every land and stage.
+        // Version 4 is compact on purpose (one cell on the big land): IslandPlacementTest/IslandRasterTest.
         for(land in 0..5) for(tier in 1..3) {
-            val c=ApiClient.IslandConstruction(buildings=IsleBuilding.entries.associate { it.name to tier },land=land)
+            val c=ApiClient.IslandConstruction(buildings=IsleBuilding.entries.associate { it.name to tier },land=land,gridVersion=PlacementRule.DIAMONDS)
             IslandPlans.placedBuildings(0,c).forEach { (b,p) ->
                 val bounds=SpriteBounds.of(p.res)
                 val touching=(2*IslandLayout.buildingRings(c,b)+1)*IslandGrid.step(land)

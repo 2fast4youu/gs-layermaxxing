@@ -258,12 +258,19 @@ internal fun IslandWorld(
             placement = null; selection = null; buildBar = false; functionMenu = false; upgradePick = null; landPick = false; demolishTarget = null
         }
     }
+    // 7.9.11: a fresh island (60 s poll or reload after a refused write) ends a draft whose existing piece was removed
+    // meanwhile: said once, never retried, never rebuilt.
+    fun adopt(fresh: ApiClient.HomeIsland) {
+        home = fresh
+        val d = placement
+        if (d != null && IslandLayout.gone(fresh.construction, d)) { placement = null; shopDraft = false; onError(IslandLayout.GONE) }
+    }
     LaunchedEffect(ownId, islands?.score, creativeActive) {
         ownId?.let { id ->
             while (true) {
                 if (!constructionBusy) runCatching { loadIsland(id) }
                     .onSuccess { loaded ->
-                        if (!constructionBusy && loaded != null && currentResponse(loaded) && (home == null || loaded.construction.revision >= home!!.construction.revision)) home = loaded
+                        if (!constructionBusy && loaded != null && currentResponse(loaded) && (home == null || loaded.construction.revision >= home!!.construction.revision)) adopt(loaded)
                     }.onFailure { onError(ApiErrors.friendly(it.message)) }
                 kotlinx.coroutines.delay(60_000)
             }
@@ -284,6 +291,8 @@ internal fun IslandWorld(
         val original = island ?: return
         if (constructionBusy) return
         if (!original.construction.supported) { onError("Dieser Server kann Inselbauten noch nicht speichern."); return }
+        // 7.9.11: a placement is only written under a rule the app knows (never guessed as the newest).
+        if (request.position != null) PlacementRule.problem(original.construction.gridVersion)?.let { onError(it); return }
         constructionBusy = true
         scope.launch {
             try {
@@ -292,9 +301,16 @@ internal fun IslandWorld(
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 if (currentResponse(original)) {
-                    onError(ApiErrors.friendly(e.message))
-                    // Invalid or stale writes never save: reload, keep the local draft for a retry.
-                    ownId?.let { id -> runCatching { loadIsland(id) }.getOrNull()?.let { fresh -> if (currentResponse(fresh)) home = fresh } }
+                    val code = (e as? ApiException)?.code
+                    // Invalid or stale writes never save: reload (the targets are recomputed from the fresh island),
+                    // keep the local draft for a new choice, unless its piece is gone now (adopt ends it and says so).
+                    val before = placement
+                    ownId?.let { id -> runCatching { loadIsland(id) }.getOrNull()?.let { fresh -> if (currentResponse(fresh)) adopt(fresh) } }
+                    // 409 = the island changed meanwhile (another device): said honestly, never retried on its own.
+                    if (before == null || placement != null) onError(if (code == 409) ISLAND_CONFLICT else ApiErrors.friendly(e.message))
+                    // 422 on a spot the app showed as free: never offer that spot as green again for this draft.
+                    val spot = request.position
+                    if (code == 422 && spot != null) placement = placement?.let { d -> if (d.position == spot) d.copy(rejected = d.rejected + listOf(spot)) else d }
                 }
             } finally { constructionBusy = false }
         }
@@ -321,6 +337,8 @@ internal fun IslandWorld(
     fun confirmDraft() {
         val d = placement ?: return
         val h = island ?: return
+        // A moved piece that is not on the island any more is never written: no "build" instead of "move".
+        if (IslandLayout.gone(h.construction, d)) { placement = null; shopDraft = false; onError(IslandLayout.GONE); return }
         val request = when (val t = d.target) {
             // 7.9.9: a new function is built for free at stage 0 ("build"); a standing one only moves.
             is IslandTarget.Building -> ApiClient.IslandRequest(if (h.construction.standing(t.building)) "move" else "build", t.building.name, position = d.position)
@@ -431,6 +449,10 @@ internal fun IslandWorld(
                         // 7.9.10: every other piece is outlined in quiet red while one is held; never at rest.
                         obstacles = remember(island?.construction, placement?.target) {
                             placement?.target?.let { t -> island?.let { IslandLayout.obstacles(it.construction, t) } }.orEmpty()
+                        },
+                        // 7.9.11: only the cells where the held piece may really stand are drawn (same rule as ✓).
+                        placementTargets = remember(island?.construction, placement?.target, placement?.rejected) {
+                            placement?.let { d -> island?.let { IslandLayout.targets(it.construction, d) } }.orEmpty()
                         },
                         showFigure = placement == null,
                         placement = placement, onPosition = { p -> if (!constructionBusy) placement = placement?.copy(position = p) },

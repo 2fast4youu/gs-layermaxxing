@@ -46,6 +46,8 @@ internal object SpriteBounds {
         R.drawable.place_station to floatArrayOf(0.067f, 0.483f, 0.900f, 0.973f),
         R.drawable.place_city to floatArrayOf(0.103f, 0.427f, 0.907f, 0.977f),
         R.drawable.place_desk to floatArrayOf(0.090f, 0.380f, 0.907f, 0.987f),
+        // 7.9.11: placeholder of unknown decoration (IsleDecor.UNKNOWN_RES)
+        R.drawable.fief_signpost to floatArrayOf(0.094f, 0.020f, 0.906f, 0.980f),
     )
     /** Fallback for a sprite without a measured box: the middle of the lower box. */
     private val fallback = floatArrayOf(.2f, .25f, .8f, 1f)

@@ -29,7 +29,7 @@ def creative(m, c, a, land=0):
 
 def test_fixture_pins_coast_cells_and_footprints_of_every_land(tmp_path):
     m = load_app(tmp_path)
-    assert GRID["version"] == 3
+    assert GRID["version"] == m.GRID_VERSION == 4
     for land in range(6):
         coast = GRID["coast"][str(land)]
         assert coast == m.coast_cells(land)
@@ -183,8 +183,9 @@ def test_foreign_overlap_is_refused_but_the_own_old_spot_never_blocks(tmp_path):
         r = post(c, a, st, mode="creative", action="move", building="HOUSE", position=[10, 9])
         assert r.status_code == 200, r.text
         st = r.json()
-        # A building onto the bench is refused.
-        r = post(c, a, st, mode="creative", action="move", building="HOUSE", position=[beside[0], beside[1] + 1])
+        # A building onto the bench is refused (the house footprint's back reaches the bench cell).
+        onto = [beside[0], beside[1] + m.FOOTPRINT_RINGS["big"][5]]
+        r = post(c, a, st, mode="creative", action="move", building="HOUSE", position=onto)
         assert r.status_code == 422 and "belegt" in r.json()["detail"]
 
 
@@ -240,10 +241,11 @@ def test_shrink_never_creates_a_decoration_collision(tmp_path):
     m = load_app(tmp_path)
     with TestClient(m.app) as c:
         a = register(c, "A")
-        # land 3: decoration has 0 rings, on land 2 it has 1 ring -> two neighbours collide there
-        decor = [{"id": 100, "item": "bench", "position": [10, 10]}, {"id": 101, "item": "lantern", "position": [11, 10]}]
-        assert m.FOOTPRINT_RINGS["decor"][3] == 0 and m.FOOTPRINT_RINGS["decor"][2] == 1
-        _ledger(m, a, {"buildings": {}, "land": 3, "spent": 0, "revision": 2, "decor": decor, "places_migrated": True})
+        # 7.9.11 (version 4): special decoration has the big footprint, 0 rings on land 2 and 1 ring on land 1 ->
+        # two neighbours collide there. (Version 3 used ordinary decoration between land 3 and 2.)
+        decor = [{"id": 100, "item": "place_hut", "position": [10, 10]}, {"id": 101, "item": "place_uni", "position": [11, 10]}]
+        assert m.FOOTPRINT_RINGS["big"][2] == 0 and m.FOOTPRINT_RINGS["big"][1] == 1
+        _ledger(m, a, {"buildings": {}, "land": 2, "spent": 0, "revision": 2, "decor": decor, "places_migrated": True})
         before = _stored(m, a)
         st = state(c, a, "creative")
         r = post(c, a, st, mode="creative", action="shrink")

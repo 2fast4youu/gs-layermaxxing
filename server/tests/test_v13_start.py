@@ -59,7 +59,11 @@ def test_stage_zero_pieces_block_the_grid_move_and_demolish_without_refund(tmp_p
     with TestClient(m.app) as c:
         a = register(c, "A")
         st = post(c, a, state(c, a), action="build", building="HOUSE", position=[10, 6]).json()
-        assert post(c, a, st, action="build", building="POST", position=[10, 7]).status_code == 422
+        # 7.9.11 (version 4): a stage-0 piece holds exactly its own cell: the same cell is refused, the
+        # neighbouring cell is free (version 3 refused [10, 7] as well, one ring each).
+        assert post(c, a, st, action="build", building="POST", position=[10, 6]).status_code == 422
+        assert m.footprint_cells([10, 6], m.FOOTPRINT_RINGS["starter"][0]) == {(10, 6)}
+        assert m.building_spot_error({**st["construction"], "starters": ["HOUSE", "POST"]}, [10, 7], "POST") is None
         moved = post(c, a, st, action="move", building="HOUSE", position=[10, 11])
         assert moved.status_code == 200, moved.text
         st = moved.json()
