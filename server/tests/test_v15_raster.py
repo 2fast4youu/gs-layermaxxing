@@ -12,11 +12,20 @@ import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from test_v9_quests import auth, load_app, register
+from test_v9_quests import auth, register
+from test_v9_quests import load_app as _load_app
 from test_island_evolution import state
 
 GRID = json.loads((Path(__file__).resolve().parents[1] / "app" / "island_grid.json").read_text())
-RINGS = GRID["footprints"]
+
+def load_app(tmp_path):
+    """Historic 7.9.11 contract, kept exactly (7.9.12): these tests run the server's unchanged version-4 code path
+    (GRID_VERSION = 4, FOOTPRINT_RINGS). The current rule, version 5 (graphic masks), is pinned in test_v16_masks."""
+    m = _load_app(tmp_path)
+    m.GRID_VERSION = 4
+    return m
+
+RINGS = GRID["footprints_v4"]
 
 
 def post(c, a, st, **body):
@@ -78,7 +87,7 @@ def test_the_effective_rule_is_published_identically_everywhere(tmp_path):
         assert set(info) == {"name", "role", "version", "warning", "features", "grid_version"}
         a = register(c, "A")
         con = state(c, a)["construction"]
-        assert info["grid_version"] == con["grid_version"] == m.GRID_VERSION == GRID["version"] == 4
+        assert info["grid_version"] == con["grid_version"] == m.GRID_VERSION == 4
         assert "build_grid_v4" in info["features"] and "build_grid_v2" in info["features"]
         # The writes answer with the same number (the rule they were validated with).
         st = post(c, a, state(c, a), action="build", building="POST", position=[10, 10])
@@ -87,7 +96,7 @@ def test_the_effective_rule_is_published_identically_everywhere(tmp_path):
 
 def test_fixture_pins_version_4_and_keeps_version_3_and_2(tmp_path):
     m = load_app(tmp_path)
-    assert GRID["footprints"] == {k: list(v) for k, v in m.FOOTPRINT_RINGS.items()}
+    assert GRID["footprints_v4"] == {k: list(v) for k, v in m.FOOTPRINT_RINGS.items()}
     assert GRID["footprints_v3"] == {k: list(v) for k, v in m.FOOTPRINT_RINGS_V3.items()} == \
         {"big": [2, 2, 1, 1, 1, 1], "starter": [1, 1, 1, 1, 1, 1], "decor": [1, 1, 1, 0, 0, 0]}
     assert GRID["legacy_v2"] == {"big": 3, "decor_building": 2.4, "decor_decor": 1.5, "land_factor": [m.land_factor(l) for l in range(6)]}

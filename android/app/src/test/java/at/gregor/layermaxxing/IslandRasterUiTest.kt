@@ -30,6 +30,8 @@ import org.robolectric.annotation.GraphicsMode
  * targets of the held piece under the server's declared rule ([GridTargetsKey] carries the drawn cells), the
  * preview and ✓ follow the same decision, unknown rules offer nothing, and refused writes are reported honestly
  * without automatic retries.
+ * 7.9.12: the island is laid out so that no two pictures overlap (rule 5); every spot used below is taken from
+ * [IslandLayout.targets] / the obstacles instead of fixed one-cell neighbours of the 7.9.11 compact rule.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -44,10 +46,18 @@ class IslandRasterUiTest {
         var refuse: Int? = null
         var otherDevice: ((ApiClient.IslandConstruction) -> ApiClient.IslandConstruction)? = null
     }
-    private val decor = listOf(ApiClient.IslandDecor(0, "flowers", listOf(8, 8), 0), ApiClient.IslandDecor(101, "bench", listOf(14, 13)),
-        ApiClient.IslandDecor(201, "place_hut", listOf(10, 10), name = "Brennerhaus"))
+    private val decor = listOf(ApiClient.IslandDecor(0, "flowers", listOf(15, 11), 0), ApiClient.IslandDecor(101, "bench", listOf(13, 13)),
+        ApiClient.IslandDecor(201, "place_hut", listOf(10, 9), name = "Brennerhaus"))
+    /**
+     * Five functions at stage 1 and three decorations on the full land, no two pictures overlapping (checked); the
+     * eastern meadow (no lighthouse yet) leaves the post several free spots.
+     */
+    private val spots = FitIsland.SPOTS - "LIGHTHOUSE"
     private fun grown(version: Int) = ApiClient.IslandConstruction(mode = "creative", available = 500, ageDays = 21,
-        buildings = IsleBuilding.entries.associate { it.name to 2 }, land = 5, decor = decor, gridVersion = version)
+        buildings = spots.keys.associateWith { 1 }, land = 5, decor = decor, positions = spots, gridVersion = version)
+        .also { assertTrue(IslandLayout.overlaps(it.copy(gridVersion = PlacementRule.MASKS)).isEmpty()) }
+    /** A free spot of the held post that is far from its current one (away from the ✓/✗ bubbles). */
+    private fun postSpot(c: ApiClient.IslandConstruction) = awayFrom(IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.POST)), c.positions.getValue("POST"))
 
     @Composable private fun Island(server: Server) {
         var shown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(server.state) }
@@ -88,11 +98,11 @@ class IslandRasterUiTest {
     private val confirm get() = rule.onAllNodesWithContentDescription("Bestätigen")[0]
     private fun hint(text: String) = rule.onAllNodesWithContentDescription("Hier nicht möglich: $text")
     /** A target away from the ✓/✗ bubbles of the held piece (they hang below its foot). */
-    private fun awayFrom(cells: Collection<List<Int>>, from: List<Int>) = cells.filter { it[1] < from[1] - 1 || kotlin.math.abs(it[0] - from[0]) > 3 }
+    private fun awayFrom(cells: Collection<List<Int>>, from: List<Int>) = cells.filter { it != from && (it[1] <= from[1] || kotlin.math.abs(it[0] - from[0]) >= 3) }
         .maxBy { kotlin.math.abs(it[0] - from[0]) + kotlin.math.abs(it[1] - from[1]) }
 
     @Test fun theHarbourGridIsExactlyTheFreeCoastCellsAndATargetConfirms() {
-        val server = Server(grown(PlacementRule.COMPACT)); start(server)
+        val server = Server(grown(PlacementRule.MASKS)); start(server)
         lift("Hafen")
         val c = server.state
         val targets = IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.HARBOUR)).toSet()
@@ -102,25 +112,29 @@ class IslandRasterUiTest {
         assertTrue(IslandGrid.buildableCells(5).filter { !IslandGrid.coast(it, 5) }.none { it in drawn() })
         val taken = IslandLayout.obstacles(c, IslandTarget.Building(IsleBuilding.HARBOUR)).flatMap { it.cells }.toSet()
         assertTrue(drawn().none { it in taken })
-        val spot = awayFrom(targets.filter { it[1] < 12 }, c.positions["HARBOUR"] ?: IslandLayout.defaultPosition(IsleBuilding.HARBOUR))
+        // 7.9.12: only coast spots where the whole pier fits, with water in front
+        assertTrue(targets.all { !IslandGrid.buildable(it[0], it[1] + 1, 5) })
+        val spot = targets.filter { it != c.positions["HARBOUR"] }.maxBy { kotlin.math.abs(it[0] - 10) }
         groundTap(spot); tick()
         confirm.assertIsEnabled(); confirm.performClick(); tick(900)
         assertEquals(spot, server.state.positions["HARBOUR"])
     }
 
     @Test fun everyOtherPieceSeesItsFreeCellsAndAnOccupiedCellIsNeverDrawnOrConfirmed() {
-        val server = Server(grown(PlacementRule.COMPACT)); start(server)
+        val server = Server(grown(PlacementRule.MASKS)); start(server)
         lift("Post")
         val c = server.state
         val targets = IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.POST)).toSet()
         assertEquals(targets, drawn())
-        // the house cell (10,6) and the hut cell (10,10) are taken; their neighbours are free (compact rule)
-        assertFalse(listOf(10, 6) in drawn()); assertFalse(listOf(10, 10) in drawn())
-        assertTrue(listOf(11, 6) in drawn()); assertTrue(listOf(9, 10) in drawn())
-        groundTap(listOf(10, 10)); tick()
+        // the house's and the hut's spots are taken, and so is every cell whose picture would reach into their areas
+        assertFalse(listOf(8, 6) in drawn()); assertFalse(listOf(10, 9) in drawn())
+        val house = IslandLayout.cellsAt(c, IslandTarget.Building(IsleBuilding.HOUSE), listOf(8, 6))
+        assertTrue(drawn().none { p -> IslandLayout.cellsAt(c, IslandTarget.Building(IsleBuilding.POST), p).any { it in house } })
+        // (the house's spot, beside the held post: away from the ✓/✗ bubbles below its foot)
+        groundTap(listOf(8, 6)); tick()
         confirm.assertIsNotEnabled()
         hint("Belegt – rot markierte Fläche")[0].assertExists()
-        groundTap(listOf(9, 10)); tick()
+        groundTap(postSpot(c)); tick()
         confirm.assertIsEnabled()
     }
 
@@ -129,10 +143,12 @@ class IslandRasterUiTest {
         lift("Post")
         val c = server.state
         val v2 = IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.POST)).toSet()
-        val v4 = IslandLayout.targets(c.copy(gridVersion = PlacementRule.COMPACT), IslandTarget.Building(IsleBuilding.POST)).toSet()
+        val v5 = IslandLayout.targets(c.copy(gridVersion = PlacementRule.MASKS), IslandTarget.Building(IsleBuilding.POST)).toSet()
         assertEquals(v2, drawn())
-        // cells the compact rule would offer but the running v2 server refuses: never drawn, never green
-        val onlyNew = v4 - v2
+        // what the app draws for the old server: its own rule AND the graphic fit, never more than it accepts
+        assertTrue(IslandLayout.ruleTargets(c, IslandTarget.Building(IsleBuilding.POST)).containsAll(v2))
+        // cells the newest rule would offer but the running v2 server refuses: never drawn, never green
+        val onlyNew = v5 - v2
         assertTrue(onlyNew.isNotEmpty())
         val spot = awayFrom(onlyNew, c.positions["POST"] ?: IslandLayout.defaultPosition(IsleBuilding.POST))
         groundTap(spot); tick()
@@ -152,9 +168,9 @@ class IslandRasterUiTest {
     }
 
     @Test fun aConflictFromAnotherDeviceReloadsSaysSoAndIsNotRetried() {
-        val server = Server(grown(PlacementRule.COMPACT)); start(server)
+        val server = Server(grown(PlacementRule.MASKS)); start(server)
         lift("Post")
-        val spot = listOf(9, 10)
+        val spot = postSpot(server.state)
         groundTap(spot); tick()
         confirm.assertIsEnabled()
         // meanwhile another device puts a lantern exactly there
@@ -178,7 +194,7 @@ class IslandRasterUiTest {
     }
 
     @Test fun aDecorationRemovedOnAnotherDeviceEndsTheDraftAfterTheConflictAndIsNeverPlacedAgain() {
-        val server = Server(grown(PlacementRule.COMPACT)); start(server)
+        val server = Server(grown(PlacementRule.MASKS)); start(server)
         lift("Bank")
         val spot = awayFrom(drawn(), listOf(14, 13))
         groundTap(spot); tick()
@@ -196,9 +212,9 @@ class IslandRasterUiTest {
     }
 
     @Test fun aBuildingRemovedOnAnotherDeviceIsNeverRebuiltByTheMoveDraft() {
-        val server = Server(grown(PlacementRule.COMPACT)); start(server)
+        val server = Server(grown(PlacementRule.MASKS)); start(server)
         lift("Post")
-        groundTap(listOf(9, 10)); tick()
+        groundTap(postSpot(server.state)); tick()
         confirm.assertIsEnabled()
         server.refuse = 409
         server.otherDevice = { s -> s.copy(revision = s.revision + 1, buildings = s.buildings - "POST") }
@@ -213,7 +229,7 @@ class IslandRasterUiTest {
     }
 
     @Test fun theMinutePollEndsADraftWhosePieceWasRemovedWithoutAnyWrite() {
-        val server = Server(grown(PlacementRule.COMPACT)); start(server)
+        val server = Server(grown(PlacementRule.MASKS)); start(server)
         lift("Bank")
         assertTrue(drawn().isNotEmpty())
         // removed on another device while the bench is held; the app only sees it with the next poll
@@ -225,9 +241,9 @@ class IslandRasterUiTest {
     }
 
     @Test fun theMinutePollEndsALiftedBuildingDraftAndNothingIsBuilt() {
-        val server = Server(grown(PlacementRule.COMPACT)); start(server)
+        val server = Server(grown(PlacementRule.MASKS)); start(server)
         lift("Post")
-        groundTap(listOf(9, 10)); tick()
+        groundTap(postSpot(server.state)); tick()
         server.state = server.state.copy(revision = server.state.revision + 1, buildings = server.state.buildings - "POST")
         tick(61_000)
         assertEquals(listOf(IslandLayout.GONE), server.errors)
@@ -236,9 +252,9 @@ class IslandRasterUiTest {
     }
 
     @Test fun aSpotTheServerRefusesIsNotOfferedAgainForThisDraft() {
-        val server = Server(grown(PlacementRule.COMPACT)); start(server)
+        val server = Server(grown(PlacementRule.MASKS)); start(server)
         lift("Post")
-        val spot = listOf(9, 10)
+        val spot = postSpot(server.state)
         groundTap(spot); tick()
         server.refuse = 422
         confirm.performClick(); tick(1500)
@@ -248,8 +264,9 @@ class IslandRasterUiTest {
         confirm.assertIsNotEnabled()
         hint(IslandLayout.REJECTED)[0].assertExists()
         // another free cell is still offered and can be confirmed
-        groundTap(listOf(11, 6)); tick()
+        val other = awayFrom(drawn() - setOf(spot), spot)
+        groundTap(other); tick()
         confirm.assertIsEnabled(); confirm.performClick(); tick(900)
-        assertEquals(listOf(11, 6), server.state.positions["POST"])
+        assertEquals(other, server.state.positions["POST"])
     }
 }

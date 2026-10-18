@@ -126,6 +126,13 @@ internal object IslandGrid {
         val gy = ((fy - IslandPlans.LAND_CY) / s + IslandPlans.LAND_CY) * STEPS
         return coastCells(land).minBy { (i, j) -> val dx = (i - gx) * IslandPlans.ASPECT; val dy = j - gy; dx * dx + dy * dy }
     }
+    /** The cell of [cells] nearest on screen to a finger (box fraction). */
+    fun nearestOf(cells: List<List<Int>>, fx: Float, fy: Float, land: Int): List<Int> {
+        val s = IslandPlans.constructionScale(land)
+        val gx = ((fx - IslandPlans.LAND_CX) / s + IslandPlans.LAND_CX) * STEPS
+        val gy = ((fy - IslandPlans.LAND_CY) / s + IslandPlans.LAND_CY) * STEPS
+        return cells.minBy { (i, j) -> val dx = (i - gx) * IslandPlans.ASPECT; val dy = j - gy; dx * dx + dy * dy }
+    }
     /** The coast cell nearest to a stored cell (lifting a harbour that stands inland from old data). */
     fun coastCellNear(cell: List<Int>, land: Int): List<Int> =
         if (coast(cell, land)) cell
@@ -145,6 +152,25 @@ internal object IslandGrid {
     fun footprintAt(cx: Float, cy: Float, land: Int, radius: Float): List<Pair<Float, Float>> {
         val d = step(land) * radius
         return listOf(cx to cy - d, cx + d to cy, cx to cy + d, cx - d to cy)
+    }
+    /**
+     * 7.9.12: the ground tile of one lattice cell as (left, top, right, bottom) box fractions: half a step to every
+     * side. The tiles cover the island without gaps; a painted pixel belongs to exactly one tile, which is what the
+     * occupancy masks ([IslandMasks]) count. A mask is drawn as these tiles, so its outline hugs the sprite.
+     */
+    fun tile(cell: List<Int>, land: Int): FloatArray {
+        val (cx, cy) = project(cell, land); val d = step(land) * .5f
+        return floatArrayOf(cx - d, cy - d, cx + d, cy + d)
+    }
+    /** The outline of a set of cells: every tile edge that does not touch another tile of the set (box fractions). */
+    fun outline(cells: Set<List<Int>>, land: Int): List<Pair<Pair<Float, Float>, Pair<Float, Float>>> = buildList {
+        for (c in cells) {
+            val (l, t, r, b) = tile(c, land).toList()
+            if (listOf(c[0], c[1] - 1) !in cells) add((l to t) to (r to t))
+            if (listOf(c[0], c[1] + 1) !in cells) add((l to b) to (r to b))
+            if (listOf(c[0] - 1, c[1]) !in cells) add((l to t) to (l to b))
+            if (listOf(c[0] + 1, c[1]) !in cells) add((r to t) to (r to b))
+        }
     }
     /** Footprint radius (in cells) that matches a sprite of [size] (fraction of the island width) on this land. */
     fun radiusFor(size: Float, land: Int): Int = (size / (2f * step(land))).roundToInt().coerceIn(1, 4)
@@ -239,24 +265,28 @@ internal object GridInk {
 
 /** 7.9.11: the cells the grid draws as usable while a piece is held (exactly [IslandLayout.targets]), for tests and a11y. */
 internal val GridTargetsKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<List<Int>>>("GridTargets")
+/** 7.9.12: the cells drawn as the held piece's sprite area (its [IslandMasks] mask at the spot), for tests and a11y. */
+internal val GridHeldMaskKey = androidx.compose.ui.semantics.SemanticsPropertyKey<Set<List<Int>>>("GridHeldMask")
+/** 7.9.12: the cells drawn as other pieces' sprite areas while one is held. */
+internal val GridTakenKey = androidx.compose.ui.semantics.SemanticsPropertyKey<Set<List<Int>>>("GridTaken")
 
 /**
- * The build grid as cells ("Kästchen") + the held piece's footprint + selection footprint, drawn between
- * terrain and sprites. While a piece is held (7.9.11) ONLY [targets] are drawn as cells: the spots where the
- * held piece may really stand under the server's rule ([IslandLayout.targets], the same decision as the green
- * preview and ✓). No other cell looks buildable:
- *  - the harbour ([coastOnly]): only free coast cells, sea-blue; no mesh inland, on the water or on taken coast;
- *  - every other piece: every free cell where it fits, nothing on occupied cells;
- *  - every OTHER piece's footprint ([obstacles], [IslandLayout.obstacles]) is tinted and outlined in a quiet
- *    brick red (dezent, not a warning, and never light like a free cell);
- *  - the held footprint is drawn cell by cell: green where it is free, red where it would overlap (or the
- *    whole footprint red when the spot is impossible for another reason, e.g. the harbour inland).
- * At rest ([showGrid] false) nothing of this is drawn, only the gold outline of a tapped piece.
+ * The build grid + the held piece's sprite area + the selection, drawn between terrain and sprites. While a piece
+ * is held (7.9.11) ONLY [targets] are drawn as cells: the spots where the held piece may really stand under the
+ * server's rule ([IslandLayout.targets], the same decision as the green preview and ✓). No other cell looks
+ * buildable:
+ *  - the harbour ([coastOnly]): only the coast spots where its whole pier fits, sea-blue;
+ *  - every other piece: every free spot where its whole picture fits, nothing on occupied cells;
+ *  - 7.9.12: every OTHER piece's area is exactly the ground tiles its painted sprite covers ([IslandMasks],
+ *    [IslandLayout.obstacles]), tinted and outlined in a quiet brick red (dezent, not a warning);
+ *  - the held piece's area ([focusCells], its mask at the spot) tile by tile: green where it is free, red where it
+ *    would overlap (or all red when the spot is impossible for another reason, e.g. the pier would point inland).
+ * At rest ([showGrid] false) nothing of this is drawn, only the gold outline of a tapped piece ([selection]).
  */
 @Composable
 internal fun IslandGridUnderlay(
-    land: Int, showGrid: Boolean, focus: List<Int>?, focusRings: Int, valid: Boolean,
-    selection: Triple<Float, Float, Float>?, obstacles: List<IslandLayout.Obstacle> = emptyList(), coastOnly: Boolean = false,
+    land: Int, showGrid: Boolean, focus: List<Int>?, focusCells: Set<List<Int>>, valid: Boolean,
+    selection: Set<List<Int>>?, obstacles: List<IslandLayout.Obstacle> = emptyList(), coastOnly: Boolean = false,
     targets: List<List<Int>> = emptyList(),
 ) {
     val fade by animateFloatAsState(if (showGrid) 1f else 0f, tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "grid-fade")
@@ -267,6 +297,8 @@ internal fun IslandGridUnderlay(
         if (showGrid) {
             stateDescription = "${obstacles.size} belegte Flächen rot markiert" + if (coastOnly) " · Küstenfelder markiert" else ""
             set(GridTargetsKey, drawn)
+            set(GridTakenKey, taken)
+            if (focus != null) set(GridHeldMaskKey, focusCells)
         }
     }) {
         val w = size.width; val h = size.height
@@ -274,16 +306,17 @@ internal fun IslandGridUnderlay(
             IslandGrid.cell(c, land).forEachIndexed { n, (fx, fy) -> if (n == 0) moveTo(fx * w, fy * h) else lineTo(fx * w, fy * h) }
             close()
         }
-        fun diamond(cx: Float, cy: Float, radius: Float) = Path().apply {
-            IslandGrid.footprintAt(cx, cy, land, radius).forEachIndexed { n, (fx, fy) ->
-                if (n == 0) moveTo(fx * w, fy * h) else lineTo(fx * w, fy * h)
-            }
-            close()
+        fun tile(c: List<Int>) = IslandGrid.tile(c, land).let { (l, t, r, b) ->
+            androidx.compose.ui.geometry.Rect(l * w, t * h, r * w, b * h)
         }
+        fun outline(cells: Set<List<Int>>, color: Color, width: Float) =
+            IslandGrid.outline(cells, land).forEach { (a, b) ->
+                drawLine(color, Offset(a.first * w, a.second * h), Offset(b.first * w, b.second * h), width, androidx.compose.ui.graphics.StrokeCap.Round)
+            }
         if (fade > .01f) {
             val thin = 1.dp.toPx()
-            // Other pieces: a quiet red tint on exactly the cells they hold.
-            taken.forEach { c -> if (IslandGrid.buildable(c, land)) drawPath(cellPath(c), GridInk.Taken.copy(alpha = .26f * fade)) }
+            // Other pieces: a quiet red tint on exactly the tiles their sprites cover.
+            taken.forEach { c -> tile(c).let { r -> drawRect(GridInk.Taken.copy(alpha = .26f * fade), r.topLeft, r.size) } }
             // Only the real targets of the held piece are drawn as cells.
             drawn.forEach { c ->
                 val near = focus?.let { f -> (1f - (abs(c[0] - f[0]) + abs(c[1] - f[1])) / 10f).coerceIn(0f, 1f) } ?: 0f
@@ -291,28 +324,22 @@ internal fun IslandGridUnderlay(
                 drawPath(path, (if (coastOnly) GridInk.Coast.copy(alpha = (.42f + .2f * near) * fade) else GridInk.Free.copy(alpha = (.20f + .22f * near) * fade)))
                 drawPath(path, GridInk.Line.copy(alpha = (.30f + .25f * near) * fade), style = Stroke(thin))
             }
-            // The outline of every other piece's footprint, along the isometric mesh (dezent, not a warning).
-            obstacles.forEach { o ->
-                val (ox, oy) = IslandGrid.project(IslandFootprint.middle(o.center, o.rings), land)
-                diamond(ox, oy, o.rings + .5f).let { p ->
-                    drawPath(p, GridInk.Taken.copy(alpha = .85f * fade), style = Stroke(1.6.dp.toPx(), join = androidx.compose.ui.graphics.StrokeJoin.Round))
-                }
-            }
+            // The outline of every other piece's area, hugging its sprite (dezent, not a warning).
+            obstacles.forEach { o -> outline(o.cells, GridInk.Taken.copy(alpha = .85f * fade), 1.6.dp.toPx()) }
         }
-        selection?.let { (sx, sy, r) ->
+        selection?.let { cells ->
             val gold = Color(0xFFFFE08A)
-            diamond(sx, sy, r).let { drawPath(it, gold.copy(alpha = .22f)); drawPath(it, gold, style = Stroke(2.dp.toPx())) }
+            cells.forEach { c -> tile(c).let { r -> drawRect(gold.copy(alpha = .22f), r.topLeft, r.size) } }
+            outline(cells, gold, 2.dp.toPx())
         }
         if (focus != null) {
-            // Cell by cell: green where the held piece is free, red where it would overlap another piece.
-            // An impossible spot is red as a whole; the cells that actually collide are the strongest.
-            IslandFootprint.cells(focus, focusRings).forEach { c ->
+            // Tile by tile: green where the held piece is free, red where it would overlap another piece.
+            // An impossible spot is red as a whole; the tiles that actually collide are the strongest.
+            focusCells.forEach { c ->
                 val color = if (valid) GridInk.Ok.copy(alpha = .42f) else GridInk.No.copy(alpha = if (c in taken) .62f else .30f)
-                drawPath(cellPath(c), color)
+                tile(c).let { r -> drawRect(color, r.topLeft, r.size) }
             }
-            val color = if (valid) GridInk.Ok else GridInk.No
-            val (fx, fy) = IslandGrid.project(IslandFootprint.middle(focus, focusRings), land)
-            diamond(fx, fy, focusRings + .5f).let { drawPath(it, color, style = Stroke(3.dp.toPx(), join = androidx.compose.ui.graphics.StrokeJoin.Round)) }
+            outline(focusCells, if (valid) GridInk.Ok else GridInk.No, 3.dp.toPx())
         }
     }
 }
@@ -356,6 +383,11 @@ internal fun BoxWithConstraintsScope.IslandTouchSurface(
     land: Int, draft: IslandDraft?, radius: Int, targets: List<EditTarget>,
     onTap: (IslandTarget) -> Unit, onLongPress: (IslandTarget) -> Unit,
     onGround: () -> Unit, onPosition: (List<Int>) -> Unit, coastOnly: Boolean = false,
+    /**
+     * 7.9.12: the spots the held piece snaps to: the cells where its whole picture's ground fits the land (the harbour:
+     * the coast spots where its pier fits), so it never hangs over the shore. null/empty = the plain grid snap.
+     */
+    snapSpots: List<List<Int>>? = null,
 ) {
     val camera = LocalIslandCamera.current
     val haptic = LocalHapticFeedback.current
@@ -363,6 +395,7 @@ internal fun BoxWithConstraintsScope.IslandTouchSurface(
     val currentTargets by rememberUpdatedState(targets)
     val currentRadius by rememberUpdatedState(radius)
     val currentCoastOnly by rememberUpdatedState(coastOnly)
+    val currentSnapSpots by rememberUpdatedState(snapSpots)
     val move by rememberUpdatedState(onPosition)
     val tap by rememberUpdatedState(onTap)
     val longPress by rememberUpdatedState(onLongPress)
@@ -376,7 +409,9 @@ internal fun BoxWithConstraintsScope.IslandTouchSurface(
     val coast = remember { mutableStateOf(false) }
     fun apply(finger: Offset) {
         val s = surface.value
-        val cell = IslandGrid.snapCell((finger.x + grab.value.x) / s.width, (finger.y + grab.value.y) / s.height, land, coast.value)
+        val fx = (finger.x + grab.value.x) / s.width; val fy = (finger.y + grab.value.y) / s.height
+        val spots = currentSnapSpots
+        val cell = if (!spots.isNullOrEmpty()) IslandGrid.nearestOf(spots, fx, fy, land) else IslandGrid.snapCell(fx, fy, land, coast.value)
         if (cell != lastCell.value) { lastCell.value = cell; haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
         move(cell)
     }

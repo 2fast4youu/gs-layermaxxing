@@ -30,6 +30,8 @@ internal object SpriteBounds {
         R.drawable.fief_hut_stage1 to floatArrayOf(0.109f, 0.240f, 0.889f, 0.938f),
         R.drawable.b_house to floatArrayOf(0.119f, 0.204f, 0.865f, 0.973f),
         R.drawable.fief_hut_stage3 to floatArrayOf(0.104f, 0.094f, 0.700f, 0.734f),
+        // 7.9.12: the same painted manor without its empty transparent margin (stage 3 of the house)
+        R.drawable.isle_manor to floatArrayOf(0.039f, 0.014f, 0.963f, 0.986f),
         R.drawable.decor_flowers to floatArrayOf(0.095f, 0.455f, 0.890f, 0.980f),
         R.drawable.decor_bench to floatArrayOf(0.060f, 0.275f, 0.930f, 0.970f),
         R.drawable.decor_lantern to floatArrayOf(0.247f, 0.050f, 0.738f, 0.975f),

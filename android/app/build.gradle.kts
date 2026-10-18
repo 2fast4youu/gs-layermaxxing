@@ -35,8 +35,8 @@ android {
         applicationId = "at.gregor.layermaxxing.gerfried"
         minSdk = 26
         targetSdk = 36
-        versionCode = 71
-        versionName = "7.9.11-raster"
+        versionCode = 72
+        versionName = "7.9.12-szenen"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GREGOR_API_BASE_URL", "\"$gregorApiBaseUrl\"")
         buildConfigField("String", "GERFRIED_API_BASE_URL", "\"$gerfriedApiBaseUrl\"")
@@ -55,6 +55,11 @@ android {
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
+    }
+    sourceSets {
+        // 7.9.12: the island occupancy masks are ONE file for server and app (server/app/geometry/island_masks.json),
+        // packaged as a Java resource and read by IslandMasks.kt; never copied by hand.
+        getByName("main") { resources.srcDir("../../server/app/geometry") }
     }
     buildFeatures {
         compose = true

@@ -79,7 +79,7 @@ class IslandPlacementUiTest {
     }
     /** [version] = the server's grid_version: the 7.9.10 footprint tests pin 3, the default is the current rule. */
     private fun grown(level: Int = 2, available: Int = 500, mode: String = "creative", version: Int = PlacementRule.CURRENT) = ApiClient.IslandConstruction(mode = mode, available = available, ageDays = 21,
-        buildings = IsleBuilding.entries.associate { it.name to level }, land = 5, decor = decor, gridVersion = version)
+        buildings = IsleBuilding.entries.associate { it.name to level }, land = 5, decor = FitIsland.DECOR, positions = FitIsland.SPOTS, gridVersion = version)
     private fun underlayState(): String? = rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
     private fun lift(label: String) { rule.onAllNodesWithContentDescription(label).filter(hasClickAction())[0].performTouchInput { longClick() }; tick() }
     private fun groundTap(cell: List<Int>) = rule.onAllNodesWithContentDescription("Bauplatzraster")[0].performTouchInput {
@@ -95,9 +95,12 @@ class IslandPlacementUiTest {
         // 5 other buildings + 3 decoration pieces; the held post is never its own obstacle.
         assertEquals("8 belegte Flächen rot markiert", underlayState())
         assertEquals(8, IslandLayout.obstacles(c, IslandTarget.Building(IsleBuilding.POST)).size)
-        // One step from its spot overlaps only its own old footprint: possible.
-        val step = listOf(5, 9)
+        // The nearest free spot (its picture overlaps only its own old area): possible.
+        val own = c.positions.getValue("POST")
+        val step = IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.POST)).filter { it != own && it[1] <= own[1] }
+            .minBy { kotlin.math.abs(it[0] - own[0]) + kotlin.math.abs(it[1] - own[1]) }
         assertTrue(IslandLayout.valid(c, IsleBuilding.POST, step))
+        assertTrue(IslandLayout.cellsAt(c, IslandTarget.Building(IsleBuilding.POST), step).any { it in IslandLayout.cellsAt(c, IslandTarget.Building(IsleBuilding.POST), own) })
         groundTap(step); tick()
         confirm.assertIsEnabled(); confirm.performClick(); tick(900)
         assertEquals(step, saved.state.positions["POST"])
@@ -109,47 +112,46 @@ class IslandPlacementUiTest {
         val c = grown(version = PlacementRule.DIAMONDS)
         start(c)
         lift("Post")
-        // version 3: the house footprint (10,6 with one ring on land 5)
-        groundTap(listOf(10, 7)); tick()
+        // version 3: the house footprint (8,6 with one ring on land 5)
+        groundTap(listOf(8, 7)); tick()
         confirm.assertIsNotEnabled()
         rule.onAllNodesWithContentDescription("Hier nicht möglich: Belegt – rot markierte Fläche")[0].assertExists()
     }
 
     @Test fun theHarbourSnapsToTheCoastATakenCoastCellIsRedAndAFreeOneConfirms() {
-        // version 3: the campfire's one-ring footprint covers the coast cell (6,14); version 4 is IslandRasterUiTest
-        val c = grown(version = PlacementRule.DIAMONDS)
+        // 7.9.12 (rule 5): the held harbour snaps to the coast spots where its whole pier fits (water in front)
+        val c = grown()
         val saved = start(c)
         lift("Hafen")
         assertEquals("8 belegte Flächen rot markiert · Küstenfelder markiert", underlayState())
-        // 7.9.10: a tap inland puts the harbour on the nearest coast cell, it never stands inland in the preview.
-        // Here that coast cell (6,14) is taken by the campfire: red, ✓ disabled, it does not jump to another cell.
-        val inland = listOf(8, 11)
-        check(!IslandGrid.coast(inland, 5) && IslandLayout.validDecor(c, inland))
-        val taken = IslandGrid.coastCellNear(inland, 5)
-        check(!IslandLayout.valid(c, IsleBuilding.HARBOUR, taken)) { "$taken" }
-        groundTap(inland); tick()
+        val spots = IslandLayout.harbourSpots(c)
+        val own = c.positions.getValue("HARBOUR")
+        fun snap(cell: List<Int>) = IslandGrid.project(cell, 5).let { (x, y) -> IslandGrid.nearestOf(spots, x, y, 5) }
+        val inland = IslandGrid.buildableCells(5).filter { !IslandGrid.coast(it, 5) && it[1] < 13 }
+        // a tap inland whose nearest pier spot is taken by another picture: red there, ✓ disabled, no jump elsewhere
+        val blocked = inland.first { val s = snap(it); s != own && !IslandLayout.valid(c, IsleBuilding.HARBOUR, s) }
+        groundTap(blocked); tick()
         confirm.assertIsNotEnabled()
         rule.onAllNodesWithContentDescription("Hier nicht möglich: Belegt – rot markierte Fläche")[0].assertExists()
         rule.onAllNodesWithContentDescription("Hier nicht möglich: Hafen nur an der Küste").assertCountEquals(0)
-        // another inland tap (right of and above the ✓/✗ bubbles below the held piece) snaps to a free coast cell
-        val inland2 = listOf(11, 12)
-        val shore = IslandGrid.coastCellNear(inland2, 5)
-        check(!IslandGrid.coast(inland2, 5) && IslandLayout.valid(c, IsleBuilding.HARBOUR, shore)) { "$shore" }
-        groundTap(inland2); tick()
+        // another inland tap snaps to a free pier spot and confirms
+        val free = inland.first { val s = snap(it); s != own && IslandLayout.valid(c, IsleBuilding.HARBOUR, s) }
+        val shore = snap(free)
+        groundTap(free); tick()
         confirm.assertIsEnabled(); confirm.performClick(); tick(900)
         assertEquals(shore, saved.state.positions["HARBOUR"])
-        assertTrue(IslandGrid.coast(shore, 5))
+        assertTrue(IslandGrid.coast(shore, 5) && !IslandGrid.buildable(shore[0], shore[1] + 1, 5))
         // the model (and the server) still refuse a manipulated inland spot
-        assertEquals("Hafen nur an der Küste", IslandLayout.reason(ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c), IslandDraft(IslandTarget.Building(IsleBuilding.HARBOUR), inland)))
+        assertEquals("Hafen nur an der Küste", IslandLayout.reason(ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c), IslandDraft(IslandTarget.Building(IsleBuilding.HARBOUR), listOf(8, 11))))
     }
 
     @Test fun anOldInlandHarbourIsLiftedOntoTheCoastWithoutSavingAnything() {
         val inland = listOf(10, 12)
-        val c = grown().copy(positions = mapOf("HARBOUR" to inland))
+        val c = grown().copy(positions = FitIsland.SPOTS + ("HARBOUR" to inland))
         check(!IslandGrid.coast(inland, 5))
         val saved = start(c)
         lift("Hafen")
-        val shore = IslandGrid.coastCellNear(inland, 5)
+        val shore = IslandLayout.harbourCellNear(c, inland)
         check(IslandLayout.valid(c, IsleBuilding.HARBOUR, shore)) { "$shore" }
         // only the local draft moved: ✓ is possible, nothing was written yet
         confirm.assertIsEnabled()

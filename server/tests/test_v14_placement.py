@@ -8,10 +8,19 @@ import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from test_v9_quests import auth, load_app, register
+from test_v9_quests import auth, register
+from test_v9_quests import load_app as _load_app
 from test_island_evolution import state
 
 GRID = json.loads((Path(__file__).resolve().parents[1] / "app" / "island_grid.json").read_text())
+
+def load_app(tmp_path):
+    """Historic 7.9.11 contract, kept exactly (7.9.12): these tests run the server's unchanged version-4 code path
+    (GRID_VERSION = 4, FOOTPRINT_RINGS). The current rule, version 5 (graphic masks), is pinned in test_v16_masks."""
+    m = _load_app(tmp_path)
+    m.GRID_VERSION = 4
+    return m
+
 
 
 def post(c, a, st, **body):
@@ -29,7 +38,7 @@ def creative(m, c, a, land=0):
 
 def test_fixture_pins_coast_cells_and_footprints_of_every_land(tmp_path):
     m = load_app(tmp_path)
-    assert GRID["version"] == m.GRID_VERSION == 4
+    assert m.GRID_VERSION == 4 and GRID["version"] == 5  # 7.9.12: the fixture moved on to version 5
     for land in range(6):
         coast = GRID["coast"][str(land)]
         assert coast == m.coast_cells(land)
@@ -38,7 +47,7 @@ def test_fixture_pins_coast_cells_and_footprints_of_every_land(tmp_path):
         assert set(map(tuple, coast)) < set(map(tuple, cells)) and len(coast) > 20
         for x, y in coast:
             assert any(not m.grid_buildable(x + dx, y + dy, land) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
-    assert GRID["footprints"] == {k: list(v) for k, v in m.FOOTPRINT_RINGS.items()}
+    assert GRID["footprints_v4"] == {k: list(v) for k, v in m.FOOTPRINT_RINGS.items()}
     # The footprint is a real set of grid cells: rings 0 = one cell, 1 = five, 2 = thirteen; the spot is its front tip.
     assert [len(m.footprint_cells([10, 10], r)) for r in (0, 1, 2)] == [1, 5, 13]
     assert m.footprint_cells([10, 10], 1) == {(10, 10), (9, 9), (10, 9), (11, 9), (10, 8)}

@@ -141,7 +141,10 @@ internal object IslandPlans {
             val tier = if (construction != null) construction.buildings[b.name] ?: 0 else if (score >= 25) 1 else 0
             val position = construction?.positions?.get(b.name)
             val (x, y) = onLand(position?.get(0)?.div(20f) ?: p.x, position?.get(1)?.div(20f) ?: p.y, s)
-            p.copy(res = IslandArtwork.resource(b, tier), x = x, y = y, size = (p.size * (.9f + tier * .16f)).coerceAtMost(.145f),
+            // 7.9.12: on a construction ledger the size is the one its occupancy mask was measured at (IslandMasks,
+            // the same file the server validates with): sprite, touch target and grid can never disagree.
+            val size = construction?.let { IslandMasks.building(b, tier, it.land).size } ?: (p.size * (.9f + tier * .16f)).coerceAtMost(.145f)
+            p.copy(res = IslandArtwork.resource(b, tier), x = x, y = y, size = size,
                 primitive = b.takeIf { tier == 0 }, tier = tier)
         }
     }

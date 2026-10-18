@@ -189,8 +189,9 @@ class IslandAusbauTest {
     }
 
     @Test fun upgradePreviewHasLargePaintedBeforeAfterWithoutOpenOrMoveAndUpdatesTheStage() {
+        // 7.9.12: a spot where the bigger stage-2 picture fits too (the default spot is at the western rim)
         val sent = start(ApiClient.IslandConstruction(mode = "normal", available = 500, ageDays = 30,
-            buildings = mapOf("POST" to 1), land = 5))
+            buildings = mapOf("POST" to 1), land = 5, positions = mapOf("POST" to listOf(12, 6))))
         rule.onAllNodesWithText("Postkasten")[0].assertExists()
         rule.onAllNodesWithContentDescription("Post").filter(hasClickAction())[0].performClick(); tick()
         rule.onAllNodesWithText("Ausbauen")[0].performClick(); tick(900)

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,6 +50,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -142,7 +144,11 @@ internal fun PaintedScene(bg: Int, imgAspect: Float, content: @Composable androi
 private val Display = Kit.Display
 private val Body = Kit.Body
 
-/** Shell: painted place, a wooden sign as title, round back button, golden action. */
+/**
+ * Shell of every function stage (7.9.12): the stage's own place ([FunctionStage]) fills the screen, the shared
+ * head (round back button, wooden name sign, the stage's island piece, the stage strip) and the golden action stay.
+ * [content] puts the real data objects into the picture via the [StageGeometry].
+ */
 @Composable
 internal fun PlaceStage(
     place: IsleBuilding,
@@ -150,19 +156,14 @@ internal fun PlaceStage(
     /** 7.9.9: the building's current stage (0–3): title, head picture, icon and line follow [IslandStages]. */
     level: Int = 3,
     action: Pair<String, () -> Unit>? = null,
-    imgAspect: Float = 1024f / 1536f,
-    content: @Composable androidx.compose.foundation.layout.BoxScope.(SceneMap) -> Unit,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.(StageGeometry) -> Unit,
 ) {
     val st = place.style()
-    // 7.9.11: every stage has its own scene (StageScenes); only the final stage keeps the painted room.
     val scene = StageScenes.of(place, level)
     Box(Modifier.fillMaxSize().background(st.bottom)) {
-        if (scene.outdoor) StageBackdrop(scene) { map -> content(map) }
-        else Box(Modifier.fillMaxSize().semantics { contentDescription = "Bühne: ${scene.caption}"; stateDescription = scene.signature }) {
-            PaintedScene(scene.interior!!, imgAspect) { map -> content(map) }
-        }
+        FunctionStage(scene) { g -> content(g) }
         // Soft top vignette so the sign always reads.
-        Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color(0x66000000), Color.Transparent))))
+        Box(Modifier.fillMaxWidth().height(110.dp).background(Brush.verticalGradient(listOf(Color(0x66000000), Color.Transparent))))
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -176,7 +177,6 @@ internal fun PlaceStage(
             ) { AppIcon(R.drawable.ico_back, null, tint = Color(0xFF5A3A12), size = 26.dp) }
             Spacer(Modifier.width(10.dp))
             val stage = IslandStages.of(place, level)
-            // The wooden sign carries the name of the building as it stands now (Aussichtspalme … Leuchtturm).
             Box(Modifier.height(58.dp).weight(1f, fill = false).width(214.dp), Alignment.Center) {
                 Image(painterResource(R.drawable.p_sign), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.FillBounds)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 14.dp)) {
@@ -190,16 +190,13 @@ internal fun PlaceStage(
                 }
             }
             Spacer(Modifier.width(6.dp))
-            // Head picture: the painted piece of this very stage (hammock, palm, … master building).
             Box(Modifier.size(58.dp).shadow(4.dp, CircleShape).background(Brush.radialGradient(listOf(Color(0xFFFFF6E5), Color(0xFFE9D3A6))), CircleShape)
                 .border(2.dp, Color(0xFF8A5A2B), CircleShape).padding(5.dp), Alignment.BottomCenter) {
                 PaintedIslandPlace(place, level, stage.res, Modifier.fillMaxSize(), description = "Kopfbild: ${stage.name}")
             }
         }
-        // Under the sign: what it is and which stage, plus how it looks now.
         Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 70.dp, start = 68.dp, end = 12.dp)) {
             val stage = IslandStages.of(place, level)
-            // 7.9.10: a small paper strip with the stage diamonds instead of a dark overlay pill.
             Row(Modifier.shadow(2.dp, RoundedCornerShape(50)).background(IslandWood.Paper, RoundedCornerShape(50))
                 .border(1.dp, IslandWood.PaperEdge.copy(alpha = .7f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically) {
@@ -239,7 +236,7 @@ internal fun GoldButton(label: String, modifier: Modifier = Modifier, onClick: (
     }
 }
 
-/** Small cream label (name tags on cubbies, plaques under trophies). */
+/** Small cream label (name tags, plaques). */
 @Composable
 private fun Tag(text: String, modifier: Modifier = Modifier, size: Int = 12, ink: Color = Color(0xFF3B2410), bg: Color = Color(0xF2FFF6E5)) {
     Text(
@@ -251,11 +248,66 @@ private fun Tag(text: String, modifier: Modifier = Modifier, size: Int = 12, ink
 @Composable
 private fun Sprite(res: Int, modifier: Modifier) = Image(painterResource(res), null, modifier)
 
+/**
+ * A data object centred on its scene anchor, kept between the shared header and the pages / golden action at the
+ * bottom (a short phone pushes it up a little rather than letting the controls cover it).
+ */
+private fun StageGeometry.box(p: androidx.compose.ui.unit.DpOffset, w: Dp, h: Dp = w): Modifier {
+    val top = (p.y - h / 2).coerceAtMost(screen.h - reserve - h).coerceAtLeast(104.dp)
+    return Modifier.offset(x = p.x - w / 2, y = top).size(w, h)
+}
+
+/** The anchor of every data object, for tests and accessibility: "<kind>:<id>" at its scene slot. */
+internal val SceneSlotKey = androidx.compose.ui.semantics.SemanticsPropertyKey<String>("SceneSlot")
+
+/**
+ * Scenic pages when there is more data than places in the picture (7.9.12): two wooden arrows and a plaque, right
+ * above the golden action. Nothing is filtered away; every object is reachable.
+ */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.ScenePager(page: Int, pages: Int, what: String, onPage: (Int) -> Unit) {
+    if (pages <= 1) return
+    Row(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 80.dp), verticalAlignment = Alignment.CenterVertically) {
+        PagerArrow("‹", "Vorige Seite: $what", page > 0) { onPage(page - 1) }
+        Box(Modifier.padding(horizontal = 6.dp).height(34.dp).width(132.dp), Alignment.Center) {
+            Sprite(R.drawable.p_plate, Modifier.fillMaxSize())
+            Text("$what ${page + 1}/$pages", fontFamily = Display, fontSize = 13.sp, color = Color(0xFF4A2A08), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 10.dp).semantics { contentDescription = "Seite ${page + 1} von $pages: $what" })
+        }
+        PagerArrow("›", "Nächste Seite: $what", page < pages - 1) { onPage(page + 1) }
+    }
+}
+
+@Composable
+private fun PagerArrow(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(48.dp).shadow(if (enabled) 4.dp else 0.dp, CircleShape)
+            .background(if (enabled) Color(0xFF7A4B26) else Color(0x667A4B26), CircleShape).border(2.dp, Color(0xFFE9D3A6), CircleShape)
+            .clip(CircleShape).clickable(enabled = enabled, onClickLabel = label, onClick = onClick).semantics { contentDescription = label; role = Role.Button },
+        Alignment.Center,
+    ) { Text(glyph, fontFamily = Display, fontSize = 24.sp, color = Color(0xFFFFF6E5)) }
+}
+
+/** A short paper slip pinned into the scene (empty states), never a card over the whole place. */
+@Composable
+private fun SceneSlip(title: String, text: String, modifier: Modifier) {
+    Column(
+        modifier.rotate(-2f).shadow(5.dp, RoundedCornerShape(6.dp)).background(Color(0xFFFFF8E6), RoundedCornerShape(6.dp))
+            .border(1.dp, Color(0xFFD9BE8A), RoundedCornerShape(6.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(title, fontFamily = Display, fontSize = 15.sp, color = Color(0xFF3B2410), textAlign = TextAlign.Center)
+        Text(text, fontFamily = Body, fontSize = 12.sp, color = Color(0xFF6B5B48), textAlign = TextAlign.Center)
+    }
+}
+
 // ---------------------------------------------------------------- Post
 
 /**
- * One slot per friend; letters sit inside as sealed envelopes. 7.9.11: the slot follows the stage
- * ([StageScenes.Holder]): an envelope pinned to the letter tree, a name plate on the mailbox, then wooden cubbies.
+ * Letters, 7.9.12: every friend's letters are ONE object in the picture, at an anchor of the stage's place: an
+ * envelope pinned to a branch of the letter tree, a pick-up slot with name plate on the mailbox stand, a cubby on the
+ * board of the small post room, a cubby in the post office's wall. Tapping it opens that friend's letters right
+ * there (on the tree, on the plank in front of the mailbox, on the counter). More friends or letters = pages.
  */
 @Composable
 internal fun PostOffice(
@@ -270,136 +322,130 @@ internal fun PostOffice(
 ) {
     var fach by rememberSaveable { mutableStateOf<Long?>(null) }
     var choosing by rememberSaveable { mutableStateOf(false) }
+    var page by rememberSaveable(fach) { mutableStateOf(0) }
     val scene = StageScenes.of(IsleBuilding.POST, level)
-    PlaceStage(IsleBuilding.POST, onClose, level, action = "Brief schreiben" to { choosing = true }) { map ->
+    PlaceStage(IsleBuilding.POST, onClose, level, action = "Brief schreiben" to { if (fach != null) onWrite(fach!!) else choosing = true }) { g ->
         val selected = fach?.let { id -> pals.firstOrNull { it.id == id } }
-        val wall = Modifier.padding(top = if (scene.outdoor) map.y(StageScenes.CONTENT_TOP) + 8.dp else 112.dp, bottom = 92.dp).fillMaxSize()
         if (selected == null) {
-            if (pals.isEmpty()) Box(wall, Alignment.Center) {
-                when (scene.holder) {
-                    StageScenes.Holder.PINNED_ENVELOPE -> Parchment("Noch nichts am Briefbaum", "Für jeden Freund hängt hier bald ein eigener Umschlag am Stamm.")
-                    StageScenes.Holder.MAILBOX -> Parchment("Der Postkasten ist leer", "Für jeden Freund bekommt der Kasten ein eigenes Namensschild.")
-                    else -> Parchment("Noch keine Fächer", "Für jeden Freund entsteht hier ein eigenes Postfach.")
-                }
+            val slots = g.slots
+            val size = g.objectSize(slots, max = 104.dp, aspect = 1.15f)
+            if (pals.isEmpty()) SceneSlip(
+                when (scene.holder) { StageScenes.Holder.PINNED_ENVELOPE -> "Noch nichts am Briefbaum"; StageScenes.Holder.MAILBOX -> "Der Postkasten ist leer"; else -> "Noch keine Fächer" },
+                "Für jeden Freund entsteht hier sein eigener Platz.", g.box(slots.first(), 200.dp, 90.dp))
+            val pages = pals.chunked(slots.size)
+            if (pages.size > 1) g.reserve = 132.dp
+            pages.getOrNull(page.coerceAtMost(pages.lastIndex.coerceAtLeast(0)))?.forEachIndexed { i, f ->
+                val mine = letters.filter { it.peerId == f.id && it.groupId == null }
+                val ready = mine.count { it.incoming && Conversations.letterState(it, opened[it.id] != null) == LetterState.READY }
+                val travelling = mine.count { Conversations.letterState(it, opened[it.id] != null).locked }
+                LetterGroup(f, mine.size, ready, travelling, scene.holder, scene.slots[i].tilt, g.box(slots[i], size, size * 1.15f).semantics { set(SceneSlotKey, "friend:${f.id}") }) { fach = f.id }
             }
-            else LazyVerticalGrid(
-                GridCells.Fixed(3), wall.padding(horizontal = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(pals, key = { it.id }) { f ->
-                    val mine = letters.filter { it.peerId == f.id && it.groupId == null }
-                    val ready = mine.count { it.incoming && Conversations.letterState(it, opened[it.id] != null) == LetterState.READY }
-                    val travelling = mine.count { Conversations.letterState(it, opened[it.id] != null).locked }
-                    Cubby(f, mine.size, ready, travelling, scene.holder) { fach = f.id }
-                }
-            }
+            ScenePager(page, pages.size, "Freunde") { page = it }
         } else {
             val mine = letters.filter { it.peerId == selected.id && it.groupId == null }.sortedByDescending { it.createdAt }
-            Column(wall) {
-                Row(Modifier.padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Tag("‹ Alle Fächer", Modifier.clickable { fach = null }, size = 14)
-                    Spacer(Modifier.weight(1f))
-                    Tag("${selected.avatarEmoji} Fach von ${selected.name}", size = 14)
-                }
-                if (mine.isEmpty()) Box(Modifier.fillMaxSize(), Alignment.Center) { Parchment("Fach ist leer", "Schreib ${selected.name} den ersten Brief.") }
-                else LazyColumn(
-                    Modifier.fillMaxSize().padding(horizontal = 18.dp),
-                    contentPadding = PaddingValues(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(mine, key = { it.id }) { m ->
-                        val state = Conversations.letterState(m, opened[m.id] != null)
-                        Envelope(m, state) { if (state.locked) onLocked(m) else onOpen(m) }
-                    }
+            val slots = g.detailSlots
+            val size = g.objectSize(slots, max = 104.dp, aspect = 1.15f)
+            // the opened group's sign hangs above its letters; "Alle" brings back every friend's place
+            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 104.dp, start = 16.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Tag("‹ Alle", Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Alle Freunde zeigen") { fach = null }.heightIn(min = 32.dp), size = 15)
+                Spacer(Modifier.width(8.dp))
+                Tag("${selected.avatarEmoji} Briefe von und an ${selected.name}", size = 14)
+            }
+            if (mine.isEmpty()) SceneSlip("Hier ist noch nichts", "Schreib ${selected.name} den ersten Brief.", g.box(slots.first(), 220.dp, 90.dp))
+            val pages = mine.chunked(slots.size)
+            if (pages.size > 1) g.reserve = 132.dp
+            pages.getOrNull(page.coerceAtMost(pages.lastIndex.coerceAtLeast(0)))?.forEachIndexed { i, m ->
+                val state = Conversations.letterState(m, opened[m.id] != null)
+                LetterToken(m, state, scene.holder, scene.detailSlots[i].tilt, g.box(slots[i], size, size * 1.15f).semantics { set(SceneSlotKey, "letter:${m.id}") }) {
+                    if (state.locked) onLocked(m) else onOpen(m)
                 }
             }
+            ScenePager(page, pages.size, "Briefe") { page = it }
         }
     }
     if (choosing) FriendPicker("An wen geht der Brief?", pals, onDismiss = { choosing = false }) { choosing = false; onWrite(it) }
 }
 
+/** One friend's letters as a thing of the stage. */
 @Composable
-private fun Cubby(friend: ApiClient.UserSummary, total: Int, ready: Int, travelling: Int, holder: StageScenes.Holder = StageScenes.Holder.CUBBY, onClick: () -> Unit) {
+private fun LetterGroup(friend: ApiClient.UserSummary, total: Int, ready: Int, travelling: Int, holder: StageScenes.Holder, tilt: Float, modifier: Modifier, onClick: () -> Unit) {
     Column(
-        Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Fach von ${friend.name} öffnen", onClick = onClick),
+        modifier.clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Briefe von ${friend.name} öffnen", onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "${friend.name}: $total Briefe" + (if (ready > 0) ", $ready neu" else "") },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+        Box(Modifier.fillMaxWidth().weight(1f)) {
             when (holder) {
-                // Stage 0: the friend's envelope hangs on a pin at the tree.
                 StageScenes.Holder.PINNED_ENVELOPE -> {
-                    Sprite(if (total > 0) R.drawable.p_env else R.drawable.p_env_open, Modifier.align(Alignment.Center).offset(y = 6.dp).fillMaxWidth(.84f).rotate(((friend.id % 3) - 1) * 7f))
-                    Sprite(R.drawable.p_pin, Modifier.align(Alignment.TopCenter).offset(y = 4.dp).size(26.dp))
+                    Sprite(if (total > 0) R.drawable.p_env else R.drawable.p_env_open, Modifier.align(Alignment.Center).offset(y = 6.dp).fillMaxWidth(.9f).rotate(tilt))
+                    Sprite(R.drawable.p_pin, Modifier.align(Alignment.TopCenter).size(24.dp))
                 }
-                // Stage 1: one sealed letter stack per name in the mailbox.
-                StageScenes.Holder.MAILBOX -> Sprite(if (ready > 0) R.drawable.fief_env_ready else R.drawable.fief_env_sealed,
-                    Modifier.align(Alignment.Center).fillMaxWidth(.92f))
+                StageScenes.Holder.MAILBOX -> {
+                    // a pick-up slot of the mailbox: the plate is the slot, the letters stick out of it
+                    Sprite(R.drawable.p_cubby, Modifier.align(Alignment.Center).fillMaxSize(.92f))
+                    if (total > 0) Sprite(if (ready > 0) R.drawable.fief_env_ready else R.drawable.fief_env_sealed, Modifier.align(Alignment.Center).fillMaxWidth(.66f).rotate(tilt - 4f))
+                }
                 else -> {
                     Sprite(R.drawable.p_cubby, Modifier.fillMaxSize())
-                    // Envelopes stacked inside the opening.
                     val n = total.coerceAtMost(3)
-                    for (i in 0 until n) Sprite(
-                        R.drawable.p_env,
-                        Modifier.align(Alignment.Center).offset(x = ((i - (n - 1) / 2f) * 6).dp, y = (10 - i * 7).dp).fillMaxWidth(.56f).rotate((i - 1) * 6f),
-                    )
+                    for (i in 0 until n) Sprite(R.drawable.p_env, Modifier.align(Alignment.Center).offset(x = ((i - (n - 1) / 2f) * 5).dp, y = (8 - i * 6).dp).fillMaxWidth(.56f).rotate((i - 1) * 6f))
                 }
             }
-            if (holder != StageScenes.Holder.CUBBY && total > 0) Text("$total", fontFamily = Display, fontSize = 12.sp, color = Color(0xFF4A2A08),
+            if (total > 0) Text("$total", fontFamily = Display, fontSize = 12.sp, color = Color(0xFF4A2A08),
                 modifier = Modifier.align(Alignment.BottomEnd).shadow(2.dp, CircleShape).background(Color(0xFFFFF6E5), CircleShape).padding(horizontal = 7.dp, vertical = 1.dp))
             if (ready > 0) Box(
-                Modifier.align(Alignment.TopEnd).size(24.dp).shadow(3.dp, CircleShape).background(Color(0xFFA4533F), CircleShape).border(2.dp, Color.White, CircleShape),
+                Modifier.align(Alignment.TopEnd).size(22.dp).shadow(3.dp, CircleShape).background(Color(0xFFA4533F), CircleShape).border(2.dp, Color.White, CircleShape),
                 Alignment.Center,
-            ) { Text("$ready", color = Color.White, fontSize = 12.sp, fontFamily = Display) }
+            ) { Text("$ready", color = Color.White, fontSize = 11.sp, fontFamily = Display) }
             if (travelling > 0) Row(
-                Modifier.align(Alignment.TopStart).shadow(2.dp, RoundedCornerShape(50)).background(Color(0xFF3F7C78), RoundedCornerShape(50)).padding(horizontal = 5.dp, vertical = 1.dp),
+                Modifier.align(Alignment.TopStart).shadow(2.dp, RoundedCornerShape(50)).background(Color(0xFF3F7C78), RoundedCornerShape(50)).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Sprite(R.drawable.boat_sail, Modifier.size(14.dp))
-                Text(" $travelling", color = Color.White, fontSize = 11.sp, fontFamily = Display)
+                Sprite(R.drawable.boat_sail, Modifier.size(12.dp))
+                Text(" $travelling", color = Color.White, fontSize = 10.sp, fontFamily = Display)
             }
         }
-        Box(Modifier.offset(y = (-8).dp).fillMaxWidth(.95f).height(26.dp), Alignment.Center) {
+        Box(Modifier.fillMaxWidth().height(22.dp), Alignment.Center) {
             Sprite(R.drawable.p_plate, Modifier.fillMaxSize())
-            Text(friend.name, fontFamily = Display, fontSize = 12.sp, color = Color(0xFF4A2A08), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 12.dp))
+            Text(friend.name, fontFamily = Display, fontSize = 11.sp, color = Color(0xFF4A2A08), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 10.dp))
         }
     }
 }
 
+/** One letter of the opened group: pinned to the tree, lying on the plank or on the counter. */
 @Composable
-private fun Envelope(m: ApiClient.Message, state: LetterState, onClick: () -> Unit) {
+private fun LetterToken(m: ApiClient.Message, state: LetterState, holder: StageScenes.Holder, tilt: Float, modifier: Modifier, onClick: () -> Unit) {
     val boat = LetterBoat.forMode(m.mode)
-    Row(
-        Modifier.fillMaxWidth().shadow(5.dp, RoundedCornerShape(14.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xFFFFFBF1), Color(0xFFF6E7C8))), RoundedCornerShape(14.dp))
-            .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(14.dp))
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClickLabel = if (state.locked) "Versiegelt" else "Brief öffnen", onClick = onClick).padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val status = when {
+        state.locked -> "${boat.label.substringBefore(" ·")} unterwegs"
+        state == LetterState.READY -> "Neu – öffnen"
+        m.incoming -> "Gelesen"
+        else -> "Zugestellt"
+    }
+    Column(
+        modifier.clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = if (state.locked) "Versiegelt" else "Brief öffnen", onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Brief " + (if (m.incoming) "von " else "an ") + "${m.peerName}: ${Conversations.letterPreviewText(m)}, $status" },
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Sprite(if (state.locked || state == LetterState.READY) R.drawable.p_env else R.drawable.p_env_open, Modifier.size(64.dp))
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text((if (m.incoming) "von " else "an ") + m.peerName, fontSize = 12.sp, color = Color(0xFF8A6A3A), fontFamily = Body)
-            Text(Conversations.letterPreviewText(m), fontSize = 16.sp, fontFamily = Display, color = Color(0xFF3B2410), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                when {
-                    state.locked -> "${boat.label.substringBefore(" ·")} ist noch unterwegs"
-                    state == LetterState.READY -> "Neu – zum Öffnen tippen"
-                    m.incoming -> "Gelesen"
-                    else -> "Zugestellt"
-                },
-                fontSize = 12.sp, fontFamily = Body, fontWeight = FontWeight.Bold,
-                color = if (state == LetterState.READY) Color(0xFFA4533F) else Color(0xFF2F5D5A),
-            )
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            Sprite(if (state.locked || state == LetterState.READY) R.drawable.p_env else R.drawable.p_env_open, Modifier.align(Alignment.Center).fillMaxWidth(.92f).rotate(tilt))
+            if (holder == StageScenes.Holder.PINNED_ENVELOPE) Sprite(R.drawable.p_pin, Modifier.align(Alignment.TopCenter).size(22.dp))
+            Sprite(boat.res, Modifier.align(Alignment.BottomEnd).size(26.dp))
         }
-        Sprite(boat.res, Modifier.size(44.dp))
+        Text(Conversations.letterPreviewText(m), fontFamily = Display, fontSize = 11.sp, color = Color(0xFF3B2410), maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.background(Color(0xEEFFF6E5), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
+        Text(status, fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            color = if (state == LetterState.READY) Color(0xFFA4533F) else Color(0xFF2F5D5A),
+            modifier = Modifier.background(Color(0xDDFFF6E5), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
     }
 }
 
 // ---------------------------------------------------------------- Hafen
 
 /**
- * The harbour's notes: 7.9.11 per stage ([StageScenes.Holder]) slips tied to a post on the beach, notes pinned to
- * a plank board at the jetty, and only at the final stage the big painted cork board.
+ * Quests and topics, 7.9.12: the notes hang where the stage keeps its orders: tied to the beach pole, nailed to the
+ * jetty posts, pinned to the landing's notice board, on the big harbour board. Open / done as two wooden tabs,
+ * more notes = pages. The topics sit on a sticky note on the planks.
  */
 @Composable
 internal fun HarbourBoard(
@@ -413,38 +459,33 @@ internal fun HarbourBoard(
     level: Int = 3,
 ) {
     var showDone by rememberSaveable { mutableStateOf(false) }
+    var page by rememberSaveable(showDone) { mutableStateOf(0) }
     val scene = StageScenes.of(IsleBuilding.HARBOUR, level)
-    PlaceStage(IsleBuilding.HARBOUR, onClose, level, action = "Quest anpinnen" to onNewQuest) { map ->
+    PlaceStage(IsleBuilding.HARBOUR, onClose, level, action = "Quest anpinnen" to onNewQuest) { g ->
         val shown = quests.filter { (it.completedAt != null) == showDone }
-        val board = if (scene.outdoor) map.region(.05f, StageScenes.CONTENT_TOP + .01f, .95f, .86f) else map.region(.17f, .315f, .83f, .615f)
-        Column(board.padding(horizontal = 6.dp)) {
-            Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                BoardTab("Offen ${quests.count { it.completedAt == null }}", !showDone) { showDone = false }
-                BoardTab("Erledigt ${quests.count { it.completedAt != null }}", showDone) { showDone = true }
-            }
-            LazyVerticalGrid(
-                GridCells.Fixed(2), Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 8.dp),
-            ) {
-                if (shown.isEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-                    Box(Modifier.fillMaxWidth().padding(top = 18.dp), Alignment.Center) {
-                        Tag(if (showDone) "Noch nichts abgehakt" else "Das Brett ist leer", size = 14)
-                    }
-                }
-                items(shown, key = { it.id }) { q -> QuestNote(q, onQuestDone, if (q.canDelete) onQuestDelete else null, pinned = scene.holder != StageScenes.Holder.NOTES_ON_POST) }
+        Row(Modifier.statusBarsPadding().padding(top = 104.dp, start = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            BoardTab("Offen ${quests.count { it.completedAt == null }}", !showDone) { showDone = false }
+            BoardTab("Erledigt ${quests.count { it.completedAt != null }}", showDone) { showDone = true }
+        }
+        val slots = g.slots
+        val size = g.objectSize(slots, max = 124.dp, min = 104.dp, aspect = 1.05f)
+        if (shown.isEmpty()) SceneSlip(if (showDone) "Noch nichts abgehakt" else "Noch kein Auftrag", "Pinne eine Quest an.", g.box(slots.first(), 180.dp, 80.dp))
+        val pages = shown.chunked(slots.size)
+        if (pages.size > 1) g.reserve = 132.dp
+        pages.getOrNull(page.coerceAtMost(pages.lastIndex.coerceAtLeast(0)))?.forEachIndexed { i, q ->
+            Box(g.box(slots[i], size, size * 1.05f).semantics { set(SceneSlotKey, "quest:${q.id}") }) {
+                QuestNote(q, onQuestDone, if (q.canDelete) onQuestDelete else null, pinned = scene.holder != StageScenes.Holder.NOTES_ON_POST, tilt = scene.slots[i].tilt)
             }
         }
-        // Topics: a yellow sticky note slapped on the post below the board.
+        ScenePager(page, pages.size, "Aufträge") { page = it }
         val open = topics.count { it.completedAt == null }
         Box(
-            (if (scene.outdoor) map.region(.66f, StageScenes.CONTENT_TOP - .085f, .95f, StageScenes.CONTENT_TOP + .025f)
-                else map.region(.58f, .655f, .86f, .775f)).worldTap("Themen öffnen", onAllTopics),
+            Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 10.dp, bottom = 134.dp).size(96.dp, 84.dp).worldTap("Themen öffnen", onAllTopics),
             Alignment.Center,
         ) {
             Sprite(R.drawable.p_sticky, Modifier.fillMaxSize().rotate(4f))
-            Column(Modifier.rotate(4f).padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Themen", fontFamily = Display, fontSize = 16.sp, color = Color(0xFF4A3B00))
+            Column(Modifier.rotate(4f).padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Themen", fontFamily = Display, fontSize = 15.sp, color = Color(0xFF4A3B00))
                 Text(if (open == 0) "alles besprochen" else "$open offen", fontFamily = Body, fontSize = 11.sp, color = Color(0xFF6B5A10), textAlign = TextAlign.Center, maxLines = 1)
             }
         }
@@ -457,42 +498,41 @@ private fun BoardTab(text: String, selected: Boolean, onClick: () -> Unit) {
         text, fontFamily = Display, fontSize = 13.sp,
         color = if (selected) Color(0xFFFFF6E5) else Color(0xFF5A3A12),
         modifier = Modifier.shadow(if (selected) 3.dp else 0.dp, RoundedCornerShape(50)).clip(RoundedCornerShape(50))
-            .background(if (selected) Color(0xFF7A4B26) else Color(0xCCFFF6E5))
-            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 5.dp),
+            .background(if (selected) Color(0xFF7A4B26) else Color(0xEEFFF6E5))
+            .clickable(onClick = onClick).heightIn(min = 32.dp).padding(horizontal = 12.dp, vertical = 6.dp),
     )
 }
 
 @Composable
-private fun QuestNote(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> Unit, onDelete: ((ApiClient.Quest) -> Unit)?, pinned: Boolean = true) {
-    // Pinned to a board they hang straight; tied to a post on the beach they flutter a little more.
-    val tilt = ((q.id % 5) - 2) * (if (pinned) 1.6f else 3.4f)
+private fun QuestNote(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> Unit, onDelete: ((ApiClient.Quest) -> Unit)?, pinned: Boolean = true, tilt: Float = 0f) {
     val done = q.completedAt != null
-    Box(Modifier.rotate(tilt).aspectRatio(.95f)) {
+    Box(Modifier.fillMaxSize().rotate(tilt)) {
         Sprite(R.drawable.p_note, Modifier.fillMaxSize().padding(top = 6.dp))
-        Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 12.dp, top = 22.dp, bottom = 12.dp)) {
+        Column(Modifier.fillMaxSize().padding(start = 12.dp, end = 10.dp, top = 18.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AppIcon(AppIcons.questIcon(q.icon), AppIcons.questLabels[q.icon], tint = Color(0xFF5A3A12), size = 20.dp)
+                AppIcon(AppIcons.questIcon(q.icon), AppIcons.questLabels[q.icon], tint = Color(0xFF5A3A12), size = 18.dp)
                 Spacer(Modifier.weight(1f))
-                Sprite(R.drawable.p_star, Modifier.size(15.dp))
-                Text("${q.points}", fontFamily = Display, color = Color(0xFF9A6B00), fontSize = 13.sp)
+                Sprite(R.drawable.p_star, Modifier.size(14.dp))
+                Text("${q.points}", fontFamily = Display, color = Color(0xFF9A6B00), fontSize = 12.sp)
             }
-            Text(q.title, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 14.sp, lineHeight = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(q.title, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 13.sp, lineHeight = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(if (q.targetType == "group") q.targetName else "mit ${q.targetName}", fontFamily = Body, fontSize = 10.sp, color = Color(0xFF8A6A3A), maxLines = 1)
             Spacer(Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (done) "Erledigt" else "Abhaken", fontFamily = Display, fontSize = 11.sp,
-                    color = Color.White,
+                    if (done) "Erledigt" else "Abhaken", fontFamily = Display, fontSize = 11.sp, color = Color.White, maxLines = 1,
                     modifier = Modifier.clip(RoundedCornerShape(50)).background(if (done) Color(0xFF5E7F5A) else Color(0xFF3F7C78))
-                        .clickable { onDone(q, !done) }.padding(horizontal = 9.dp, vertical = 3.dp),
+                        .clickable { onDone(q, !done) }.padding(horizontal = 8.dp, vertical = 3.dp),
                 )
                 Spacer(Modifier.weight(1f))
-                if (onDelete != null) AppIcon(R.drawable.ico_close, null, modifier = Modifier.clip(CircleShape).clickable { onDelete(q) }.padding(4.dp), tint = Color(0xFF8A6A3A), size = 13.dp)
+                if (onDelete != null) AppIcon(R.drawable.ico_close, "Quest löschen", modifier = Modifier.clip(CircleShape).clickable { onDelete(q) }.padding(4.dp), tint = Color(0xFF8A6A3A), size = 13.dp)
             }
         }
-        if (pinned) Sprite(R.drawable.p_pin, Modifier.align(Alignment.TopCenter).size(22.dp))
+        // pinned to a board / nailed to a post; tied to the beach pole with a cord
+        if (pinned) Sprite(R.drawable.p_pin, Modifier.align(Alignment.TopCenter).size(20.dp))
+        else Canvas(Modifier.align(Alignment.TopCenter).size(30.dp, 12.dp)) { drawLine(Color(0xFF8A6A3A), Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 3f * density) }
         if (done) Text(
-            "ERLEDIGT", color = Color(0xB32E7D32), fontFamily = Display, fontSize = 16.sp,
+            "ERLEDIGT", color = Color(0xB32E7D32), fontFamily = Display, fontSize = 14.sp,
             modifier = Modifier.align(Alignment.Center).rotate(-18f).border(2.dp, Color(0xB32E7D32), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp),
         )
     }
@@ -501,9 +541,10 @@ private fun QuestNote(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> 
 // ---------------------------------------------------------------- Leuchtturm
 
 /**
- * Friends and requests. 7.9.11 per stage ([StageScenes.Holder]): from the lookout palm friends are rowing boats in
- * sight, from the wooden lookout sailing boats at dusk, from the beacon (and the lighthouse gallery) they glow in
- * brass portholes and the beam sweeps; there is no beam before there is a light.
+ * Friends and requests, 7.9.12: friends are what one sees from this stage, at places in its field of view: rowing
+ * boats in sight of the palm, sailing boats on the evening horizon from the lookout, signal lights on the night sea
+ * from the beacon, boats in the beam from the gallery. Requests not answered yet are boats that still wait (faded),
+ * requests to me are bottles washed ashore with Yes / No. More friends = pages.
  */
 @Composable
 internal fun LighthouseView(
@@ -521,109 +562,95 @@ internal fun LighthouseView(
     val angle by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(5200, easing = LinearEasing), RepeatMode.Reverse), label = "a")
     val bob by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(1800), RepeatMode.Reverse), label = "bob")
     val scene = StageScenes.of(IsleBuilding.LIGHTHOUSE, level)
-    PlaceStage(IsleBuilding.LIGHTHOUSE, onClose, level, action = "Freunde finden" to onFind, imgAspect = 941f / 1672f) { map ->
-        if (scene.holder == StageScenes.Holder.PORTHOLE) Canvas(Modifier.fillMaxSize()) {
-            // From the lamp of the beacon on the outdoor stage, from below the gallery in the painted room.
-            val origin = if (scene.outdoor) Offset(size.width * .5f, size.height * StageScenes.HERO_FOOT - size.width * StageScenes.HERO_WIDTH * .8f)
-                else Offset(size.width * .5f, size.height * 1.02f)
-            val a = angle * .9f
+    var page by rememberSaveable { mutableStateOf(0) }
+    var bottlePage by rememberSaveable { mutableStateOf(0) }
+    PlaceStage(IsleBuilding.LIGHTHOUSE, onClose, level, action = "Freunde finden" to onFind) { g ->
+        if (level >= 2) Canvas(Modifier.fillMaxSize()) {
+            // the beam: from the beacon's lamp on the rocks, from below the gallery in the tower
+            val origin = g.piece?.let { Offset(it.x(.5f).toPx(), it.y(.12f).toPx()) } ?: Offset(size.width * .5f, size.height * 1.02f)
+            val a = angle * .9f + (if (level == 2) .9f else 0f)
             val len = size.height * 1.4f
-            val spread = .16f
             val p = Path().apply {
                 moveTo(origin.x, origin.y)
-                lineTo(origin.x + len * sin(a - spread), origin.y - len * cos(a - spread))
-                lineTo(origin.x + len * sin(a + spread), origin.y - len * cos(a + spread))
+                lineTo(origin.x + len * sin(a - .16f), origin.y - len * cos(a - .16f))
+                lineTo(origin.x + len * sin(a + .16f), origin.y - len * cos(a + .16f))
                 close()
             }
             drawPath(p, Brush.radialGradient(listOf(Color(0x66FFF3B0), Color(0x22FFF3B0), Color(0x00FFF3B0)), origin, len))
         }
-        LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = 18.dp),
-            contentPadding = PaddingValues(top = if (scene.outdoor) map.y(StageScenes.CONTENT_TOP) + 6.dp else 100.dp, bottom = 110.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+        val seen: List<Pair<ApiClient.UserSummary?, ApiClient.OutgoingRequest?>> = pals.map { it to null } + outgoing.map { null to it }
+        val slots = g.slots
+        val size = g.objectSize(slots, max = 96.dp, aspect = 1.2f)
+        if (seen.isEmpty()) SceneSlip(if (level < 2) "Noch winkt niemand zurück" else "Noch leuchtet niemand zurück", "Finde Freunde – sie tauchen hier auf.", g.box(slots.first(), 200.dp, 80.dp))
+        val pages = seen.chunked(slots.size)
+        if (pages.size > 1) g.reserve = 132.dp
+        pages.getOrNull(page.coerceAtMost(pages.lastIndex.coerceAtLeast(0)))?.forEachIndexed { i, (f, out) ->
+            val m = g.box(slots[i], size, size * 1.2f)
+            if (f != null) Lookout(f.avatarEmoji, f.name, profileColor(f.displayColor), levels[f.id] ?: 1, scene.holder, bob, waiting = false,
+                m.semantics { set(SceneSlotKey, "friend:${f.id}") }.clip(RoundedCornerShape(14.dp)).clickable(onClickLabel = "${f.name} öffnen") { onFriend(f.id) })
+            else if (out != null) Lookout("✉", out.recipientName, Color(0xFF9FB4C8), 0, scene.holder, bob, waiting = true,
+                m.semantics { set(SceneSlotKey, "waiting:${out.id}"); contentDescription = "Signal an ${out.recipientName} – noch keine Antwort" })
+        }
+        ScenePager(page, pages.size, if (level < 2) "In Sichtweite" else "Im Lichtkegel") { page = it }
+        // requests to me: bottles washed ashore at the beach (at the gallery's railing in the tower)
+        val bottles = incoming.chunked(2)
+        val shownBottles = bottles.getOrNull(bottlePage.coerceAtMost(bottles.lastIndex.coerceAtLeast(0))).orEmpty()
+        if (shownBottles.isNotEmpty()) Column(
+            Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 10.dp, bottom = 136.dp).width(250.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (incoming.isNotEmpty()) {
-                item { NightTitle("Flaschenpost angespült", onLight = !scene.dark && scene.panel != null) }
-                items(incoming, key = { "in-${it.id}" }) { r -> Bottle(r.senderName, bob, onYes = { onRespond(r.id, true) }, onNo = { onRespond(r.id, false) }) }
+            if (bottles.size > 1) Row(verticalAlignment = Alignment.CenterVertically) {
+                Tag("Flaschenpost ${bottlePage + 1}/${bottles.size}", size = 12)
+                Spacer(Modifier.width(6.dp))
+                Tag("weiter ›", Modifier.clip(RoundedCornerShape(50)).clickable(onClickLabel = "Nächste Flaschenpost") { bottlePage = (bottlePage + 1) % bottles.size }.heightIn(min = 32.dp), size = 12)
             }
-            // The words follow the stage: from the palm one looks out, from the tower it shines.
-            item { NightTitle(if (pals.isEmpty()) (if (level < 2) "Noch winkt niemand zurück" else "Noch leuchtet niemand zurück") else if (level < 2) "In Sichtweite" else "Im Lichtkegel",
-                onLight = !scene.dark && scene.panel != null) }
-            item {
-                LazyVerticalGrid(
-                    GridCells.Fixed(3), Modifier.fillMaxWidth().heightIn(max = 520.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp), userScrollEnabled = false,
-                ) { items(pals, key = { it.id }) { f -> Porthole(f, levels[f.id] ?: 1, scene.holder) { onFriend(f.id) } } }
-            }
-            if (outgoing.isNotEmpty()) items(outgoing, key = { "out-${it.id}" }) { r ->
-                Tag("Signal an ${r.recipientName} – noch keine Antwort", ink = Color(0xFFFFF3B0), bg = Color(0x66000000), size = 12)
-            }
+            shownBottles.forEach { r -> Bottle(r.senderName, bob, onYes = { onRespond(r.id, true) }, onNo = { onRespond(r.id, false) }) }
         }
     }
 }
 
+/** A friend as the stage sees them: a rowing boat, a sail on the horizon, a light signal, a boat in the beam. */
 @Composable
-private fun NightTitle(text: String, onLight: Boolean = false) {
-    // On a light parchment (day stages) the gold title would vanish: dark ink there.
-    Text(
-        text, fontFamily = Display, fontSize = 19.sp, color = if (onLight) IslandWood.Ink else Color(0xFFFFE9A8),
-        style = if (onLight) androidx.compose.ui.text.TextStyle.Default
-            else androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xCC000000), Offset(0f, 2f), 6f)),
-    )
-}
-
-@Composable
-private fun Porthole(f: ApiClient.UserSummary, level: Int, holder: StageScenes.Holder = StageScenes.Holder.PORTHOLE, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "${f.name} öffnen", onClick = onClick)) {
-        Box(Modifier.size(88.dp), Alignment.Center) {
+private fun Lookout(emoji: String, name: String, color: Color, stars: Int, holder: StageScenes.Holder, bob: Float, waiting: Boolean, modifier: Modifier) {
+    Column(modifier.alpha(if (waiting) .62f else 1f), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.fillMaxWidth().weight(1f).offset(y = (bob * 2).dp), Alignment.Center) {
             when (holder) {
-                // Palm / lookout: the friend sits in a boat that is in sight.
-                StageScenes.Holder.ROWBOAT, StageScenes.Holder.SAILBOAT -> {
-                    Sprite(if (holder == StageScenes.Holder.ROWBOAT) R.drawable.boat_row else R.drawable.boat_sail,
-                        Modifier.align(Alignment.BottomCenter).fillMaxSize(if (holder == StageScenes.Holder.ROWBOAT) .9f else .78f))
-                    Box(
-                        Modifier.align(if (holder == StageScenes.Holder.ROWBOAT) Alignment.TopCenter else Alignment.TopStart).size(40.dp).shadow(3.dp, CircleShape)
-                            .background(Brush.radialGradient(listOf(Color.White, profileColor(f.displayColor))), CircleShape).border(2.dp, Color(0xFFFFF6E5), CircleShape),
-                        Alignment.Center,
-                    ) { Text(f.avatarEmoji, fontSize = 20.sp) }
+                StageScenes.Holder.SIGNAL_LIGHT -> {
+                    Box(Modifier.fillMaxSize(.9f).background(Brush.radialGradient(listOf(Color(0xCCFFF3B0), Color(0x33FFF3B0), Color.Transparent)), CircleShape))
+                    Sprite(R.drawable.boat_row, Modifier.align(Alignment.BottomCenter).fillMaxWidth(.7f))
                 }
-                else -> {
-                    Box(
-                        Modifier.size(56.dp).background(Brush.radialGradient(listOf(Color(0xFFFFF3B0), profileColor(f.displayColor))), CircleShape),
-                        Alignment.Center,
-                    ) { Text(f.avatarEmoji, fontSize = 28.sp) }
-                    Sprite(R.drawable.p_porthole, Modifier.fillMaxSize())
-                }
+                StageScenes.Holder.SAILBOAT -> Sprite(R.drawable.boat_sail, Modifier.align(Alignment.BottomCenter).fillMaxSize(.86f))
+                else -> Sprite(R.drawable.boat_row, Modifier.align(Alignment.BottomCenter).fillMaxWidth(.95f))
             }
+            Box(
+                Modifier.align(if (holder == StageScenes.Holder.SAILBOAT) Alignment.TopStart else Alignment.TopCenter).size(38.dp).shadow(3.dp, CircleShape)
+                    .background(Brush.radialGradient(listOf(Color.White, color)), CircleShape).border(2.dp, Color(0xFFFFF6E5), CircleShape),
+                Alignment.Center,
+            ) { Text(emoji, fontSize = 19.sp) }
         }
-        Text(
-            f.name, color = Color.White, fontFamily = Display, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.background(Color(0x99102040), RoundedCornerShape(50)).padding(horizontal = 8.dp),
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            repeat(level.coerceIn(1, 4)) { Sprite(R.drawable.p_star, Modifier.size(11.dp)) }
-        }
+        Text(if (waiting) "$name?" else name, color = Color.White, fontFamily = Display, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.background(Color(0xAA102040), RoundedCornerShape(50)).padding(horizontal = 7.dp))
+        if (stars > 0) Row { repeat(stars.coerceIn(1, 4)) { Sprite(R.drawable.p_star, Modifier.size(10.dp)) } }
     }
 }
 
 @Composable
 private fun Bottle(name: String, bob: Float, onYes: () -> Unit, onNo: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().offset(y = (bob * 3).dp).shadow(6.dp, RoundedCornerShape(22.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xF2FFFBF1), Color(0xF2F6E7C8))), RoundedCornerShape(22.dp))
-            .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(22.dp)).padding(10.dp),
+        Modifier.fillMaxWidth().offset(y = (bob * 2).dp).shadow(5.dp, RoundedCornerShape(20.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xF2FFFBF1), Color(0xF2F6E7C8))), RoundedCornerShape(20.dp))
+            .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(20.dp)).padding(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Sprite(R.drawable.p_bottle, Modifier.size(52.dp).rotate(-35f + bob * 6))
-        Spacer(Modifier.width(8.dp))
+        Sprite(R.drawable.p_bottle, Modifier.size(40.dp).rotate(-35f + bob * 6))
         Column(Modifier.weight(1f)) {
-            Text(name, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 16.sp)
-            Text("möchte dein Freund werden", fontFamily = Body, color = Color(0xFF8A6A3A), fontSize = 12.sp)
+            Text(name, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("möchte dein Freund werden", fontFamily = Body, color = Color(0xFF8A6A3A), fontSize = 11.sp, maxLines = 1)
         }
-        Text("Nein", fontFamily = Body, fontWeight = FontWeight.Bold, color = Color(0xFF8A6A3A), modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onNo).padding(horizontal = 8.dp, vertical = 8.dp))
+        Text("Nein", fontFamily = Body, fontWeight = FontWeight.Bold, color = Color(0xFF8A6A3A), modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onNo).heightIn(min = 40.dp).padding(horizontal = 6.dp, vertical = 10.dp))
         Text(
-            "Annehmen", fontFamily = Display, color = Color.White, fontSize = 14.sp,
-            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF3F7C78)).clickable(onClick = onYes).padding(horizontal = 12.dp, vertical = 8.dp),
+            "Annehmen", fontFamily = Display, color = Color.White, fontSize = 13.sp,
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF3F7C78)).clickable(onClick = onYes).heightIn(min = 40.dp).padding(horizontal = 10.dp, vertical = 10.dp),
         )
     }
 }
@@ -631,38 +658,49 @@ private fun Bottle(name: String, bob: Float, onYes: () -> Unit, onNo: () -> Unit
 // ---------------------------------------------------------------- Bibliothek
 
 /**
- * The shared glossary. 7.9.11 per stage ([StageScenes.Holder]): a parchment on the driftwood crates, an open book
- * under the reading roof, the leather-bound book in the reading room and the library.
+ * The shared glossary, 7.9.12: the book lies IN the stage: opened on the top driftwood crate on the beach, on the
+ * reading place under the roof of twigs, on the reading desk between the shelf boards of the book room, leather-bound
+ * on the library's big table. Its pages are the glossary (read, search, categories, add).
  */
 @Composable
 internal fun LibraryBook(onClose: () -> Unit, glossary: @Composable () -> Unit, level: Int = 3) {
     val scene = StageScenes.of(IsleBuilding.LIBRARY, level)
-    PlaceStage(IsleBuilding.LIBRARY, onClose, level) { map ->
-        Box(
-            Modifier.fillMaxSize().padding(top = if (scene.outdoor) map.y(StageScenes.CONTENT_TOP) else 100.dp, start = 14.dp, end = 14.dp, bottom = 14.dp).navigationBarsPadding(),
-        ) {
-            val pages = Brush.horizontalGradient(listOf(Color(0xFFE6D6B4), Color(0xFFFFF9EC), Color(0xFFFFF9EC), Color(0xFFF3E6CA)))
+    PlaceStage(IsleBuilding.LIBRARY, onClose, level) { g ->
+        val r = scene.book!!
+        val pages = Brush.horizontalGradient(listOf(Color(0xFFE6D6B4), Color(0xFFFFF9EC), Color(0xFFFFF9EC), Color(0xFFF3E6CA)))
+        val box = Modifier.offset(x = g.screen.x(r.left), y = g.screen.y(r.top)).size(g.screen.w * (r.right - r.left), g.screen.h * (r.bottom - r.top))
+            .semantics { set(SceneSlotKey, "book:${scene.holder}") }
+        Box(box) {
+            // the book's page edges (thickness) under the open pages, so it lies there as a book
+            Box(Modifier.align(Alignment.BottomCenter).offset(y = 7.dp).fillMaxWidth(.98f).height(14.dp).shadow(6.dp, RoundedCornerShape(3.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFFF3E6CA), Color(0xFFD9C29A), Color(0xFFEFE0BF), Color(0xFFC9AE80))), RoundedCornerShape(3.dp)))
             when (scene.holder) {
-                // Stage 0: one parchment lying on the crates.
-                StageScenes.Holder.PARCHMENT -> Box(Modifier.fillMaxSize()) {
-                    Image(painterResource(R.drawable.fief_parchment_card), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.FillBounds)
-                    Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 22.dp)) { GlossaryPage(glossary) }
-                }
-                // Stage 1: an open book without a cover, under the roof of twigs.
+                // stage 0: the parchment lashed onto a driftwood board lying on the top crate
+                StageScenes.Holder.PARCHMENT -> Box(Modifier.fillMaxSize().shadow(10.dp, RoundedCornerShape(6.dp))
+                    .background(Brush.verticalGradient(listOf(Color(0xFFA88B66), Color(0xFF8A6E4E), Color(0xFF9C7F5C))), RoundedCornerShape(6.dp))
+                    .border(1.5.dp, Color(0xFF5E4630), RoundedCornerShape(6.dp)).padding(horizontal = 9.dp, vertical = 11.dp)
+                    .shadow(3.dp, RoundedCornerShape(3.dp)).background(pages, RoundedCornerShape(3.dp))
+                    .border(1.dp, Color(0xFFB08A55), RoundedCornerShape(3.dp))) { GlossaryPage(glossary) }
+                // stage 2: the open book on the dark wooden reading desk of the book room
+                StageScenes.Holder.SHELF_BOOK -> Box(Modifier.fillMaxSize().shadow(12.dp, RoundedCornerShape(10.dp))
+                    .background(Brush.verticalGradient(listOf(Color(0xFF6B4527), Color(0xFF4A2F18))), RoundedCornerShape(10.dp))
+                    .border(2.dp, Color(0xFF2E1C0E), RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 10.dp)
+                    .clip(RoundedCornerShape(5.dp)).background(pages)) { GlossaryPage(glossary) }
                 StageScenes.Holder.OPEN_BOOK -> Box(
                     Modifier.fillMaxSize().shadow(8.dp, RoundedCornerShape(8.dp)).background(pages, RoundedCornerShape(8.dp))
                         .border(1.5.dp, Color(0xFF8A5A2B), RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)),
                 ) { GlossaryPage(glossary) }
                 else -> LeatherBook(pages, glossary)
             }
-            if (scene.holder != StageScenes.Holder.PARCHMENT) Sprite(R.drawable.p_quill, Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 4.dp).size(64.dp))
+            // the spine in the middle of the open book
+            Box(Modifier.align(Alignment.TopCenter).width(2.dp).fillMaxHeight(.04f).background(Color(0x553B2410)))
+            if (scene.holder != StageScenes.Holder.PARCHMENT) Sprite(R.drawable.p_quill, Modifier.align(Alignment.BottomStart).offset(x = (-6).dp, y = 4.dp).size(54.dp))
         }
     }
 }
 
 @Composable
 private fun LeatherBook(pages: Brush, glossary: @Composable () -> Unit) {
-    // Leather cover peeking out behind the page.
     Box(
         Modifier.fillMaxSize().shadow(14.dp, RoundedCornerShape(18.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFF4F5D63), Color(0xFF34414A))), RoundedCornerShape(18.dp))
@@ -692,8 +730,10 @@ private fun GlossaryPage(glossary: @Composable () -> Unit) {
 // ---------------------------------------------------------------- Gemeindehaus
 
 /**
- * Every group has its own place with its members around it. 7.9.11 per stage ([StageScenes.Holder]): a circle
- * around the fire on the beach, crates as a table at the meeting hut, round tables at the hall.
+ * Groups, 7.9.12: at the fire ring and in the meeting hut ONE group sits around THE fire / the crate table (the
+ * members on stools in a ring around it, the group's sign before it; tapping the fire / table = a quest for the
+ * group); other groups by turning the page. In the community hall the groups sit in their seating groups, in the
+ * festival hall at their laid tables, several per page.
  */
 @Composable
 internal fun CommunityHall(
@@ -705,52 +745,97 @@ internal fun CommunityHall(
     level: Int = 3,
 ) {
     val scene = StageScenes.of(IsleBuilding.CAMPFIRE, level)
-    PlaceStage(IsleBuilding.CAMPFIRE, onClose, level, action = "Gruppen verwalten" to onManage) { map ->
-        val top = if (scene.outdoor) map.y(StageScenes.CONTENT_TOP) + 4.dp else map.y(.3f).coerceAtLeast(120.dp)
-        if (groups.isEmpty()) Box(Modifier.fillMaxSize().padding(top = if (scene.outdoor) top else 0.dp), Alignment.Center) {
-            if (level == 0) Parchment("Noch niemand am Feuer", "Gründe eine Gruppe – sie bekommt hier ihren eigenen Platz am Feuerkreis.")
-            else Parchment("Noch keine Tische", "Gründe eine Gruppe – sie bekommt hier ihren eigenen Tisch.")
-        }
-        else LazyVerticalGrid(
-            GridCells.Fixed(2), Modifier.fillMaxSize().padding(horizontal = 10.dp),
-            contentPadding = PaddingValues(top = top, bottom = 100.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            items(groups, key = { it.id }) { g ->
-                val open = quests.count { it.targetType == "group" && it.targetId == g.id && it.completedAt == null }
-                RoundTable(g, open, scene.holder, onPaper = scene.panel != null) { onGroupQuest(g.id) }
+    var page by rememberSaveable { mutableStateOf(0) }
+    PlaceStage(IsleBuilding.CAMPFIRE, onClose, level, action = "Gruppen verwalten" to onManage) { g ->
+        fun open(gr: ApiClient.Group) = quests.count { it.targetType == "group" && it.targetId == gr.id && it.completedAt == null }
+        if (scene.holder == StageScenes.Holder.ROUND_TABLE) Canvas(Modifier.fillMaxSize()) {
+            // the festival hall: bunting garlands across the hall
+            val colours = listOf(Color(0xFFC94F3D), Color(0xFFE2A93C), Color(0xFF3F7C78), Color(0xFFF1E3C4))
+            for ((row, y0) in listOf(.30f, .37f).withIndex()) {
+                val y = size.height * y0; val sag = size.height * .035f
+                val n = 14
+                for (i in 0 until n) {
+                    val x0 = size.width * i / n; val x1 = size.width * (i + 1) / n
+                    fun yy(x: Float) = y + sag * (1 - ((x / size.width) * 2 - 1).let { it * it })
+                    drawLine(Color(0xFF5A3A12), Offset(x0, yy(x0)), Offset(x1, yy(x1)), 1.5f * density)
+                    val p = Path().apply { moveTo(x0 + 3, yy(x0)); lineTo(x1 - 3, yy(x1)); lineTo((x0 + x1) / 2, yy((x0 + x1) / 2) + size.height * .03f); close() }
+                    drawPath(p, colours[(i + row) % colours.size])
+                }
             }
+        }
+        val around = scene.centre != null
+        if (groups.isEmpty()) {
+            val at = g.centre ?: g.slots.first()
+            SceneSlip(if (level == 0) "Noch niemand am Feuer" else "Noch keine Tische", "Gründe eine Gruppe – sie bekommt hier ihren eigenen Platz.", g.box(at, 220.dp, 90.dp))
+        } else if (around) {
+            val pages = groups.size
+            if (pages > 1) g.reserve = 132.dp
+            val gr = groups[page.coerceIn(0, pages - 1)]
+            val c = g.centre!!
+            val sp = g.space
+            val rx = sp.w * scene.ring.first; val ry = sp.h * scene.ring.second
+            val members = gr.members.take(16)
+            val seat: Dp = (if (members.size <= 8) 52.dp else 52.dp * (8f / members.size).coerceAtLeast(.66f))
+            // the group's sign stuck in the ground before the circle
+            Box(Modifier.offset(x = c.x - 130.dp, y = c.y - ry - seat - 40.dp).width(260.dp), Alignment.Center) {
+                Tag("${gr.name} · ${gr.members.size} " + if (scene.holder == StageScenes.Holder.FIRE_RING) "am Feuer" else "am Tisch", size = 15)
+            }
+            members.forEachIndexed { i, m ->
+                val a = (i.toFloat() / members.size) * 2f * PI.toFloat() - PI.toFloat() / 2
+                val p = androidx.compose.ui.unit.DpOffset(c.x + rx * cos(a), c.y + ry * sin(a))
+                Box(g.box(p, seat).semantics { set(SceneSlotKey, "member:${gr.id}:${m.id}"); contentDescription = "${m.name} sitzt bei ${gr.name}" }, Alignment.Center) {
+                    Sprite(if (scene.holder == StageScenes.Holder.FIRE_RING && i % 2 == 0) R.drawable.n_rocks else R.drawable.p_stool, Modifier.fillMaxSize().offset(y = seat * .3f))
+                    Box(Modifier.fillMaxSize(.78f).offset(y = -seat * .08f).shadow(4.dp, CircleShape).background(Color.White, CircleShape).padding(2.dp)
+                        .background(Brush.radialGradient(listOf(Color.White, profileColor(m.displayColor).copy(alpha = .55f))), CircleShape), Alignment.Center) {
+                        Text(m.avatarEmoji, fontSize = 18.sp)
+                    }
+                }
+            }
+            if (gr.members.size > members.size) Tag("+${gr.members.size - members.size} weitere", Modifier.offset(x = c.x + rx - 30.dp, y = c.y + ry + seat / 2), size = 12)
+            // the fire / the crate table itself: a quest for the group
+            Box(g.box(c, 96.dp, 80.dp).worldTap("Quest für ${gr.name}") { onGroupQuest(gr.id) }.semantics { set(SceneSlotKey, "group:${gr.id}") }, Alignment.BottomCenter) {
+                val n = open(gr)
+                if (n > 0) Row(Modifier.shadow(2.dp, RoundedCornerShape(50)).background(Color(0xF2FFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Sprite(R.drawable.p_star, Modifier.size(13.dp)); Text(" $n", fontFamily = Display, fontSize = 12.sp, color = Color(0xFF9A6B00))
+                }
+            }
+            ScenePager(page, pages, "Gruppe") { page = it }
+        } else {
+            val slots = g.slots
+            val size = g.objectSize(slots, max = 176.dp, min = 132.dp, aspect = 1.12f)
+            val pages = groups.chunked(slots.size)
+            if (pages.size > 1) g.reserve = 132.dp
+            pages.getOrNull(page.coerceAtMost(pages.lastIndex))?.forEachIndexed { i, gr ->
+                Box(g.box(slots[i], size, size * 1.12f).semantics { set(SceneSlotKey, "group:${gr.id}") }) { SeatGroup(gr, open(gr), scene.holder) { onGroupQuest(gr.id) } }
+            }
+            ScenePager(page, pages.size, if (scene.holder == StageScenes.Holder.BENCH_GROUP) "Sitzgruppen" else "Festtische") { page = it }
         }
     }
 }
 
+/** A group in the hall: benches around a low table (community hall) or stools around a laid table (festival hall). */
 @Composable
-private fun RoundTable(g: ApiClient.Group, openQuests: Int, holder: StageScenes.Holder = StageScenes.Holder.ROUND_TABLE, onPaper: Boolean = false, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "Quest für ${g.name}", onClick = onClick)) {
-        BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f)) {
-            val w = maxWidth
+private fun SeatGroup(g: ApiClient.Group, openQuests: Int, holder: StageScenes.Holder, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = "Quest für ${g.name}", onClick = onClick)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val w = maxWidth; val hgt = maxHeight
             val members = g.members.take(12)
-            val overflow = g.members.size - members.size
-            // Up to 8 keep full seat size; beyond that, shrink seats so everyone still fits the rim.
-            val seat: Dp = if (members.size <= 8) w * .25f else w * .25f * (8f / members.size).coerceAtLeast(.62f)
-            // Stools first (behind), then the table, then the people on the front stools.
+            val seat: Dp = if (members.size <= 8) w * .24f else w * .24f * (8f / members.size).coerceAtLeast(.62f)
             val placed = members.mapIndexed { i, m ->
                 val a = (i.toFloat() / members.size) * 2f * PI.toFloat() - PI.toFloat() / 2
-                Triple(m, w / 2 + w * .37f * cos(a) - seat / 2, w / 2 + w * .33f * sin(a) - seat / 2)
+                Triple(m, w / 2 + w * .37f * cos(a) - seat / 2, hgt / 2 + hgt * .33f * sin(a) - seat / 2)
             }
-            placed.forEach { (_, x, y) -> Sprite(R.drawable.p_stool, Modifier.offset(x = x, y = y + seat * .25f).size(seat)) }
-            when (holder) {
-                StageScenes.Holder.FIRE_RING -> Sprite(R.drawable.decor_campfire, Modifier.align(Alignment.Center).size(w * .5f))
-                StageScenes.Holder.CRATE_TABLE -> Sprite(R.drawable.n_crates, Modifier.align(Alignment.Center).size(w * .48f))
-                else -> Sprite(R.drawable.p_table, Modifier.align(Alignment.Center).size(w * .58f))
-            }
+            if (holder == StageScenes.Holder.BENCH_GROUP) {
+                Sprite(R.drawable.decor_bench, Modifier.align(Alignment.TopCenter).fillMaxWidth(.7f))
+                Sprite(R.drawable.decor_bench, Modifier.align(Alignment.BottomCenter).fillMaxWidth(.7f))
+            } else placed.forEach { (_, x, y) -> Sprite(R.drawable.p_stool, Modifier.offset(x = x, y = y + seat * .25f).size(seat)) }
+            Sprite(R.drawable.p_table, Modifier.align(Alignment.Center).size(w * (if (holder == StageScenes.Holder.BENCH_GROUP) .42f else .56f)))
+            if (holder == StageScenes.Holder.ROUND_TABLE) Sprite(R.drawable.decor_flag, Modifier.align(Alignment.Center).offset(y = -w * .16f).size(w * .2f))
             if (openQuests > 0) Row(
-                Modifier.align(Alignment.Center).offset(y = (-4).dp).shadow(2.dp, RoundedCornerShape(50)).background(Color(0xF2FFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp, vertical = 1.dp),
+                Modifier.align(Alignment.Center).shadow(2.dp, RoundedCornerShape(50)).background(Color(0xF2FFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Sprite(R.drawable.p_star, Modifier.size(13.dp))
-                Text(" $openQuests", fontFamily = Display, fontSize = 12.sp, color = Color(0xFF9A6B00))
-            }
+            ) { Sprite(R.drawable.p_star, Modifier.size(13.dp)); Text(" $openQuests", fontFamily = Display, fontSize = 12.sp, color = Color(0xFF9A6B00)) }
             placed.forEach { (m, x, y) ->
                 Box(
                     Modifier.offset(x = x + seat * .1f, y = y - seat * .05f).size(seat * .8f)
@@ -758,27 +843,21 @@ private fun RoundTable(g: ApiClient.Group, openQuests: Int, holder: StageScenes.
                         .background(Brush.radialGradient(listOf(Color.White, profileColor(m.displayColor).copy(alpha = .55f))), CircleShape)
                         .semantics { contentDescription = m.name },
                     Alignment.Center,
-                ) { Text(m.avatarEmoji, fontSize = 16.sp) }
+                ) { Text(m.avatarEmoji, fontSize = 15.sp) }
             }
-            if (overflow > 0) Box(
-                Modifier.align(Alignment.BottomEnd).offset(x = (-4).dp, y = (-4).dp).shadow(2.dp, RoundedCornerShape(50))
-                    .background(Color(0xFF4A2414), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 3.dp),
-            ) { Text("+$overflow", fontFamily = Display, fontSize = 11.sp, color = Color(0xFFFFF6E5)) }
+            if (g.members.size > members.size) Text("+${g.members.size - members.size}", fontFamily = Display, fontSize = 11.sp, color = Color(0xFFFFF6E5),
+                modifier = Modifier.align(Alignment.BottomEnd).background(Color(0xFF4A2414), RoundedCornerShape(50)).padding(horizontal = 6.dp))
         }
-        Tag(g.name, size = 14, modifier = Modifier.offset(y = (-6).dp))
-        Text("${g.members.size} " + if (holder == StageScenes.Holder.FIRE_RING) "am Feuer" else "am Tisch", fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 11.sp,
-            color = if (onPaper) IslandWood.Ink else Color(0xFFFFF6E5),
-            style = if (onPaper) androidx.compose.ui.text.TextStyle.Default else androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xAA3B2410), Offset(0f, 1f), 3f)),
-            modifier = Modifier.offset(y = (-4).dp))
+        Tag("${g.name} · ${g.members.size}", size = 13)
     }
 }
 
 // ---------------------------------------------------------------- Mein Haus
 
 /**
- * My place: portrait, name and trophies (real counts). 7.9.11 per stage ([StageScenes.Holder]): keepsakes in the
- * sand by the hammock, on a plank by the hut's chest, a framed picture on the cottage porch, and only the country
- * house has the painted living room with portrait wall and shelf.
+ * My place, 7.9.12: me and my keepsakes where I live at this stage: lying in the hammock with the treasures in the
+ * sand below, inside the log hut with them in the open chest and on the table, my picture beside the cottage door
+ * with the treasures on the steps, my portrait in the country house's living room with the trophies on the shelf.
  */
 @Composable
 internal fun MyHouse(
@@ -801,69 +880,30 @@ internal fun MyHouse(
         Triple(R.drawable.p_env, "$letters", "Briefe"),
         Triple(R.drawable.p_star, "$qp", "Punkte"),
     )
-    if (scene.outdoor) PlaceStage(IsleBuilding.HOUSE, onClose, level, action = "Profil & Einstellungen" to onSettings) { map ->
-        Column(Modifier.fillMaxWidth().padding(top = map.y(StageScenes.CONTENT_TOP) + 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (scene.holder == StageScenes.Holder.PORCH) Box(Modifier.size(width = 92.dp, height = 116.dp), Alignment.Center) {
-                    // the cottage has a framed picture
-                    Box(Modifier.fillMaxSize(.72f).background(Brush.radialGradient(listOf(Color.White, profileColor(color).copy(alpha = .6f)))), Alignment.Center) { Text(emoji, fontSize = 40.sp) }
-                    Sprite(R.drawable.p_frame, Modifier.fillMaxSize())
-                } else Box(
-                    // hammock and hut: just me, on a round cushion (no frame yet)
-                    Modifier.size(84.dp).shadow(4.dp, CircleShape).background(Brush.radialGradient(listOf(Color.White, profileColor(color).copy(alpha = .55f))), CircleShape)
-                        .border(3.dp, if (scene.holder == StageScenes.Holder.KEEPSAKES) Color(0xFFF1E3C4) else Color(0xFF8A5A2B), CircleShape),
-                    Alignment.Center,
-                ) { Text(emoji, fontSize = 40.sp) }
-                Spacer(Modifier.width(12.dp))
-                Tag(name, size = 16)
+    PlaceStage(IsleBuilding.HOUSE, onClose, level, action = "Profil & Einstellungen" to onSettings) { g ->
+        val me = g.centre!!
+        // me: in the hammock (no frame), a picture on the hut wall / beside the door / on the living-room wall
+        val framed = scene.holder != StageScenes.Holder.KEEPSAKES
+        val pic = if (framed) 92.dp else 64.dp
+        Box(g.box(me, pic, if (framed) pic * 1.2f else pic).semantics { set(SceneSlotKey, "me"); contentDescription = "Ich: $name" }, Alignment.Center) {
+            Box(Modifier.fillMaxSize(if (framed) .72f else 1f).shadow(if (framed) 0.dp else 4.dp, CircleShape)
+                .background(Brush.radialGradient(listOf(Color.White, profileColor(color).copy(alpha = .6f))), if (framed) RoundedCornerShape(2.dp) else CircleShape), Alignment.Center) {
+                Text(emoji, fontSize = if (framed) 38.sp else 30.sp)
             }
-            Spacer(Modifier.height(10.dp))
-            Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp), Alignment.BottomCenter) {
-                // from the hut on, the trophies stand on a wooden plank; at the hammock they lie in the sand
-                if (scene.holder != StageScenes.Holder.KEEPSAKES) Image(painterResource(R.drawable.p_plate), null,
-                    Modifier.fillMaxWidth().height(30.dp).offset(y = 12.dp), contentScale = androidx.compose.ui.layout.ContentScale.FillBounds)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    items.forEachIndexed { i, (res, v, l) ->
-                        Column(Modifier.width(76.dp).semantics(mergeDescendants = true) {}, horizontalAlignment = Alignment.CenterHorizontally) {
-                            Sprite(res, Modifier.size(46.dp).rotate(if (scene.holder == StageScenes.Holder.KEEPSAKES) (i - 1.5f) * 9f else 0f))
-                            Text(v, fontFamily = Display, fontSize = 18.sp, color = Color(0xFF3B2410))
-                            Text(l, fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF3B2410),
-                                modifier = Modifier.background(Color(0xCCFFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp))
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(22.dp))
-            GoldButtonSmall("Insel bearbeiten", Modifier.width(170.dp), onEdit)
+            if (framed) Sprite(R.drawable.p_frame, Modifier.fillMaxSize())
         }
-    }
-    else PlaceStage(IsleBuilding.HOUSE, onClose, level, action = "Profil & Einstellungen" to onSettings) { map ->
-        // Portrait in a golden frame, centred on the empty wall.
-        Box(map.region(.36f, .16f, .7f, .43f), Alignment.Center) {
-            Box(
-                Modifier.fillMaxSize(.72f).background(Brush.radialGradient(listOf(Color.White, profileColor(color).copy(alpha = .6f)))),
-                Alignment.Center,
-            ) { Text(emoji, fontSize = 54.sp) }
-            Sprite(R.drawable.p_frame, Modifier.fillMaxSize())
-        }
-        Box(Modifier.offset(x = map.x(.36f), y = map.y(.425f)).width(map.w * .34f), Alignment.TopCenter) { Tag(name, size = 15) }
-        // Trophies standing on the shelf: their bottoms touch the shelf top.
-        val shelfTop = map.y(.535f)
-        Row(
-            Modifier.fillMaxWidth().offset(y = shelfTop - 64.dp).padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            items.forEach { (res, v, l) ->
-                Column(Modifier.width(76.dp).semantics(mergeDescendants = true) {}, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Sprite(res, Modifier.size(56.dp))
-                    Spacer(Modifier.height(10.dp))
-                    Text(v, fontFamily = Display, fontSize = 20.sp, color = Color(0xFF3B2410))
-                    Text(l, fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF3B2410),
-                        modifier = Modifier.background(Color(0xCCFFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp))
-                }
+        Box(Modifier.offset(x = me.x - 80.dp, y = me.y + (if (framed) pic * .6f else pic / 2) + 2.dp).width(160.dp), Alignment.TopCenter) { Tag(name, size = 15) }
+        val slots = g.slots
+        items.forEachIndexed { i, (res, v, l) ->
+            Column(g.box(slots[i], 70.dp, 92.dp).semantics(mergeDescendants = true) { set(SceneSlotKey, "keepsake:$l") }, horizontalAlignment = Alignment.CenterHorizontally) {
+                Sprite(res, Modifier.size(44.dp).rotate(if (scene.holder == StageScenes.Holder.KEEPSAKES) (i - 1.5f) * 9f else 0f))
+                Text(v, fontFamily = Display, fontSize = 17.sp, color = Color(0xFF3B2410),
+                    modifier = Modifier.background(Color(0xCCFFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp))
+                Text(l, fontFamily = Body, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF3B2410), maxLines = 1,
+                    modifier = Modifier.background(Color(0xCCFFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp))
             }
         }
-        Box(Modifier.fillMaxWidth().offset(y = map.y(.7f)), Alignment.TopCenter) { GoldButtonSmall("Insel bearbeiten", Modifier.width(170.dp), onEdit) }
+        GoldButtonSmall("Insel bearbeiten", Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 104.dp, end = 12.dp).width(150.dp), onEdit)
     }
 }
 
@@ -872,23 +912,9 @@ private fun GoldButtonSmall(label: String, modifier: Modifier, onClick: () -> Un
     Box(
         modifier.shadow(6.dp, RoundedCornerShape(24.dp)).background(Color(0xFFFFFBF1), RoundedCornerShape(24.dp))
             .border(2.dp, Color(0xFF3F7C78), RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick).padding(vertical = 10.dp),
+            .clickable(onClick = onClick).heightIn(min = 44.dp).padding(vertical = 10.dp),
         Alignment.Center,
     ) { Text(label, fontFamily = Display, fontSize = 15.sp, color = Color(0xFF2F5D5A)) }
-}
-
-/** Cream parchment card for empty states inside a place. */
-@Composable
-private fun Parchment(title: String, text: String) {
-    Column(
-        Modifier.padding(30.dp).shadow(8.dp, RoundedCornerShape(18.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xFFFFFBF1), Color(0xFFF6E7C8))), RoundedCornerShape(18.dp))
-            .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(18.dp)).padding(22.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(title, fontFamily = Display, fontSize = 20.sp, color = Color(0xFF3B2410), textAlign = TextAlign.Center)
-        Text(text, fontFamily = Body, color = Color(0xFF6B5B48), textAlign = TextAlign.Center)
-    }
 }
 
 // ---------------------------------------------------------------- shared bits

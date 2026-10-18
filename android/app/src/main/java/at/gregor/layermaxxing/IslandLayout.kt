@@ -58,8 +58,11 @@ internal object IslandFootprint {
  *  - 2 = 7.9.7–7.9.9 servers: circular clearances 3 / 2.4 / 1.5 cells divided by the land factor, the stage-0
  *    special case (a held stage-0 piece keeps only the 2.4 gap to big pieces), no other rule;
  *  - 3 = 7.9.10 servers: the [IslandFootprint.V3] diamonds;
- *  - 4 = 7.9.11 servers: the compact [IslandFootprint.V4] diamonds.
- * The harbour stands on the coast with every rule (a v2 server accepts more, never less). A payload without the
+ *  - 4 = 7.9.11 servers: the compact [IslandFootprint.V4] diamonds;
+ *  - 5 = 7.9.12 servers: the graphic masks ([IslandMasks]): a piece holds the cells its painted sprite covers.
+ * The harbour stands on the coast with every rule (a v2 server accepts more, never less). 7.9.12: under the older
+ * rules 2–4 the app additionally checks the graphic fit ([IslandLayout.fitProblem]), so even on an old server no
+ * new sprite is built into another one (it offers a subset of what that server accepts, never more). A payload without the
  * field ([LEGACY]) or an unknown number is never taken for the newest rule: nothing is green, nothing is written,
  * the hint says why ([problem]).
  */
@@ -68,8 +71,10 @@ internal object PlacementRule {
     const val CIRCLES = 2
     const val DIAMONDS = 3
     const val COMPACT = 4
-    const val CURRENT = COMPACT
-    fun known(version: Int) = version == CIRCLES || version == DIAMONDS || version == COMPACT
+    /** grid_version 5 (7.9.12): the graphic masks of [IslandMasks], the same file the server validates with. */
+    const val MASKS = 5
+    const val CURRENT = MASKS
+    fun known(version: Int) = version == CIRCLES || version == DIAMONDS || version == COMPACT || version == MASKS
     fun rings(version: Int): FootprintRings? = when (version) {
         DIAMONDS -> IslandFootprint.V3
         COMPACT -> IslandFootprint.V4
@@ -129,16 +134,57 @@ internal object IslandLayout {
             else PlacementRule.rings(c.gridVersion)?.starter?.get(land(c)) ?: 0
         is IslandTarget.Decor -> decorRings(c, t.item)
     }
-    /** One other piece while something is moved: its spot and the cells it occupies (outlined red). */
-    data class Obstacle(val target: IslandTarget, val center: List<Int>, val rings: Int) {
-        val cells: Set<List<Int>> get() = IslandFootprint.cells(center, rings)
+    /** 7.9.12: the drawn stage of a building in this ledger (not standing yet = its free stage 0). */
+    fun stage(c: ApiClient.IslandConstruction, b: IsleBuilding) = if (c.standing(b)) c.level(b).coerceIn(0, 3) else 0
+    /** The [IslandMasks] key of a piece: what is drawn there (stage of a building, picture of a decoration). */
+    fun key(c: ApiClient.IslandConstruction, t: IslandTarget): String = when (t) {
+        is IslandTarget.Building -> IslandMasks.buildingKey(t.building, stage(c, t.building))
+        is IslandTarget.Decor -> IslandMasks.decorKey(t.item)
     }
+    /** The cells the piece's painted sprite covers when it stands at [p] (7.9.12, every rule draws these). */
+    fun cellsAt(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>): Set<List<Int>> = IslandMasks.cells(key(c, t), land(c), p)
+    /**
+     * One other piece while something is moved: its spot and the cells its painted sprite covers (outlined red).
+     * [rings] = its footprint under the historic rules 3/4 (kept for those servers' exact rule, not drawn).
+     */
+    data class Obstacle(val target: IslandTarget, val center: List<Int>, val rings: Int, val cells: Set<List<Int>>)
     /** Every piece except [except] (the held one never blocks itself, so its old spot is free for it). */
     fun obstacles(c: ApiClient.IslandConstruction, except: IslandTarget?): List<Obstacle> =
         IsleBuilding.entries.filter { c.standing(it) && except != IslandTarget.Building(it) }
-            .map { Obstacle(IslandTarget.Building(it), c.positions[it.name] ?: defaultPosition(it), buildingRings(c, it)) } +
+            .map { val t = IslandTarget.Building(it); val p = c.positions[it.name] ?: defaultPosition(it); Obstacle(t, p, buildingRings(c, it), cellsAt(c, t, p)) } +
         c.decor.filter { d -> !(except is IslandTarget.Decor && except.id != null && except.id == d.id) }
-            .map { d -> Obstacle(IslandTarget.Decor(d.item, d.id), d.position, decorRings(c, d.item)) }
+            .map { d -> val t = IslandTarget.Decor(d.item, d.id); Obstacle(t, d.position, decorRings(c, d.item), cellsAt(c, t, d.position)) }
+    /** Would the held piece's painted sprite at [p] cover a cell of another piece's sprite? */
+    fun maskBlocked(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>): Boolean {
+        val mine = cellsAt(c, t, p)
+        return obstacles(c, t).any { o -> o.cells.any { it in mine } }
+    }
+    /**
+     * 7.9.12: the graphic fit of the held piece at [p]: its ground on the land (the harbour: coast with water in front,
+     * pier on the land) and no shared cell with another piece's sprite. Under rule 5 this IS the server's rule; under
+     * the older rules it is checked in addition, so the app never offers a spot where the pictures would overlap.
+     */
+    fun fitProblem(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>): String? {
+        val held = if (t is IslandTarget.Building && !c.standing(t.building)) c.copy(starters = c.starters + t.building.name) else c
+        IslandMasks.landProblem(key(held, t), land(c), p, harbour = t == IslandTarget.Building(IsleBuilding.HARBOUR))?.let { return it }
+        return if (maskBlocked(held, t, p)) "Belegt – rot markierte Fläche" else null
+    }
+    /** Pairs of pieces whose sprites already overlap (a layout saved under an older rule): shown, never moved on their own. */
+    fun overlaps(c: ApiClient.IslandConstruction): List<Pair<IslandTarget, IslandTarget>> {
+        val all = obstacles(c, null)
+        return all.indices.flatMap { i -> (i + 1 until all.size).filter { j -> all[i].cells.any { it in all[j].cells } }.map { j -> all[i].target to all[j].target } }
+    }
+    /**
+     * Why the next stage of [b] cannot be built where it stands (null = it can): the bigger picture must fit there
+     * (ground on the land, no other sprite inside) before anything is paid; otherwise the owner moves it first.
+     */
+    fun upgradeProblem(c: ApiClient.IslandConstruction, b: IsleBuilding): String? {
+        if (!c.standing(b) || c.level(b) >= 3) return null
+        val next = c.copy(buildings = c.buildings + (b.name to c.level(b) + 1), starters = c.starters - b.name)
+        val spot = c.positions[b.name] ?: defaultPosition(b)
+        val why = fitProblem(next, IslandTarget.Building(b), spot) ?: return null
+        return "Für ${IslandStages.of(b, c.level(b) + 1).name} ist hier kein Platz ($why) – zuerst verschieben"
+    }
     /**
      * Does another piece block [p]? [big] = the piece is a building or special decoration. The moved piece
      * ([ignoreBuilding] / [ignoreDecor]) never blocks itself. Under an unknown rule everything is blocked.
@@ -148,7 +194,8 @@ internal object IslandLayout {
         // 7.9.9 (server placement_blocked): a held stage-0 piece is small.
         val small = ignoreBuilding != null && ignoreBuilding.name in c.starters && (c.buildings[ignoreBuilding.name] ?: 0) == 0
         if (c.gridVersion == PlacementRule.CIRCLES) return blockedByCircles(c, p, big, small, ignoreBuilding, ignoreDecor)
-        val r = PlacementRule.rings(c.gridVersion)!!
+        // rules 3/4 (rule 5 is decided by the masks in [ruleProblem], never here)
+        val r = PlacementRule.rings(c.gridVersion) ?: return true
         val mine = (if (!big) r.decor else if (small) r.starter else r.big)[land(c)]
         return obstacles(c, null).any { o ->
             val own = when (val t = o.target) {
@@ -177,13 +224,33 @@ internal object IslandLayout {
     }
     /** A building not standing yet is placed at its free stage 0 (7.9.9), so it has the small footprint. */
     fun valid(c: ApiClient.IslandConstruction, b: IsleBuilding, p: List<Int>): Boolean = problem(c, IslandTarget.Building(b), p) == null
-    fun validDecor(c: ApiClient.IslandConstruction, p: List<Int>, ignoreId: Int? = null, special: Boolean = false): Boolean =
-        PlacementRule.known(c.gridVersion) && IslandGrid.buildable(p, c.land) && !blocked(c, p, big = special, ignoreDecor = ignoreId)
+    /**
+     * A decoration at [p]: [item] = the new item, or (null) the moved object's own item; unknown = the signpost of an
+     * unknown (special) item, like the server counts it.
+     */
+    fun validDecor(c: ApiClient.IslandConstruction, p: List<Int>, ignoreId: Int? = null, special: Boolean = false, item: String? = null): Boolean =
+        problem(c, IslandTarget.Decor(decorItem(c, ignoreId, special, item), ignoreId), p) == null
+    private fun decorItem(c: ApiClient.IslandConstruction, id: Int?, special: Boolean, item: String?) =
+        item ?: c.decor.firstOrNull { it.id == id && id != null }?.item ?: if (special) "place_?" else "?"
+    /** The exact rule of the server's declared version for a decoration (historic rules 2–4 without the graphic fit). */
+    fun ruleValidDecor(c: ApiClient.IslandConstruction, p: List<Int>, ignoreId: Int? = null, special: Boolean = false, item: String? = null): Boolean =
+        ruleProblem(c, IslandTarget.Decor(decorItem(c, ignoreId, special, item), ignoreId), p) == null
+    fun ruleValid(c: ApiClient.IslandConstruction, b: IsleBuilding, p: List<Int>): Boolean = ruleProblem(c, IslandTarget.Building(b), p) == null
     fun valid(h: ApiClient.HomeIsland, draft: IslandDraft): Boolean = reason(h, draft) == null
     /** THE decision for one cell: why the held piece cannot stand at [p] (null = it can, and only then it is drawn). */
     fun problem(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>, rejected: Set<List<Int>> = emptySet()): String? {
+        ruleProblem(c, t, p)?.let { return it }
+        // rule 5 is the graphic fit itself; the older rules get it in addition (a subset of what they accept)
+        if (c.gridVersion != PlacementRule.MASKS) fitProblem(c, t, p)?.let { return it }
+        if (p in rejected) return REJECTED
+        return null
+    }
+    /** The server's rule of the declared version, exactly (rules 2–4 historic, 5 = the masks). */
+    fun ruleProblem(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>): String? {
         PlacementRule.problem(c.gridVersion)?.let { return it }
         if (!IslandGrid.buildable(p, c.land)) return "Außerhalb der Insel"
+        if (t == IslandTarget.Building(IsleBuilding.HARBOUR) && !IslandGrid.coast(p, c.land)) return "Hafen nur an der Küste"
+        if (c.gridVersion == PlacementRule.MASKS) return fitProblem(c, t, p)
         val free = when (t) {
             is IslandTarget.Building -> {
                 if (t.building == IsleBuilding.HARBOUR && !IslandGrid.coast(p, c.land)) return "Hafen nur an der Küste"
@@ -192,7 +259,6 @@ internal object IslandLayout {
             is IslandTarget.Decor -> !blocked(c, p, big = SpecialDecor.isSpecial(t.item), ignoreDecor = t.id)
         }
         if (!free) return "Belegt – rot markierte Fläche"
-        if (p in rejected) return REJECTED
         return null
     }
     /**
@@ -222,6 +288,12 @@ internal object IslandLayout {
         val candidates = if (t == IslandTarget.Building(IsleBuilding.HARBOUR)) IslandGrid.coastCells(c.land) else IslandGrid.buildableCells(c.land)
         return candidates.filter { problem(c, t, it, rejected) == null }
     }
+    /** The spots the server's declared rule accepts, exactly (without the app's additional graphic fit). */
+    fun ruleTargets(c: ApiClient.IslandConstruction, t: IslandTarget): List<List<Int>> {
+        if (!PlacementRule.known(c.gridVersion)) return emptyList()
+        val candidates = if (t == IslandTarget.Building(IsleBuilding.HARBOUR)) IslandGrid.coastCells(c.land) else IslandGrid.buildableCells(c.land)
+        return candidates.filter { ruleProblem(c, t, it) == null }
+    }
     /**
      * Nearest free cell to [start] (ring search over the whole 0..20 grid, 7.9.10: 7.9.9 stopped after 10 rings and
      * missed a free spot on the far side, e.g. the last free coast cell), so a new object never starts on a red
@@ -245,8 +317,28 @@ internal object IslandLayout {
     fun startCell(c: ApiClient.IslandConstruction, b: IsleBuilding, viewCentre: List<Int>?): List<Int> {
         val built = c.standing(b)
         val stored = c.positions[b.name] ?: if (built) defaultPosition(b) else IslandGrid.clampToLand(viewCentre ?: defaultPosition(b), land(c))
-        val start = if (b == IsleBuilding.HARBOUR) IslandGrid.coastCellNear(stored, land(c)) else stored
+        // 7.9.12: the harbour starts on the nearest coast spot where its pier fits (water in front)
+        val start = if (b == IsleBuilding.HARBOUR) harbourCellNear(c, stored) else stored
         return if (built) start else freeCell(start) { valid(c, b, it) }
+    }
+    /**
+     * 7.9.12: every cell where the held piece's picture fits the land (other pieces ignored): where it snaps to while
+     * dragged, so it never hangs over the shore. The harbour: its pier spots ([harbourSpots]).
+     */
+    fun fitSpots(c: ApiClient.IslandConstruction, t: IslandTarget): List<List<Int>> {
+        if (t == IslandTarget.Building(IsleBuilding.HARBOUR)) return harbourSpots(c)
+        val held = if (t is IslandTarget.Building && !c.standing(t.building)) c.copy(starters = c.starters + t.building.name) else c
+        val k = key(held, t)
+        return IslandGrid.buildableCells(land(c)).filter { IslandMasks.landProblem(k, land(c), it, harbour = false) == null }.ifEmpty { IslandGrid.buildableCells(land(c)) }
+    }
+    /** The coast spots where the harbour (in its current stage) fits with its pier: where a held harbour snaps to. */
+    fun harbourSpots(c: ApiClient.IslandConstruction): List<List<Int>> =
+        IslandMasks.harbourSpots(stage(c, IsleBuilding.HARBOUR), land(c)).ifEmpty { IslandGrid.coastCells(land(c)) }
+    fun harbourCellNear(c: ApiClient.IslandConstruction, cell: List<Int>): List<Int> {
+        val spots = harbourSpots(c)
+        if (cell in spots) return cell
+        val (x, y) = IslandGrid.project(listOf(cell.getOrElse(0) { 10 }.coerceIn(0, IslandGrid.STEPS), cell.getOrElse(1) { 10 }.coerceIn(0, IslandGrid.STEPS)), land(c))
+        return IslandGrid.nearestOf(spots, x, y, land(c))
     }
     /** The island with the draft applied, so the renderer shows the real sprite where it would stand. */
     fun preview(h: ApiClient.HomeIsland, draft: IslandDraft?): ApiClient.HomeIsland {

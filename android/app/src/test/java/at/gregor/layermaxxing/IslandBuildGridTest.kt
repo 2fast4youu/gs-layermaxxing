@@ -33,9 +33,13 @@ class IslandBuildGridTest {
         for (land in 0..5) {
             val cells = fixture.getValue(land)
             lattice.forEach { p ->
-                assertEquals("building $p land $land", p in cells, IslandLayout.valid(empty(land), IsleBuilding.POST, p))
-                assertEquals("decor $p land $land", p in cells, IslandLayout.validDecor(empty(land), p))
-                assertEquals("special $p land $land", p in cells, IslandLayout.validDecor(empty(land), p, special = true))
+                // the spot rule itself: every grid cell (7.9.12: [IslandLayout.ruleValid] of the declared rule)
+                assertEquals("building $p land $land", p in cells, IslandLayout.ruleValid(empty(land).copy(gridVersion = PlacementRule.COMPACT), IsleBuilding.POST, p))
+                assertEquals("decor $p land $land", p in cells, IslandLayout.ruleValidDecor(empty(land).copy(gridVersion = PlacementRule.COMPACT), p))
+                assertEquals("special $p land $land", p in cells, IslandLayout.ruleValidDecor(empty(land).copy(gridVersion = PlacementRule.COMPACT), p, special = true))
+                // 7.9.12 (rule 5): a spot is offered only on the grid and only where the whole picture's ground is on the land
+                val fit = IslandLayout.valid(empty(land), IsleBuilding.POST, p)
+                assertEquals("fit $p land $land", p in cells && IslandMasks.landProblem("building:POST:0", land, p, false) == null, fit)
             }
         }
     }
@@ -51,7 +55,7 @@ class IslandBuildGridTest {
         // A spot of the big island is not land of the small one.
         val outer = fixture.getValue(5).first { it !in fixture.getValue(0) }
         assertFalse(IslandLayout.valid(empty(0), IsleBuilding.POST, outer))
-        assertTrue(IslandLayout.valid(empty(5), IsleBuilding.POST, outer))
+        assertTrue(IslandLayout.ruleValid(empty(5).copy(gridVersion = PlacementRule.COMPACT), IsleBuilding.POST, outer))
     }
 
     @Test fun everyFingerIsClampedOntoTheGridOfTheCurrentLand() {
