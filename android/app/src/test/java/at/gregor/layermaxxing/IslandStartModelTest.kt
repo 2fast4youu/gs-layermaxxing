@@ -55,14 +55,13 @@ class IslandStartModelTest {
         val placed = IslandPlans.placedBuildings(0, c)
         assertEquals(setOf(IsleBuilding.HOUSE), placed.keys)
         assertEquals(IslandStages.of(IsleBuilding.HOUSE, 0).res, placed.getValue(IsleBuilding.HOUSE).res)
-        val f = IslandPlans.constructionScale(0)
+        // 7.9.10 footprints: a cell where the small stage-0 footprint fits but a big stage-1 one would overlap.
+        val big = c.copy(starters = emptySet(), buildings = mapOf("HOUSE" to 1))
         val near = IslandGrid.buildableCells(0).first { p ->
-            val d = Math.sqrt(((p[0] - 10) * (p[0] - 10) + (p[1] - 10) * (p[1] - 10)).toDouble())
-            d >= IslandLayout.DECOR_BUILDING_GAP / f && d < IslandLayout.BUILDING_GAP / f
+            IslandLayout.valid(c, IsleBuilding.POST, p) && IslandLayout.blocked(big, p, big = true, ignoreBuilding = IsleBuilding.POST)
         }
         // a new (stage 0) piece may stand there, a big stage-1 building next to a big one may not
         assertTrue(IslandLayout.valid(c, IsleBuilding.POST, near))
-        val big = c.copy(starters = emptySet(), buildings = mapOf("HOUSE" to 1))
         assertTrue(IslandLayout.blocked(big, near, big = true, ignoreBuilding = IsleBuilding.POST))
         // the preview of a new piece is its stage 0, never a stage-1 building
         val h = ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c)

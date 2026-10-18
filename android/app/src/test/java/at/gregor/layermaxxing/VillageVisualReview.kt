@@ -441,11 +441,12 @@ class VillageVisualReview {
     @Test fun islandPlaceHall() = shot("34-gemeindehaus") { Isles(start = "home", placeKey = "CAMPFIRE") }
     @Test fun islandPlaceHouse() = shot("35-haus") { Isles(start = "home", placeKey = "HOUSE") }
     @Composable private fun EvolutionIsland(creative: Boolean = false, grown: Boolean = false, start: String = "home", startingPoints: Int = 500, rejectFirst: Boolean = false,
-                                            nav: Boolean = false, withLife: Boolean = false, level: Int = 3, eligible: Boolean = false) {
+                                            nav: Boolean = false, withLife: Boolean = false, level: Int = 3, eligible: Boolean = false, starters: Boolean = false) {
         var creativeOn by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(creative) }
         var state by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(ApiClient.IslandConstruction(
             mode=if(creative) "creative" else "normal", available=startingPoints, ageDays=if(startingPoints==0) 0 else 21,
             buildings=if(grown) IsleBuilding.entries.associate { it.name to level } else emptyMap(),land=if(grown) 5 else 0,
+            starters=if(starters) IsleBuilding.entries.map { it.name }.toSet() else emptySet(),
             decor=if(withLife) listOf(ApiClient.IslandDecor(0,"flowers",listOf(8,8),0),ApiClient.IslandDecor(100,"palm",listOf(13,9)),ApiClient.IslandDecor(101,"bench",listOf(14,13)),ApiClient.IslandDecor(201,"place_hut",listOf(10,10),name="Brennerhaus")) else emptyList())) }
         var firstAttempt by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
         val items=IsleDecor.labels.keys.mapIndexed { i, k -> ApiClient.DecorItem(k, i * 30, i * 30 <= startingPoints) }
@@ -888,4 +889,111 @@ class VillageVisualReview {
     @Test fun start69GlossaryNewWord() = shot("start69-12-woerterbuch-neues-wort", captureDialogs=true, gesture={
         rule.onAllNodesWithContentDescription("Wort hinzufügen")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); settle()
     }) { VillageTheme(true) { LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossarySeed, addTerm = { _, _, _ -> }) }, level = 3) } }
+
+    // 7.9.10 island placement + building menus (Veit): production IslandWorld after real interactions on fixtures.
+    // JVM/Robolectric renders of real Android windows, not device recordings. Written to VILLAGE_SHOTS.
+    private val lifeDecor = listOf(ApiClient.IslandDecor(0,"flowers",listOf(8,8),0),ApiClient.IslandDecor(100,"palm",listOf(13,9)),ApiClient.IslandDecor(101,"bench",listOf(14,13)),ApiClient.IslandDecor(201,"place_hut",listOf(10,10),name="Brennerhaus"))
+    private fun grownFixture(level: Int = 3) = ApiClient.IslandConstruction(buildings=IsleBuilding.entries.associate { it.name to level }, land=5, decor=lifeDecor)
+    /** Free cells for [b] on the grown fixture, nearest to the middle first; [coast] filters the harbour's rim. */
+    private fun freeCells(b: IsleBuilding, coast: Boolean?, level: Int = 3): List<List<Int>> { val c = grownFixture(level)
+        return IslandGrid.buildableCells(5).filter { (coast == null || IslandGrid.coast(it, 5) == coast) && it != IslandLayout.defaultPosition(b) && !IslandLayout.blocked(c, it, big = true, ignoreBuilding = b) }
+            .sortedBy { kotlin.math.abs(it[0] - 10) + kotlin.math.abs(it[1] - 11) } }
+    private fun liftPiece(label: String) { rule.onAllNodesWithContentDescription(label).filter(androidx.compose.ui.test.hasClickAction())[0].performTouchInput { longClick() }; settle() }
+    private fun gridState() = rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].fetchSemanticsNode().config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.StateDescription)
+    @Test fun placementRestNoMarks() = shot("placement-01-ruhezustand-keine-roten-markierungen", gesture={
+        rule.onAllNodesWithContentDescription("Baufeld mit Kästchen").assertCountEquals(0)
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun placementMoveBuildingObstaclesRed() = shot("placement-02-post-verschieben-hindernisse-rot-nachbarfeld-frei", gesture={
+        liftPiece("Post")
+        // right beside the post's own spot (4,9): overlaps only its own old footprint, every other piece is outlined red.
+        // Beside it, not in front: the ✓/✗ bubbles hang half a cell below the held foot, so a tap on (5,10) hit ✓
+        // (confirming the unmoved post and ending the placement) instead of the grid.
+        val beside = listOf(5, 9)
+        check(IslandLayout.valid(grownFixture(), IsleBuilding.POST, beside) && beside[1] <= IslandLayout.defaultPosition(IsleBuilding.POST)[1]) { "$beside" }
+        groundTap(beside, 5); settle()
+        check(gridState() == "9 belegte Flächen rot markiert") { gridState().toString() }
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsEnabled()
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun placementMoveBuildingNextToHut() = shot("placement-03-post-direkt-neben-fremder-flaeche-gueltig", gesture={
+        liftPiece("Post")
+        // the closest free cell left of the special decoration "Brennerhaus" (10,10): touching, no hidden gap
+        val cell = listOf(10 - IslandFootprint.BIG[5] - IslandFootprint.BIG[5] - 1, 10)
+        check(IslandLayout.valid(grownFixture(), IsleBuilding.POST, cell)) { "$cell" }
+        groundTap(cell, 5); settle()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsEnabled()
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun placementMoveBuildingOntoForeignFootprint() = shot("placement-04-post-auf-fremder-flaeche-ungueltig", gesture={
+        liftPiece("Post")
+        groundTap(listOf(9, 10), 5); settle()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsNotEnabled()
+        rule.onAllNodesWithContentDescription("Hier nicht möglich: Belegt – rot markierte Fläche")[0].assertExists()
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun placementHarbourCoastValid() = shot("placement-05-hafen-am-rand-gueltig", gesture={
+        liftPiece("Hafen")
+        val shore = freeCells(IsleBuilding.HARBOUR, coast = true).first { it[1] < 12 }
+        groundTap(shore, 5); settle()
+        check(gridState() == "9 belegte Flächen rot markiert · Küstenfelder markiert") { gridState().toString() }
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsEnabled()
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun placementHarbourInlandTapSnapsToCoast() = shot("placement-06-hafen-innen-getippt-rand-snap", gesture={
+        liftPiece("Hafen")
+        // 7.9.10: a tap inland (7,11) puts the held harbour on the nearest coast cell (5,13); it never stands inland.
+        val inland = listOf(7, 11); val shore = IslandGrid.coastCellNear(inland, 5)
+        check(!IslandGrid.coast(inland, 5) && IslandLayout.valid(grownFixture(), IsleBuilding.HARBOUR, shore)) { "$shore" }
+        groundTap(inland, 5); settle()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsEnabled()
+        rule.onAllNodesWithContentDescription("Hier nicht möglich: Hafen nur an der Küste").assertCountEquals(0)
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun placementDecorObstacles() = shot("placement-07-deko-verschieben-hindernisse-rot", gesture={
+        liftPiece("Bank")
+        groundTap(listOf(15, 11), 5); settle()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsEnabled()
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun menuActionsStarter() = shot("menu-01-aktionen-start-haengematte", gesture={
+        rule.onAllNodesWithContentDescription("Mein Haus").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Start, noch keine Ausbaustufe")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Preis: 25 P")[0].assertExists()
+    }) { EvolutionIsland(starters=true, nav=true, startingPoints=40) }
+    @Test fun menuActionsStage1() = shot("menu-02-aktionen-post-stufe1", gesture={
+        rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Stufe 1 von 3")[0].assertExists()
+        for (l in listOf("Öffnen", "Ausbauen", "Abreißen")) rule.onAllNodesWithText(l)[0].assertExists()
+    }) { EvolutionIsland(grown=true, level=1, nav=true, withLife=true, startingPoints=140) }
+    @Test fun menuActionsMaster() = shot("menu-03-aktionen-hafen-meisterbau", gesture={
+        rule.onAllNodesWithContentDescription("Hafen").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
+        rule.onAllNodesWithText("Info")[0].assertExists()
+    }) { EvolutionIsland(grown=true, level=3, nav=true, withLife=true) }
+    @Test fun menuUpgradeSheet() = shot("menu-04-ausbau-post-stufe1-zu-2", captureDialogs=true, gesture={
+        rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
+        rule.onAllNodesWithText("Ausbauen")[0].performClick(); settle(900)
+        rule.onAllNodesWithText("Auf Stufe 2 ausbauen")[0].assertIsEnabled()
+    }) { EvolutionIsland(grown=true, level=1, nav=true, startingPoints=140) }
+    @Test fun menuUpgradeSheetMissingPoints() = shot("menu-05-ausbau-leuchtturm-punkte-fehlen", captureDialogs=true, gesture={
+        rule.onAllNodesWithContentDescription("Freunde").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
+        rule.onAllNodesWithText("Ausbauen")[0].performClick(); settle(900)
+        rule.onAllNodesWithText("Auf Stufe 3 ausbauen")[0].assertIsNotEnabled()
+    }) { EvolutionIsland(grown=true, level=2, nav=true, startingPoints=30) }
+    @Test fun menuUpgradeSheetFull() = shot("menu-06-ausbau-bibliothek-voll", captureDialogs=true, gesture={
+        rule.onAllNodesWithContentDescription("Wörterbuch").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
+        rule.onAllNodesWithText("Info")[0].performClick(); settle(900)
+        rule.onAllNodesWithText("Vollständig ausgebaut")[0].assertExists()
+    }) { EvolutionIsland(grown=true, level=3, nav=true) }
+    @Test fun menuUpgradeSheetStarter() = shot("menu-07-ausbau-schlafplatz-start-zu-1", captureDialogs=true, gesture={
+        rule.onAllNodesWithContentDescription("Mein Haus").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
+        rule.onAllNodesWithText("Ausbauen")[0].performClick(); settle(900)
+        rule.onAllNodesWithText("Gebäude bauen")[0].assertIsEnabled()
+    }) { EvolutionIsland(starters=true, nav=true, startingPoints=40) }
+    @Test fun menuIslandMenuStages() = shot("menu-08-inselmenue-stufen", captureDialogs=true, gesture={
+        rule.onAllNodesWithText("Menü")[0].performClick(); settle(900)
+        rule.onAllNodesWithContentDescription("Stufe 2 von 3")[0].assertExists()
+    }) { EvolutionIsland(grown=true, level=2, nav=true, eligible=true) }
+    @Test fun menuPlaceHeaderStage() = shot("menu-09-ort-kopf-leuchtfeuer-stufe2", gesture={
+        openPlace("Freunde"); rule.onAllNodesWithContentDescription("Ort: Leuchtfeuer")[0].assertExists()
+    }) { EvolutionIsland(grown=true, level=2, nav=true) }
+    @Test fun menuLandSheet() = shot("menu-10-land-vergroessern", captureDialogs=true, gesture={
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Reiter Land")[0].performClick(); settle(1400)
+        rule.onAllNodesWithContentDescription("Land erweitern")[0].performClick(); settle(900)
+        rule.onAllNodesWithText("Insel vergrößern")[0].assertExists()
+    }) { EvolutionIsland(startingPoints=140, nav=true, starters=true) }
 }

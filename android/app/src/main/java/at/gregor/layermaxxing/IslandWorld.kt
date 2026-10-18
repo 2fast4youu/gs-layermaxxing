@@ -307,13 +307,8 @@ internal fun IslandWorld(
         val h = island ?: return
         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         selection = null; buildBar = false; upgradePick = null; landPick = false; shopDraft = fromShop
-        val built = h.construction.standing(b)
-        // A new piece starts in the middle of what the player sees, but never in the water.
-        val start = h.construction.positions[b.name] ?: if (built) IslandLayout.defaultPosition(b)
-            else (screenCentreCell(h.construction.land) ?: IslandLayout.defaultPosition(b)).let { IslandGrid.clampToLand(it, h.construction.land) }
-        val pos = if (built) start
-            else IslandLayout.freeCell(start) { IslandLayout.valid(h.construction, b, it) }
-        placement = IslandDraft(IslandTarget.Building(b), pos, lifted)
+        // A new piece starts in the middle of what the player sees, but never in the water; the harbour on the coast.
+        placement = IslandDraft(IslandTarget.Building(b), IslandLayout.startCell(h.construction, b, screenCentreCell(h.construction.land)), lifted)
     }
     fun startDecor(item: String, existing: ApiClient.IslandDecor?, fromShop: Boolean = false) {
         val h = island ?: return
@@ -384,10 +379,14 @@ internal fun IslandWorld(
                                 creativeActive,
                                 Modifier.graphicsLayer { alpha = headerAlpha },
                             )
-                            androidx.compose.animation.AnimatedVisibility(placement != null && placementHint,
+                            // While the spot is impossible the hint says why and stays (e.g. "Hafen nur an der Küste").
+                            val reason = placement?.let { d -> island?.let { IslandLayout.reason(it, d) } }
+                            val harbour = (placement?.target as? IslandTarget.Building)?.building == IsleBuilding.HARBOUR
+                            androidx.compose.animation.AnimatedVisibility(placement != null && (placementHint || reason != null),
                                 enter = androidx.compose.animation.fadeIn(tween(200)) + androidx.compose.animation.slideInVertically(tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { -it / 2 },
                                 exit = androidx.compose.animation.fadeOut(tween(260))) {
-                                PlacementHint("Ziehen oder tippen · Grün = frei, Rot = belegt")
+                                PlacementHint(reason ?: if (harbour) "Hafen an die Küste · blaue Randfelder" else "Ziehen oder tippen · Grün = frei, Rot = belegt",
+                                    warning = reason != null)
                             }
                         }
                     },
@@ -404,7 +403,7 @@ internal fun IslandWorld(
                                     SelectionAction(if (level < 3) "Ausbauen" else "Info", if (level < 3) R.drawable.ico_growth else R.drawable.ico_info,
                                         detail = IslandBuild.upgradeCost(h.construction, level), tone = Color(0xFFE2A93C), dark = true) { selection = null; upgradePick = b },
                                     SelectionAction("Abreißen", R.drawable.ico_delete, tone = IslandBuild.No) { demolishTarget = sel },
-                                ))
+                                ), level = level)
                             })
                         }
                         is IslandTarget.Decor -> {
@@ -429,8 +428,9 @@ internal fun IslandWorld(
                         onDecorLongPress = { d -> startDecor(d.item, d) },
                         life = island?.let { IslandLayout.preview(it, placement) },
                         placementValid = placement?.let { d -> island?.let { IslandLayout.valid(it, d) } } ?: true,
-                        blockedCells = remember(island?.construction, placement?.target) {
-                            placement?.target?.let { t -> island?.let { IslandLayout.blockedCells(it, t) } }.orEmpty()
+                        // 7.9.10: every other piece is outlined in quiet red while one is held; never at rest.
+                        obstacles = remember(island?.construction, placement?.target) {
+                            placement?.target?.let { t -> island?.let { IslandLayout.obstacles(it.construction, t) } }.orEmpty()
                         },
                         showFigure = placement == null,
                         placement = placement, onPosition = { p -> if (!constructionBusy) placement = placement?.copy(position = p) },

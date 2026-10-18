@@ -24,7 +24,8 @@ def test_every_stage_zero_building_is_free_without_points_or_day_gate(tmp_path):
         assert st["construction"]["starter_cost"] == 0 and st["construction"]["starters"] == []
         for b in m.ISLAND_BUILDINGS:
             con = st["construction"]
-            spot = next(list(cell) for cell in m.grid_cells(con["land"]) if not m.placement_blocked(con, cell, "building"))
+            # 7.9.10: the full spot rule (grid, harbour only on the coast, footprint overlap).
+            spot = next(list(cell) for cell in m.grid_cells(con["land"]) if not m.building_spot_error(con, cell, b))
             r = post(c, a, st, action="build", building=b, position=spot)
             assert r.status_code == 200, (b, r.text)
             st = r.json()
@@ -115,10 +116,12 @@ def test_a_stage_zero_piece_that_grows_too_close_moves_to_a_free_cell(tmp_path):
         st = post(c, a, st, mode="creative", action="build", building="HOUSE", position=first).json()
         st = post(c, a, st, mode="creative", action="upgrade", building="HOUSE").json()  # now a big stage-1 hut
         assert st["construction"]["positions"]["HOUSE"] == first
-        f = m.land_factor(0)
-        # A cell that keeps the small (stage-0) gap but not the big one.
+        con = st["construction"]
+        # A cell where the small stage-0 footprint fits but the big stage-1 footprint overlaps the house (7.9.10).
+        small = {**con, "starters": con["starters"] + ["POST"]}
         near = next(list(cell) for cell in m.grid_cells(0)
-                    if (2.4 / f) ** 2 <= (cell[0] - first[0]) ** 2 + (cell[1] - first[1]) ** 2 < (3 / f) ** 2)
+                    if m.placement_blocked(small, cell, "building", ignore_building="POST") is None
+                    and m.placement_blocked(con, cell, "building", ignore_building="POST") is not None)
         st = post(c, a, st, mode="creative", action="build", building="POST", position=near)
         assert st.status_code == 200, st.text
         up = post(c, a, st.json(), mode="creative", action="upgrade", building="POST")

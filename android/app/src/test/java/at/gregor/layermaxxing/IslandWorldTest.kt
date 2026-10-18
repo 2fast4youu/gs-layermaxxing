@@ -137,9 +137,13 @@ class IslandWorldTest {
         val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)),land=5,
             decor=listOf(ApiClient.IslandDecor(100,"bench",listOf(12,14))))
         assertTrue(!IslandLayout.validDecor(c,listOf(0,0)))              // sea
-        assertTrue(!IslandLayout.validDecor(c,listOf(11,12)))            // on the building
-        assertTrue(!IslandLayout.validDecor(c,listOf(12,15)))            // on other decor
-        assertTrue(IslandLayout.validDecor(c,listOf(12,15),ignoreId=100)) // moving itself
+        assertTrue(!IslandLayout.validDecor(c,listOf(11,10)))            // on the building's footprint (behind its foot)
+        assertTrue(!IslandLayout.validDecor(c,listOf(12,14)))            // on other decor
+        assertTrue(IslandLayout.validDecor(c,listOf(12,14),ignoreId=100)) // moving itself
+        // 7.9.10: right beside / in front of a footprint is free, no hidden clearance (7.9.9 refused these by distance)
+        assertTrue(IslandLayout.validDecor(c,listOf(11,12)))
+        assertTrue(IslandLayout.validDecor(c,listOf(10,12)))
+        assertTrue(IslandLayout.validDecor(c,listOf(12,15)))
         assertTrue(IslandLayout.validDecor(c,listOf(6,14)))
         val draft=IslandDraft(IslandTarget.Decor("palm"),listOf(6,14))
         val preview=IslandLayout.preview(ApiClient.HomeIsland(1,emptyMap(),0,emptyList(),construction=c),draft)
@@ -148,10 +152,14 @@ class IslandWorldTest {
         assertTrue(IslandLayout.validDecor(c,free))
     }
     @Test fun buildingFootprintsScaleWithLandSoAdjacentGridCellsDoNotOverlap() {
+        // 7.9.10: two buildings whose footprints touch (2·rings+1 cells apart) stand far enough apart that their
+        // visible sprites (SpriteBounds) do not cover each other substantially, on every land and stage.
         for(land in 0..5) for(tier in 1..3) {
             val c=ApiClient.IslandConstruction(buildings=IsleBuilding.entries.associate { it.name to tier },land=land)
-            IslandPlans.placedBuildings(0,c).values.forEach { p ->
-                assertTrue(p.size <= IslandLayout.separation(c)/20f*IslandPlans.constructionScale(land))
+            IslandPlans.placedBuildings(0,c).forEach { (b,p) ->
+                val bounds=SpriteBounds.of(p.res)
+                val touching=(2*IslandLayout.buildingRings(c,b)+1)*IslandGrid.step(land)
+                assertTrue("$b tier $tier land $land", touching >= .8f*p.size*(bounds[2]-bounds[0]))
             }
         }
     }
