@@ -112,11 +112,13 @@ fun GlossaryScreen(
     LaunchedEffect(token) { reload() }
 
     val rows = Dictionary.rows(shared, query, filter)
-    Box(Modifier.fillMaxSize()) {
+    // 7.9.12: the add action has its own row below the list (no floating button over the entries): every entry stays
+    // readable down to the last one, on small screens and with large fonts too.
+    Column(Modifier.fillMaxSize()) {
         LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp),
         ) {
             item {
                 OutlinedTextField(
@@ -209,7 +211,7 @@ fun GlossaryScreen(
         }
         if (sharedAvailable) ExtendedFloatingActionButton(
             onClick = { newTerm = query.trim(); newText = ""; newCategory = GlossaryCategories.DEFAULT; adding = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp).semantics { contentDescription = "Wort hinzufügen" },
+            modifier = Modifier.align(Alignment.End).padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp).semantics { contentDescription = "Wort hinzufügen" },
             text = { Text("Wort hinzufügen") }, icon = { AppIcon(R.drawable.ico_add, null, size = 20.dp) },
         )
     }

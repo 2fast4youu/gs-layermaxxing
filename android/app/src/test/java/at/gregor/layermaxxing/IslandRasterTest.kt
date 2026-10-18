@@ -14,8 +14,10 @@ import java.io.File
 /**
  * 7.9.11-raster: the placement rule is the server's (construction.grid_version) and the grid draws only the
  * real targets of the held piece. For every rule the app knows (2, 3, 4), every land stage and every kind of piece:
- * drawn target ⇔ [IslandLayout.valid] ⇔ the server rule (re-implemented here independently from
- * server/app/island_grid.json). Unknown or missing versions never offer a spot.
+ * [IslandLayout.ruleProblem] ⇔ the server rule (re-implemented here independently from server/app/island_grid.json),
+ * kept historically exact. 7.9.12: the drawn targets ⇔ [IslandLayout.valid] ⇔ that rule AND the graphic fit
+ * (a subset, never more than the old server accepts); rule 5 (the masks) ⇔ a reference computed from
+ * server/app/geometry/island_masks.json. Unknown or missing versions never offer a spot.
  */
 class IslandRasterTest {
     private val json by lazy {
@@ -28,7 +30,7 @@ class IslandRasterTest {
     }
     private val ringCache = HashMap<String, List<Int>>()
     private fun rings(version: Int, key: String): List<Int> = ringCache.getOrPut("$version$key") {
-        json.getJSONObject(if (version == 3) "footprints_v3" else "footprints").getJSONArray(key).let { a -> (0 until a.length()).map { a.getInt(it) } }
+        json.getJSONObject(if (version == 3) "footprints_v3" else "footprints_v4").getJSONArray(key).let { a -> (0 until a.length()).map { a.getInt(it) } }
     }
 
     // ---------------------------------------------------------------- the server rules, from the fixture
@@ -87,6 +89,37 @@ class IslandRasterTest {
         }
     }
 
+    // ---------------------------------------------------------------- rule 5 (7.9.12), from the masks fixture
+
+    private val masks by lazy {
+        JSONObject(listOf("../../server/app/geometry/island_masks.json", "server/app/geometry/island_masks.json", "../server/app/geometry/island_masks.json")
+            .map(::File).first { it.exists() }.readText()).getJSONObject("pieces")
+    }
+    private fun maskKey(c: ApiClient.IslandConstruction, t: IslandTarget): String = when (t) {
+        is IslandTarget.Building -> "building:${t.building.name}:${if (c.standing(t.building)) c.level(t.building) else 0}"
+        is IslandTarget.Decor -> if (masks.has("decor:${t.item}")) "decor:${t.item}" else if (t.item.startsWith("place_")) "decor:?special" else "decor:?"
+    }
+    private fun maskCells(key: String, land: Int, spot: List<Int>, part: String = "mask"): Set<List<Int>> =
+        masks.getJSONObject(key).getJSONArray("lands").getJSONObject(land).getJSONArray(part).let { a ->
+            (0 until a.length()).map { a.getJSONArray(it).let { o -> listOf(spot[0] + o.getInt(0), spot[1] + o.getInt(1)) } }.toSet()
+        }
+    /** The graphic fit, from the fixtures alone: ground on the land (harbour: coast, water in front, pier on land), no shared cell. */
+    private fun fits(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>): Boolean {
+        val land = c.land
+        val key = maskKey(c, t)
+        val base = maskCells(key, land, p, "base")
+        val ok = if (t == IslandTarget.Building(IsleBuilding.HARBOUR)) p in cells("coast", land) && listOf(p[0], p[1] + 1) !in cells("cells", land) &&
+            base.filter { it[1] < p[1] }.all { it in cells("cells", land) } else base.all { it in cells("cells", land) }
+        if (!ok || p !in cells("cells", land)) return false
+        val mine = maskCells(key, land, p)
+        val others = IsleBuilding.entries.filter { c.standing(it) && IslandTarget.Building(it) != t }.map { b ->
+            maskCells(maskKey(c, IslandTarget.Building(b)), land, c.positions[b.name] ?: IslandLayout.defaultPosition(b))
+        } + c.decor.filter { !(t is IslandTarget.Decor && t.id != null && t.id == it.id) }.map { d ->
+            maskCells(maskKey(c, IslandTarget.Decor(d.item, d.id)), land, d.position)
+        }
+        return others.none { o -> o.any { it in mine } }
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     /** Every kind of piece on one island: big buildings, stage-0 pieces, harbour, decoration, special and unknown legacy decoration. */
@@ -105,6 +138,33 @@ class IslandRasterTest {
         IslandTarget.Decor("bench", 100), IslandTarget.Decor("place_hut", 101), IslandTarget.Decor("lantern"), IslandTarget.Decor("place_uni"),
     )
 
+    /** 7.9.12: the same kinds of pieces packed (greedy, from the fixtures) so that no two pictures overlap. */
+    private fun populatedFit(land: Int, version: Int = PlacementRule.MASKS): ApiClient.IslandConstruction {
+        var c = ApiClient.IslandConstruction(land = land, gridVersion = version, buildings = mapOf("HOUSE" to 2, "LIBRARY" to 1, "HARBOUR" to 1),
+            starters = setOf("POST", "CAMPFIRE"))
+        val order: List<IslandTarget> = listOf(IslandTarget.Building(IsleBuilding.HARBOUR), IslandTarget.Building(IsleBuilding.HOUSE),
+            IslandTarget.Building(IsleBuilding.LIBRARY), IslandTarget.Decor("place_hut", 101), IslandTarget.Building(IsleBuilding.POST),
+            IslandTarget.Building(IsleBuilding.CAMPFIRE), IslandTarget.Decor("bench", 100), IslandTarget.Decor("gnome_legacy", 102))
+        // pieces not placed yet do not count: start with the buildings only once they have a spot
+        var placed = ApiClient.IslandConstruction(land = land, gridVersion = version)
+        for (t in order) {
+            val candidates = (if (t == IslandTarget.Building(IsleBuilding.HARBOUR)) cells("coast", land) else cells("cells", land)).sortedWith(compareBy({ it[1] }, { it[0] }))
+            val probe = when (t) {
+                is IslandTarget.Building -> placed.copy(buildings = placed.buildings + (c.buildings[t.building.name]?.let { mapOf(t.building.name to it) } ?: emptyMap()),
+                    starters = placed.starters + (if (t.building.name in c.starters) setOf(t.building.name) else emptySet()))
+                is IslandTarget.Decor -> placed
+            }
+            val spot = candidates.first { p ->
+                fits(when (t) { is IslandTarget.Building -> probe.copy(positions = probe.positions + (t.building.name to p)); else -> probe }, t, p)
+            }
+            placed = when (t) {
+                is IslandTarget.Building -> probe.copy(positions = probe.positions + (t.building.name to spot))
+                is IslandTarget.Decor -> probe.copy(decor = probe.decor + ApiClient.IslandDecor(t.id!!, t.item, spot, name = if (t.id == 101) "Hütte" else ""))
+            }
+        }
+        return placed
+    }
+
     // ---------------------------------------------------------------- version contract
 
     @Test fun theVersionComesFromTheServerAndAMissingFieldIsLegacyNeverTheNewest() {
@@ -122,7 +182,9 @@ class IslandRasterTest {
         assertEquals(PlacementRule.LEGACY, api.parseHomeIsland(JSONObject("""{"user_id":1,"decor":{},"score":0,"items":[]}""")).construction.gridVersion)
         // local fixtures (constructor default) use the current rule on purpose
         assertEquals(PlacementRule.CURRENT, ApiClient.IslandConstruction().gridVersion)
-        assertEquals(4, PlacementRule.CURRENT)
+        // 7.9.12: the newest rule is 5, the graphic masks
+        assertEquals(5, PlacementRule.CURRENT)
+        assertEquals(5, parse(""","grid_version":5"""))
     }
 
     @Test fun onlyAPlainJsonIntegerIsAVersionNothingIsCoercedOntoAKnownRule() {
@@ -183,19 +245,51 @@ class IslandRasterTest {
             val h = ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c)
             for (t in held) {
                 val targets = IslandLayout.targets(c, t).toSet()
+                val rule = IslandLayout.ruleTargets(c, t).toSet()
                 for (i in -1..21) for (j in -1..21) {
                     val p = listOf(i, j)
                     val ref = reference(c, t, p)
                     val msg = "v$version land $land $t $p"
-                    assertEquals(msg, ref, p in targets)
-                    assertEquals(msg, ref, IslandLayout.reason(h, IslandDraft(t, p)) == null)
+                    // the historic server rule, exactly
+                    assertEquals(msg, ref, p in rule)
+                    assertEquals(msg, ref, IslandLayout.ruleProblem(c, t, p) == null)
                     when (t) {
-                        is IslandTarget.Building -> assertEquals(msg, ref, IslandLayout.valid(c, t.building, p))
-                        is IslandTarget.Decor -> assertEquals(msg, ref, IslandLayout.validDecor(c, p, t.id, SpecialDecor.isSpecial(t.item)))
+                        is IslandTarget.Building -> assertEquals(msg, ref, IslandLayout.ruleValid(c, t.building, p))
+                        is IslandTarget.Decor -> assertEquals(msg, ref, IslandLayout.ruleValidDecor(c, p, t.id, SpecialDecor.isSpecial(t.item), t.item))
+                    }
+                    // what the app draws, makes green and confirms: that rule AND the graphic fit (7.9.12)
+                    val app = ref && fits(c, t, p)
+                    assertEquals(msg, app, p in targets)
+                    assertEquals(msg, app, IslandLayout.reason(h, IslandDraft(t, p)) == null)
+                    when (t) {
+                        is IslandTarget.Building -> assertEquals(msg, app, IslandLayout.valid(c, t.building, p))
+                        is IslandTarget.Decor -> assertEquals(msg, app, IslandLayout.validDecor(c, p, t.id, SpecialDecor.isSpecial(t.item), t.item))
                     }
                 }
-                // occupied cells and cells outside the land are never targets
+                // occupied cells and cells outside the land are never targets; never more than the old server accepts
                 assertTrue(targets.none { it !in cells("cells", land) })
+                assertTrue(rule.containsAll(targets))
+            }
+        }
+    }
+
+    @Test fun rule5TargetsAreExactlyTheMaskReferenceOnEveryLand() {
+        for (land in 1..5) {
+            val c = populatedFit(land)
+            assertTrue("land $land", IslandLayout.overlaps(c).isEmpty())
+            val h = ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c)
+            for (t in held) {
+                val targets = IslandLayout.targets(c, t).toSet()
+                assertEquals(targets, IslandLayout.ruleTargets(c, t).toSet())
+                for (i in -1..21) for (j in -1..21) {
+                    val p = listOf(i, j)
+                    val ref = (t != IslandTarget.Building(IsleBuilding.HARBOUR) || p in cells("coast", land)) && fits(c, t, p)
+                    val msg = "v5 land $land $t $p"
+                    assertEquals(msg, ref, p in targets)
+                    assertEquals(msg, ref, IslandLayout.reason(h, IslandDraft(t, p)) == null)
+                }
+                // a crowded small island may have no room left for one more big picture; the full land always has
+                if (land >= 3) assertTrue("land $land $t", targets.isNotEmpty())
             }
         }
     }
@@ -204,16 +298,26 @@ class IslandRasterTest {
         for (version in listOf(2, 3, 4)) for (land in 0..5) {
             val c = populated(land, version)
             val t = IslandTarget.Building(IsleBuilding.HARBOUR)
+            val rule = IslandLayout.ruleTargets(c, t)
             val targets = IslandLayout.targets(c, t)
             val coast = cells("coast", land)
-            assertTrue("v$version land $land", targets.all { it in coast })
+            assertTrue("v$version land $land", rule.all { it in coast } && targets.all { it in coast })
             // version 2's wide clearances leave no coast cell free on this crowded small island; every other case offers some
-            if (version != 2 || land >= 2) assertTrue("v$version land $land", targets.isNotEmpty())
-            // no inland cell, no taken coast cell
+            if (version != 2 || land >= 2) assertTrue("v$version land $land", rule.isNotEmpty())
+            assertEquals(coast.filter { reference(c, t, it) }.toSet(), rule.toSet())
+            // 7.9.12: offered = that rule AND the whole pier fits (water in front, no other sprite on it)
+            assertEquals(coast.filter { reference(c, t, it) && fits(c, t, it) }.toSet(), targets.toSet())
             val taken = IslandLayout.obstacles(c, t).flatMap { it.cells }.toSet()
-            if (version != 2) assertTrue(targets.none { it in taken })
-            assertTrue(targets.none { it !in coast })
-            assertEquals(coast.filter { reference(c, t, it) }.toSet(), targets.toSet())
+            assertTrue(targets.none { it in taken })
+        }
+        for (land in 1..5) {
+            val c = populatedFit(land)
+            val t = IslandTarget.Building(IsleBuilding.HARBOUR)
+            val targets = IslandLayout.targets(c, t).toSet()
+            assertEquals(cells("coast", land).filter { fits(c, t, it) }.toSet(), targets)
+            // a free coast anchor alone is not enough: coast cells with land in front or a pier over the rocks are refused
+            assertTrue(targets.all { listOf(it[0], it[1] + 1) !in cells("cells", land) })
+            assertTrue(c.positions.getValue("HARBOUR") in targets)
         }
     }
 
@@ -223,6 +327,7 @@ class IslandRasterTest {
      * other one on the far eastern cell, 10+ cells apart, more than version 2's widest clearance on land 0.)
      */
     @Test fun theOwnOldSpotIsAlwaysATargetForTheMovedPiece() {
+        // the historic rules (2, 3, 4) exactly: [IslandLayout.ruleTargets]; rule 5 below with spots where the pictures fit
         for (version in listOf(2, 3, 4)) for (land in 0..5) {
             val spot = IslandGrid.coastCells(land).sortedWith(compareBy({ it[0] }, { it[1] })).first()
             val far = IslandGrid.buildableCells(land).sortedWith(compareBy({ it[0] }, { it[1] })).last()
@@ -241,16 +346,26 @@ class IslandRasterTest {
                     "decor" -> c.copy(decor = c.decor + ApiClient.IslandDecor(200, "flowers", far))
                     else -> c.copy(decor = c.decor + ApiClient.IslandDecor(201, "place_uni", far))
                 }
-                val targets = IslandLayout.targets(c, t)
+                val targets = IslandLayout.ruleTargets(c, t)
                 val msg = "v$version land $land $heldKind vs $otherKind"
                 assertTrue(msg, spot in targets)
                 assertFalse(msg, far in targets)
             }
         }
+        // rule 5: every piece of a packed island keeps its own spot as a target, and its spot is no target for the others
+        for (land in 1..5) {
+            val c = populatedFit(land)
+            val pieces: List<Pair<IslandTarget, List<Int>>> = IsleBuilding.entries.filter { c.standing(it) }.map { IslandTarget.Building(it) to c.positions.getValue(it.name) } +
+                c.decor.map { IslandTarget.Decor(it.item, it.id) to it.position }
+            for ((t, spot) in pieces) {
+                assertTrue("land $land $t", spot in IslandLayout.targets(c, t))
+                for ((o, _) in pieces) if (o != t && o != IslandTarget.Building(IsleBuilding.HARBOUR)) assertFalse("land $land $o on $t", spot in IslandLayout.targets(c, o))
+            }
+        }
     }
 
     @Test fun unknownAndMissingVersionsOfferNothingAndSayWhy() {
-        for (version in listOf(PlacementRule.LEGACY, 1, 5, 99, -3)) {
+        for (version in listOf(PlacementRule.LEGACY, 1, 6, 99, -3)) {
             val c = populated(5, 4).copy(gridVersion = version)
             val h = ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c)
             for (t in held) {
@@ -264,35 +379,39 @@ class IslandRasterTest {
             assertFalse(IslandLayout.valid(c, IsleBuilding.POST, listOf(10, 10)))
             assertFalse(IslandLayout.validDecor(c, listOf(10, 10)))
         }
-        assertTrue(PlacementRule.problem(5)!!.contains("App aktualisieren"))
+        assertTrue(PlacementRule.problem(6)!!.contains("App aktualisieren"))
         assertTrue(PlacementRule.problem(PlacementRule.LEGACY)!!.contains("Server"))
-        for (v in listOf(2, 3, 4)) assertNull(PlacementRule.problem(v))
+        for (v in listOf(2, 3, 4, 5)) assertNull(PlacementRule.problem(v))
     }
 
     // ---------------------------------------------------------------- compact (version 4)
 
     @Test fun compactNeighboursFitWhereVersion3RefusedThem() {
         for (land in 2..5) {
-            val c = ApiClient.IslandConstruction(land = land, buildings = mapOf("HOUSE" to 3), positions = mapOf("HOUSE" to listOf(10, 10)))
+            val c = ApiClient.IslandConstruction(land = land, gridVersion = 4, buildings = mapOf("HOUSE" to 3), positions = mapOf("HOUSE" to listOf(10, 10)))
             // right beside, in front and behind: free under version 4 (one ground cell each) ...
             for (p in listOf(listOf(11, 10), listOf(9, 10), listOf(10, 11), listOf(10, 9)))
-                assertTrue("land $land $p", IslandLayout.valid(c.copy(buildings = c.buildings + ("POST" to 2)), IsleBuilding.POST, p))
+                assertTrue("land $land $p", IslandLayout.ruleValid(c.copy(buildings = c.buildings + ("POST" to 2)), IsleBuilding.POST, p))
             // ... the house's own cell never
-            assertFalse(IslandLayout.valid(c, IsleBuilding.POST, listOf(10, 10)))
+            assertFalse(IslandLayout.ruleValid(c, IsleBuilding.POST, listOf(10, 10)))
             // version 3 refused the neighbour behind the house (one ring each)
-            assertFalse(IslandLayout.valid(c.copy(gridVersion = 3), IsleBuilding.POST, listOf(10, 9)))
+            assertFalse(IslandLayout.ruleValid(c.copy(gridVersion = 3), IsleBuilding.POST, listOf(10, 9)))
+            // 7.9.12: those pictures stand inside each other, so the app offers none of them (any rule), and rule 5 refuses them
+            for (p in listOf(listOf(11, 10), listOf(9, 10), listOf(10, 11), listOf(10, 9))) for (v in listOf(4, 5))
+                assertFalse("land $land $p v$v", IslandLayout.valid(c.copy(gridVersion = v, buildings = c.buildings + ("POST" to 2)), IsleBuilding.POST, p))
         }
-        // the starter island: six stage-0 pieces side by side
-        var c = ApiClient.IslandConstruction(land = 0)
+        // the starter island: six stage-0 pieces side by side (the historic rule 4)
+        var c = ApiClient.IslandConstruction(land = 0, gridVersion = 4)
         IsleBuilding.entries.filter { it != IsleBuilding.HARBOUR }.forEachIndexed { i, b ->
             val p = listOf(6 + i, 9)
-            assertTrue("$b $p", IslandLayout.valid(c, b, p))
+            assertTrue("$b $p", IslandLayout.ruleValid(c, b, p))
             c = c.copy(starters = c.starters + b.name, positions = c.positions + (b.name to p))
         }
-        assertTrue(IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.HARBOUR)).isNotEmpty())
+        assertTrue(IslandLayout.ruleTargets(c, IslandTarget.Building(IsleBuilding.HARBOUR)).isNotEmpty())
     }
 
     @Test fun version4IsNeverStricterThanVersion3OrVersion2() {
+        // (the app's offered targets add the same graphic fit to every rule, so the order holds for them too)
         for (land in 0..5) for (version in listOf(2, 3)) {
             val old = populated(land, version)
             val now = old.copy(gridVersion = 4)
@@ -320,11 +439,12 @@ class IslandRasterTest {
     }
 
     @Test fun aMovedPieceThatWasRemovedMeanwhileIsNeverGreenAndOffersNothing() {
-        val c = populated(5, 4)
+        // 7.9.12: a layout whose pictures do not overlap (rule 5), so the own spots are really free
+        val c = populatedFit(5)
         fun h(c: ApiClient.IslandConstruction) = ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c)
         // the bench (100) and the lifted house still stand: their own old spot is free for them
-        val bench = IslandDraft(IslandTarget.Decor("bench", 100), listOf(11, 9), lifted = true)
-        val house = IslandDraft(IslandTarget.Building(IsleBuilding.HOUSE), listOf(10, 6), lifted = true)
+        val bench = IslandDraft(IslandTarget.Decor("bench", 100), c.decor.single { it.id == 100 }.position, lifted = true)
+        val house = IslandDraft(IslandTarget.Building(IsleBuilding.HOUSE), c.positions.getValue("HOUSE"), lifted = true)
         for (d in listOf(bench, house)) {
             assertFalse(IslandLayout.gone(c, d)); assertNull(IslandLayout.reason(h(c), d)); assertTrue(d.position in IslandLayout.targets(c, d))
         }
@@ -346,7 +466,7 @@ class IslandRasterTest {
     }
 
     @Test fun aSpotTheServerRefusedIsNeverOfferedAgainForThatDraft() {
-        val c = populated(5, 4)
+        val c = populatedFit(5)
         val t = IslandTarget.Building(IsleBuilding.POST)
         val spot = IslandLayout.targets(c, t).first()
         val draft = IslandDraft(t, spot, rejected = setOf(spot))

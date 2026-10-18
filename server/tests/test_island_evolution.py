@@ -76,7 +76,12 @@ def test_creative_builds_free_on_the_real_island_and_keeps_everything(tmp_path):
         assert creative['construction']['mode']=='creative'
         assert [d['name'] for d in creative['construction']['decor'] if d['item']=='place_home']==['Altbau']
         assert action(c,a,creative,action="activate",building=None,mode="creative").status_code==200
-        for _ in range(3):
+        # 7.9.12 (grid_version 5): the first step names a spot where every stage's picture fits beside the migrated
+        # place (the default spot is too close to it for the bigger stages; an upgrade never moves a building itself).
+        r=c.post('/api/island/construction',headers=auth(a),json={'mode':'creative','action':'upgrade','building':'POST',
+            'position':[10,13],'expected_revision':creative['construction']['revision']})
+        assert r.status_code==200,r.text; creative=r.json()
+        for _ in range(2):
             r=action(c,a,creative,mode='creative'); assert r.status_code==200,r.text; creative=r.json()
         assert creative['construction']['buildings']['POST']==3
         assert creative['construction']['spent']==earned['construction']['spent']==40  # free, no gate, no fake progress
@@ -232,7 +237,9 @@ def test_layout_blocks_decor_and_places_in_both_directions(tmp_path):
         assert c.put('/api/island/decor',headers=auth(a),json={'slots':{'0':'flowers'}}).status_code==422
         assert action(c,a,built).status_code==200  # ordinary upgrade does not relocate
         current=state(c,a)
-        moved=c.post('/api/island/construction',headers=auth(a),json={'action':'move','building':'POST','position':[10,6],'expected_revision':current['construction']['revision']}).json()
+        moved=c.post('/api/island/construction',headers=auth(a),json={'action':'move','building':'POST','position':[10,8],'expected_revision':current['construction']['revision']}).json()
+        # 7.9.12: [10, 8] (version 5: the stage-2 post office fits there; [10, 6] of 7.9.11 sticks out of the land 0 rim)
+        # still covers the house's default spot, so the default build below must be refused.
         expanded=action(c,a,moved,action='expand',building=None).json()
         assert c.put('/api/island/places',headers=auth(a),json={'places':{'0':{'kind':'home'}}}).status_code==410
         assert action(c,a,expanded,building='HOUSE').status_code==422  # default placement cannot bypass collision
@@ -241,6 +248,8 @@ def test_layout_blocks_decor_and_places_in_both_directions(tmp_path):
 
 def test_creative_shrink_never_saves_overlapping_layout_or_loses_buildings(tmp_path):
     m=load_app(tmp_path)
+    # Historic 7.9.11 rule (the version-4 code path, kept exactly); version 5 shrink: test_v16_masks.
+    m.GRID_VERSION=4
     with TestClient(m.app) as c:
         a=register(c,'A')
         with m.db() as conn: conn.execute('UPDATE users SET creative_entitled=1 WHERE id=?',(a['user_id'],))

@@ -331,7 +331,7 @@ internal fun IslandWorld(
         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         selection = null; buildBar = false; shopDraft = fromShop
         val start = existing?.position ?: IslandGrid.clampToLand(screenCentreCell(h.construction.land) ?: listOf(10, 12), h.construction.land)
-        val pos = existing?.position ?: IslandLayout.freeCell(start) { IslandLayout.validDecor(h.construction, it, special = SpecialDecor.isSpecial(item)) }
+        val pos = existing?.position ?: IslandLayout.freeCell(start) { IslandLayout.validDecor(h.construction, it, special = SpecialDecor.isSpecial(item), item = item) }
         placement = IslandDraft(IslandTarget.Decor(item, existing?.id), pos, existing != null)
     }
     fun confirmDraft() {
@@ -393,7 +393,13 @@ internal fun IslandWorld(
                         Box(contentAlignment = Alignment.Center) {
                             MyIslandHeader(
                                 "Meine Insel",
-                                island?.construction?.let { "Landstufe ${it.land} · ${it.available} Punkte zum Bauen" } ?: "Insel wird geladen…",
+                                island?.construction?.let { c ->
+                                    // 7.9.12: a layout saved under an older rule may have pictures standing inside each other:
+                                    // kept as it is (never moved on its own), said here so the owner can move them apart.
+                                    val overlaps = remember(c) { IslandLayout.overlaps(c).size }
+                                    "Landstufe ${c.land} · ${c.available} Punkte zum Bauen" +
+                                        if (overlaps > 0) " · $overlaps× stehen Teile ineinander – lang drücken und verschieben" else ""
+                                } ?: "Insel wird geladen…",
                                 creativeActive,
                                 Modifier.graphicsLayer { alpha = headerAlpha },
                             )
@@ -699,6 +705,8 @@ internal fun IslandWorld(
             IslandUpgradeContent(building, h, constructionBusy,
                 onAction = { action ->
                     if (action == "upgrade" && building != null && !h.construction.standing(building)) startBuilding(building, false)
+                    // 7.9.12: the bigger stage does not fit where it stands: the owner moves it first (never on its own)
+                    else if (action == "move" && building != null) startBuilding(building, true)
                     else construct(ApiClient.IslandRequest(action, building?.name))
                 }, onDismiss = { if (!constructionBusy) { upgradePick = null; landPick = false } })
         }
@@ -821,92 +829,104 @@ private fun IslandMap(
         val center = Offset(with(density) { (w * .5f).toPx() }, with(density) { (h * .5f).toPx() })
         val hubShorePx = with(density) { 83.dp.toPx() }
         val points = spots.map { (x, y) -> Offset(with(density) { (w * x).toPx() }, with(density) { (h * y).toPx() }) }
-        val docks = ordered.mapIndexed { i, f ->
+        // 7.9.12: every island's berth from its CURRENT construction (HarbourRoute), in map px. The hub box is 180 dp wide
+        // at (w/2 − 90 dp, h/2 − 75.6 dp), a friend's box ownerWidth wide at (x − w/2, y − w/2): exactly where they are drawn.
+        val hubPx = with(density) { 180.dp.toPx() }
+        val hubTopLeft = Offset(center.x - hubPx / 2, center.y - hubPx * .42f)
+        val homeConstruction = homeLife?.construction
+        val homeBerth = HarbourRoute.onMap(hubTopLeft, hubPx, HarbourRoute.berth(homeConstruction))
+        val friendBox = ordered.mapIndexed { i, f ->
             val fw = with(density) { Isle.ownerWidth(infoById[f.id]?.island).toPx() }
-            val fc = points[i] - Offset(0f, fw * .09f)
-            IslandHarbours.shore(center, fc, with(density) { 180.dp.toPx() }) to IslandHarbours.shore(fc, center, fw)
+            Offset(points[i].x - fw / 2, points[i].y - fw * .5f) to fw
         }
+        val friendBerths = ordered.mapIndexed { i, f -> HarbourRoute.onMap(friendBox[i].first, friendBox[i].second, HarbourRoute.berth(infoById[f.id]?.island?.construction)) }
         AnimatedIslandSea(Modifier.fillMaxSize(), oversized = true)
-        // Painted sea (moves with the map), sparkles and dotted routes.
-        val sea = rememberSeaBrush()
-        // One lane per boat on a route: boats sail side by side instead of stacking.
-        // One lane per boat: each lane is a gentle arc that bows out to its own side, so boats sail
-        // side by side instead of stacking; the boat rides the arc's open-water middle.
-        val laneGap = with(density) { 78.dp.toPx() }
+        // One lane per boat: each lane is the route shifted sideways in its open-water middle, so boats sail side by
+        // side instead of stacking and still end at the berths.
+        val laneGap = with(density) { 46.dp.toPx() }
         // Obstacles a boat (with its time tag) must not sit on: every island incl. its name plaque, the screen edge and other boats.
         val boatR = with(density) { 30.dp.toPx() }
         val islands = ordered.mapIndexed { i, f ->
             val wPx = with(density) { Isle.ownerWidth(infoById[f.id]?.island).toPx() }
             Offset(points[i].x, points[i].y + wPx * .1f) to wPx * .45f
         } + (Offset(center.x, center.y + hubShorePx * .2f) to hubShorePx * .9f)
+        val obstacles = islands.map { (o, r) -> HarbourRoute.Island(o, r) }
+        val margin = with(density) { 22.dp.toPx() }
         val edge = with(density) { 40.dp.toPx() }
         val mapW = with(density) { w.toPx() }; val mapH = with(density) { h.toPx() }
+        // Water ways only, inside the map. null = no water way (islands closing every gap): nothing is drawn for that
+        // friend rather than a line through land; the letters stay in the mail lists.
+        // A boat is drawn as a box hullW × hullH around its point (hull, badge, "+N"): the whole box stays on the map
+        // (verified by IslandMapRouteUiTest).
+        val hullHalfW = with(density) { 42.dp.toPx() }; val hullHalfH = with(density) { 21.dp.toPx() }
+        fun hullOf(p: Offset) = androidx.compose.ui.geometry.Rect(p.x - hullHalfW, p.y - hullHalfH, p.x + hullHalfW, p.y + hullHalfH)
+        val seaBounds = androidx.compose.ui.geometry.Rect(0f, 0f, mapW, mapH)
+        // routes and lanes run where a boat's whole box fits: the sea inset by half a hull on every side (not just its centre point)
+        val boatSea = androidx.compose.ui.geometry.Rect(hullHalfW, hullHalfH, mapW - hullHalfW, mapH - hullHalfH)
+        val routes = ordered.indices.map { i -> HarbourRoute.route(homeBerth, obstacles.last(), friendBerths[i], obstacles[i], obstacles, margin, boatSea) }
         val placed = mutableListOf<Offset>()
-        fun clashes(p: Offset): Float {
+        fun clashes(p: Offset, ends: Set<Int>): Float {
             var c = 0f
-            islands.forEach { (o, r) -> val d = (p - o).getDistance(); if (d < r + boatR) c += r + boatR - d }
+            islands.forEachIndexed { k, (o, r) -> if (k !in ends) { val d = (p - o).getDistance(); if (d < r + boatR) c += r + boatR - d } }
             placed.forEach { o -> if (kotlin.math.abs(p.x - o.x) < boatR * 3f && kotlin.math.abs(p.y - o.y) < boatR * 2.8f) c += boatR * 20 }
             if (p.x < edge * 1.2f || p.x > mapW - edge * 1.2f) c += boatR * 4
             if (p.y < edge * 3 || p.y > mapH - edge * 3) c += boatR * 4
             return c
         }
         val voyages = ordered.flatMapIndexed { i, friend ->
+            val route = routes[i] ?: return@flatMapIndexed emptyList()
             val all = transit.filter { it.peerId == friend.id }.sortedBy { it.createdAt }
-            val dx = points[i].x - center.x; val dy = points[i].y - center.y
-            val len = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
-            val ux = dx / len; val uy = dy / len
-            // Sail on open water only: from my island's shore to the friend's shore.
-            val startD = hubShorePx.coerceAtMost(len * .45f)
-            val endD = (len - with(density) { (Isle.ownerWidth(infoById[friend.id]?.island) * .42f).toPx() }).coerceAtLeast(startD + 1f)
             // Close neighbours have little open water: fewer lanes there; the rest wait in the outermost lane as "+N".
-            val mine = all.take(IsleMotion.lanesThatFit(endD - startD, laneGap))
+            val mine = all.take(IsleMotion.lanesThatFit(HarbourRoute.length(route) * .5f, laneGap))
             val extra = all.size - mine.size
             val lanes = IsleMotion.laneOffsets(mine.size)
             mine.mapIndexed { k, letter ->
-                val (homeDock, friendDock) = docks[i]
-                fun at(d: Float, side: Float): Offset {
-                    val u = ((d - startD) / (endD - startD)).coerceIn(0f, 1f)
-                    return homeDock + (friendDock - homeDock) * u + Offset(-uy * side, ux * side)
-                }
                 val share = IsleMotion.tripShare(letter, nowSec)
-                // Keep the hull off the shores: the trip maps onto the arc's open-water middle.
-                val t = .14f + (share ?: .5f) * .72f
-                fun voyage(bow: Float): Voyage {
-                    val a = at(startD, 0f); val b = at(endD, 0f)
-                    val (from, to) = if (letter.incoming) b to a else a to b
-                    val mid = at((startD + endD) / 2f, bow)
-                    // Quadratic arc through `mid`: control point = 2·mid − (from+to)/2.
-                    val ctrl = Offset(2 * mid.x - (from.x + to.x) / 2f, 2 * mid.y - (from.y + to.y) / 2f)
-                    return Voyage(friend, letter, from, ctrl, to, t, share, if (k == mine.lastIndex) extra else 0)
-                }
-                // Own lane first; if that water is taken (island, plaque, other boat), bow the lane further out.
-                // Never bow further out than the route is long, so a lane always visibly links its two islands.
-                val candidates = IsleMotion.laneCandidates(lanes[k]).map { it * laneGap }.filter { kotlin.math.abs(it) <= laneGap * 1.6f }.ifEmpty { listOf(lanes[k] * laneGap) }
-                fun cost(v: Voyage) = clashes(v.boat)
-                val best = candidates.map { voyage(it) }.let { all -> all.firstOrNull { cost(it) == 0f } ?: all.minBy { cost(it) } }
+                val t = HarbourRoute.boatT(letter.incoming, share)
+                // a boat at its berth belongs to that island: the two end islands never count as clashing
+                val ends = setOf(i, islands.lastIndex)
+                fun voyage(side: Float) = Voyage(friend, letter, HarbourRoute.safeLane(route, side, obstacles.last(), obstacles[i], obstacles, margin * .5f, boatSea), t, share, if (k == mine.lastIndex) extra else 0)
+                val candidates = IsleMotion.laneCandidates(lanes[k]).map { it * laneGap }.filter { kotlin.math.abs(it) <= laneGap * 2.2f }.ifEmpty { listOf(lanes[k] * laneGap) }
+                val best = candidates.map { voyage(it) }.let { list -> list.firstOrNull { clashes(it.boat, ends) == 0f } ?: list.minBy { clashes(it.boat, ends) } }
                 placed += best.boat
                 best
             }
         }
         val busy = voyages.map { it.friend.id }.toSet()
-        Canvas(Modifier.fillMaxSize()) {
-
-            points.forEachIndexed { i, p ->
-                if (ordered[i].id in busy) return@forEachIndexed
-                drawLine(
-                    Color.White.copy(alpha = .45f), docks[i].first, docks[i].second, 3f, StrokeCap.Round,
-                    PathEffect.dashPathEffect(floatArrayOf(4f, 16f), 0f),
-                )
+        val jettyW = with(density) { 7.dp.toPx() }
+        Canvas(Modifier.fillMaxSize().semantics {
+            set(MapRoutesKey, ordered.mapIndexedNotNull { i, f -> routes[i]?.let { MapRoute(f.id, null, it, null) } } + voyages.map { v -> MapRoute(v.friend.id, v.letter.id, v.path, v.boat, hullOf(v.boat)) })
+            set(MapAreaKey, seaBounds)
+            set(MapBerthsKey, listOf(0L to homeBerth) + ordered.mapIndexed { i, f -> f.id to friendBerths[i] })
+        }) {
+            // A visible landing stage wherever an island has no harbour yet (old data): routes never end in nothing.
+            if (!HarbourRoute.hasHarbour(homeConstruction)) {
+                val land = (homeConstruction?.land ?: 0).coerceIn(0, 5)
+                drawIslandJetty(homeBerth, HarbourRoute.onMap(hubTopLeft, hubPx, HarbourRoute.fallbackRoot(land)), jettyW)
+            }
+            ordered.forEachIndexed { i, f ->
+                val c = infoById[f.id]?.island?.construction
+                if (!HarbourRoute.hasHarbour(c)) drawIslandJetty(friendBerths[i], HarbourRoute.onMap(friendBox[i].first, friendBox[i].second,
+                    HarbourRoute.fallbackRoot((c?.land ?: 0).coerceIn(0, 5))), jettyW)
+            }
+            fun line(points: List<Offset>) = androidx.compose.ui.graphics.Path().apply { moveTo(points[0].x, points[0].y); points.drop(1).forEach { lineTo(it.x, it.y) } }
+            routes.forEachIndexed { i, r ->
+                if (r == null || ordered[i].id in busy) return@forEachIndexed
+                drawPath(line(r), Color.White.copy(alpha = .45f), style = Stroke(3f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 16f), 0f)))
             }
             // Each lane is a progress bar: sailed water bright and solid, the rest of the way faint and dotted.
             voyages.forEach { v ->
                 val dots = PathEffect.dashPathEffect(floatArrayOf(4f, 14f), 0f)
-                drawPath(v.path(v.t, 1f), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
+                // sailed: from the sender's berth to the boat (home → boat outgoing, friend → boat incoming)
+                val sailed = if (v.letter.incoming) HarbourRoute.part(v.path, v.t, 1f) else HarbourRoute.part(v.path, 0f, v.t)
+                val open = if (v.letter.incoming) HarbourRoute.part(v.path, 0f, v.t) else HarbourRoute.part(v.path, v.t, 1f)
+                drawPath(line(open), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
                 if (v.share != null) {
-                    drawPath(v.path(0f, v.t), Color(0x66243A3F), style = Stroke(11f, cap = StrokeCap.Round))
-                    drawPath(v.path(0f, v.t), Color(0xFFE6D3A3), style = Stroke(6f, cap = StrokeCap.Round))
-                } else drawPath(v.path(0f, v.t), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
-                drawCircle(Color(0xFFE6D3A3), 6f, v.to)
+                    drawPath(line(sailed), Color(0x66243A3F), style = Stroke(11f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                    drawPath(line(sailed), Color(0xFFE6D3A3), style = Stroke(6f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                } else drawPath(line(sailed), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
+                drawCircle(Color(0xFFE6D3A3), 6f, if (v.letter.incoming) v.path.first() else v.path.last())
             }
         }
         // Home island.
@@ -965,24 +985,25 @@ private fun IslandMap(
     }
 }
 
-/** One boat on its own lane: from/to are the shores, [boat] where it is now, [share] null = at anchor. */
+/** One boat on its own lane: [path] = home berth → friend berth, [t] where it is now along it, [share] null = waiting in the roadstead. */
 private class Voyage(
     val friend: ApiClient.UserSummary, val letter: ApiClient.Message,
-    val from: Offset, val ctrl: Offset, val to: Offset, val t: Float, val share: Float?,
+    val path: List<Offset>, val t: Float, val share: Float?,
     /** Further boats on this route that did not get a lane of their own. */
     val more: Int = 0,
 ) {
-    fun point(t: Float): Offset {
-        val u = 1f - t
-        return Offset(u * u * from.x + 2 * u * t * ctrl.x + t * t * to.x, u * u * from.y + 2 * u * t * ctrl.y + t * t * to.y)
-    }
-    val boat: Offset get() = point(t)
-    /** The arc between t0 and t1 as a polyline (smooth enough at 24 steps). */
-    fun path(t0: Float, t1: Float) = androidx.compose.ui.graphics.Path().apply {
-        val p0 = point(t0); moveTo(p0.x, p0.y)
-        for (k in 1..24) { val p = point(t0 + (t1 - t0) * k / 24f); lineTo(p.x, p.y) }
-    }
+    val boat: Offset get() = HarbourRoute.at(path, t)
 }
+
+/** 7.9.12: a route on the archipelago map in map px (for tests and a11y): idle routes have no letter and no boat. */
+internal data class MapRoute(val friendId: Long, val letterId: Long?, val path: List<Offset>, val boat: Offset?,
+    /** The boat's drawn box (hull, badge, "+N"), map px. */
+    val hull: androidx.compose.ui.geometry.Rect? = null)
+/** The map's drawing area, map px. */
+internal val MapAreaKey = androidx.compose.ui.semantics.SemanticsPropertyKey<androidx.compose.ui.geometry.Rect>("MapArea")
+internal val MapRoutesKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<MapRoute>>("MapRoutes")
+/** 7.9.12: every island's berth on the map (0 = my island). */
+internal val MapBerthsKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<Pair<Long, Offset>>>("MapBerths")
 
 internal data class IslandZoom(val initial: Float = 1f, val min: Float = 1f, val max: Float = 2.6f)
 

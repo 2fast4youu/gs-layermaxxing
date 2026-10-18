@@ -69,7 +69,7 @@ internal object IslandStages {
             Stage(IsleBuilding.HOUSE, 0, "Schlafplatz", "Eine Hängematte zwischen zwei Pfosten", R.drawable.decor_hammock, null, R.drawable.ico_home),
             Stage(IsleBuilding.HOUSE, 1, "Holzhütte", "Kleine Blockhütte", R.drawable.fief_hut_stage1, null, R.drawable.ico_house),
             Stage(IsleBuilding.HOUSE, 2, "Häuschen", "Häuschen mit rotem Dach", R.drawable.b_house, null, R.drawable.ico_house),
-            Stage(IsleBuilding.HOUSE, 3, "Landhaus", "Steinhaus mit Turm und Fahne", R.drawable.fief_hut_stage3, null, R.drawable.ico_home),
+            Stage(IsleBuilding.HOUSE, 3, "Landhaus", "Steinhaus mit Turm und Fahne", R.drawable.isle_manor, null, R.drawable.ico_home),
         ),
     )
 

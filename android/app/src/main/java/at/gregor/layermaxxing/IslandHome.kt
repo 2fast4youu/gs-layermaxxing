@@ -136,7 +136,10 @@ internal fun decorPieces(decor: Map<Int, String>, life: ApiClient.HomeIsland?, l
     // 7.9.11: unknown items are not filtered out any more (they are obstacles): they get the placeholder sprite.
     return objects.map { d ->
         val (x, y) = IslandPlans.onLand(d.position[0] / 20f, d.position[1] / 20f, landScale)
-        d to IslandPiece(IsleDecor.shown(d.item), x, y, IsleDecor.share(d.item) * IslandPlans.pieceScale(landScale) / IslandPlans.pieceScale(1f),
+        // 7.9.12: with a construction ledger the size is the one the occupancy mask was measured at (IslandMasks).
+        val size = life?.construction?.takeIf { it.supported }?.let { IslandMasks.decor(d.item, it.land).size }
+            ?: IsleDecor.share(d.item) * IslandPlans.pieceScale(landScale) / IslandPlans.pieceScale(1f)
+        d to IslandPiece(IsleDecor.shown(d.item), x, y, size,
             sway = d.item == "palm" || d.item == "flag", name = IsleDecor.name(d), lifted = d.id == lifted)
     }
 }
@@ -194,11 +197,14 @@ internal fun HubIsland(
     val decorObjects = if (onDecor != null) decorPieces(decor, life, plan.landScale) else emptyList()
     fun sizeOf(t: IslandTarget): Float = when (t) {
         is IslandTarget.Building -> placed[t.building]?.size ?: .12f
-        is IslandTarget.Decor -> IsleDecor.share(t.item) * IslandPlans.pieceScale(plan.landScale) / IslandPlans.pieceScale(1f)
+        is IslandTarget.Decor -> IslandMasks.decor(t.item, land).size
     }
     val surfaceActive = placement != null
-    // The held piece's footprint in grid cells under the rule the server declares (7.9.10, versioned 7.9.11).
-    val heldRings = placement?.let { IslandLayout.rings(life?.construction ?: ApiClient.IslandConstruction(), it.target) } ?: 0
+    // 7.9.12: the held piece's area = the tiles its painted sprite covers at the spot ([IslandMasks], like the server).
+    val construction = life?.construction ?: ApiClient.IslandConstruction()
+    val heldCells = placement?.let { IslandLayout.cellsAt(construction, it.target, it.position) }.orEmpty()
+    val snapSpots = androidx.compose.runtime.remember(construction, placement?.target) { placement?.let { IslandLayout.fitSpots(construction, it.target) } }
+    val heldReach = placement?.let { IslandMasks.shape(IslandLayout.key(construction, it.target), land).reach } ?: 0
     // 7.9.10: the held harbour only ever stands on (and is drawn over) the coast cells.
     val coastOnly = liftedBuilding == IsleBuilding.HARBOUR
     // Picked up: the sprite rises and grows a little (the shadow darkens with it in DynamicIsland).
@@ -212,12 +218,17 @@ internal fun HubIsland(
                         is IslandTarget.Building -> placed[t.building]
                         is IslandTarget.Decor -> decorObjects.firstOrNull { it.first.id == t.id }?.second
                     }
-                    // The footprint lies behind the sprite's foot (its front tip is the foot), like the grid rule.
-                    piece?.let { val r = IslandLayout.rings(life?.construction ?: ApiClient.IslandConstruction(), t)
-                        Triple(it.x, it.y - r * IslandGrid.step(land), r + .5f) }
+                    // 7.9.12: the tiles its painted sprite covers, outlined (the same area the rule counts).
+                    piece?.let {
+                        val spot = when (t) {
+                            is IslandTarget.Building -> construction.positions[t.building.name] ?: IslandLayout.defaultPosition(t.building)
+                            is IslandTarget.Decor -> construction.decor.firstOrNull { d -> d.id == t.id }?.position
+                        }
+                        spot?.let { p -> IslandLayout.cellsAt(construction, t, p) }
+                    }
                 }
                 IslandGridUnderlay(land, showGrid = placement != null, focus = placement?.position,
-                    focusRings = heldRings, valid = placementValid, selection = outline,
+                    focusCells = heldCells, valid = placementValid, selection = outline,
                     obstacles = if (placement != null) obstacles else emptyList(),
                     coastOnly = coastOnly, targets = if (placement != null) placementTargets else emptyList())
             }
@@ -235,11 +246,12 @@ internal fun HubIsland(
             } else emptyList()
             fun decorOf(t: IslandTarget.Decor) = decorObjects.firstOrNull { it.first.id == t.id }?.first
             IslandTouchSurface(
-                land, placement, heldRings + 1, targets,
+                land, placement, heldReach + 1, targets,
                 onTap = { t -> gate { when (t) { is IslandTarget.Building -> onBuilding(t.building); is IslandTarget.Decor -> decorOf(t)?.let { d -> onDecor?.invoke(d) } } } },
                 onLongPress = { t -> when (t) { is IslandTarget.Building -> onBuildingLongPress?.invoke(t.building); is IslandTarget.Decor -> decorOf(t)?.let { d -> onDecorLongPress?.invoke(d) } } },
                 onGround = { onGround?.let { g -> gate { g() } } },
                 onPosition = onPosition, coastOnly = coastOnly,
+                snapSpots = snapSpots,
             )
         }
         if (life != null && showFigure) {

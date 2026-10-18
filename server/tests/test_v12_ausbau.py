@@ -43,13 +43,17 @@ def test_position_in_the_water_or_outside_the_land_stage_is_422_for_every_piece(
     with TestClient(m.app) as c:
         a = register(c, "A")
         st = creative(m, c, a, land=0)
-        outer = next(p for p in m.grid_cells(5) if p not in m.grid_cells(0))  # land of stage 5, not of stage 0
+        # land of stage 5, not of stage 0. 7.9.12 (grid_version 5): such a rim cell only takes a slim picture whose
+        # ground fits the new strip of land, e.g. the lantern; the wide post office never fits on the rim.
+        empty5 = {"buildings": {}, "starters": [], "land": 5, "positions": {}, "decor": []}
+        outer = next(p for p in m.grid_cells(5) if p not in m.grid_cells(0) and m.decor_blocked(None, None, empty5, p, item="lantern") is None)
         for p in ([1, 10], [10, 19], [2, 9], outer):
             assert post(c, a, st, mode="creative", action="upgrade", building="POST", position=p).status_code == 422, p
             assert post(c, a, st, mode="creative", action="decor_place", item="bench", position=p).status_code == 422, p
             assert post(c, a, st, mode="creative", action="decor_place", item="place_hut", position=p).status_code == 422, p
         st = post(c, a, st, mode="creative", action="upgrade", building="POST", position=[10, 10]).json()
-        st = post(c, a, st, mode="creative", action="decor_place", item="bench", position=[10, 4]).json()
+        # 7.9.12: a spot where the bench's picture fits beside the post office on land 0 (version 5; [10, 4] is the rim)
+        st = post(c, a, st, mode="creative", action="decor_place", item="bench", position=[12, 6]).json()
         bench = next(d for d in st["construction"]["decor"] if d["item"] == "bench")
         for p in ([1, 10], outer):
             assert post(c, a, st, mode="creative", action="move", building="POST", position=p).status_code == 422
@@ -58,7 +62,8 @@ def test_position_in_the_water_or_outside_the_land_stage_is_422_for_every_piece(
         # The same outer cell is fine once the land has grown to stage 5.
         for _ in range(5):
             st = post(c, a, st, mode="creative", action="expand").json()
-        assert post(c, a, st, mode="creative", action="move", building="POST", position=outer).status_code == 200
+        assert post(c, a, st, mode="creative", action="move", building="POST", position=outer).status_code == 422
+        assert post(c, a, st, mode="creative", action="decor_place", item="lantern", position=outer).status_code == 200
 
 
 def test_special_decor_is_expensive_free_placed_and_limited_to_three(tmp_path):

@@ -26,7 +26,7 @@ APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
-SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4"]
+SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4", "build_grid_v5"]
 # 7.9.9: the four glossary categories (the first one is the default for old clients and old rows).
 GLOSSARY_CATEGORIES = ("Begriffe", "Witze", "Sprüche", "Zitate")
 # One-time creative entitlement for the accounts that already exist on the test
@@ -1716,7 +1716,13 @@ def coast_cells(land):
 #   4 = 7.9.11 compact diamonds FOOTPRINT_RINGS + harbour on the coast: on the big land a piece holds one real
 #       ground cell, only the small land 0-1 keeps one ring for the big sprites. Never stricter than 2 or 3, so
 #       every saved layout stays valid (test_v14_placement / test_v15_raster).
-GRID_VERSION = 4
+#   5 = 7.9.12 graphic masks (geometry/island_masks.json, generated from the painted sprites by
+#       tools/island_masks.py): a piece holds exactly the cells its rendered sprite covers, per building, stage and
+#       land stage; its ground part (base) must stand on the land; the harbour stands on a coast cell with open water
+#       in front of it. Stricter than 4 on purpose (7.9.11 sprites stood inside each other): saved layouts are never
+#       moved or deleted for it, a write only may not create a NEW overlap (test_v16_masks).
+# The code of version 4 stays as it was (the historic tests pin GRID_VERSION = 4 and run it unchanged).
+GRID_VERSION = 5
 FOOTPRINT_RINGS_V3 = {
     "big": (2, 2, 1, 1, 1, 1),
     "starter": (1, 1, 1, 1, 1, 1),
@@ -1727,6 +1733,49 @@ FOOTPRINT_RINGS = {
     "starter": (0, 0, 0, 0, 0, 0),  # free stage-0 pieces (hammock, letter tree, ...)
     "decor": (0, 0, 0, 0, 0, 0),    # ordinary decoration
 }
+FOOTPRINT_RINGS_V4 = FOOTPRINT_RINGS
+MASKS = json.loads((Path(__file__).resolve().parent / "geometry" / "island_masks.json").read_text())
+
+
+def masks_active():
+    return GRID_VERSION >= 5
+
+
+def building_mask_key(state, b):
+    """grid_version 5: the drawn stage of a standing building (a stage-0 piece = 0, else its level 1..3)."""
+    return "building:%s:%d" % (b, max(0, min(3, int(state.get("buildings", {}).get(b, 0) or 0))))
+
+
+def decor_mask_key(item):
+    """grid_version 5: the drawn picture of a decoration item; unknown items are drawn (and counted) as the signpost."""
+    item = str(item)
+    if "decor:" + item in MASKS["pieces"]:
+        return "decor:" + item
+    return "decor:?special" if item.startswith("place_") else "decor:?"
+
+
+def mask_cells(key, land, position, part="mask"):
+    """The cells of a piece's mask (or its ground part [part] = "base") standing at [position] on [land]."""
+    x, y = position
+    return {(x + dx, y + dy) for dx, dy in MASKS["pieces"][key]["lands"][max(0, min(5, land))][part]}
+
+
+def base_error(state, position, key, harbour=False):
+    """grid_version 5: the ground part must stand on the land; the harbour on a coast cell, water in front, land behind."""
+    land = state["land"]
+    x, y = position
+    base = mask_cells(key, land, position, "base")
+    if harbour:
+        if not grid_coast(x, y, land):
+            return "Der Hafen kann nur an der Küste stehen"
+        if grid_buildable(x, y + 1, land):
+            return "Der Hafen braucht an der Küste offenes Wasser vor dem Steg"
+        if any(not grid_buildable(i, j, land) for i, j in base if j < y):
+            return "Der Hafen passt mit seinem Steg hier nicht an die Küste"
+        return None
+    if any(not grid_buildable(i, j, land) for i, j in base):
+        return "Passt hier nicht ganz auf die Insel – der Grund ragt über den Rand"
+    return None
 
 
 def rings_of(kind, land):
@@ -1752,9 +1801,11 @@ def is_special(d):
     return str(d.get("item", "")).startswith("place_")
 
 
-def island_building_blocks(state, position):
+def island_building_blocks(state, position, item=None):
     """Legacy decoration slots: does a standing building's footprint cover the slot's decoration footprint?"""
-    return any(building_footprint(state, b) & footprint_cells(position, rings_of("decor", state["land"])) for b in standing(state))
+    mine = mask_cells(decor_mask_key(item or "flowers"), state["land"], position) if masks_active() \
+        else footprint_cells(position, rings_of("decor", state["land"]))
+    return any(building_footprint(state, b) & mine for b in standing(state))
 
 
 def standing(state):
@@ -1799,6 +1850,16 @@ def island_state(conn, user_id, mode="normal"):
 NO_FREE_CELL = "Kein freier Platz auf der Insel – zuerst etwas verschieben oder abreißen"
 
 
+def land_fit_cell(state, position, building):
+    """version 5: the cell nearest to [position] where [building]'s ground fits the land (other pieces ignored)."""
+    x, y = position
+    harbour = building == "HARBOUR"
+    cells = sorted(coast_cells(state["land"]) if harbour else grid_cells(state["land"]),
+                   key=lambda c: ((c[0] - x) ** 2 + (c[1] - y) ** 2, c[1], c[0]))
+    key = building_mask_key(state, building)
+    return next((c for c in cells if not base_error(state, c, key, harbour=harbour)), list(position))
+
+
 def nearest_free_cell(state, position, kind, ignore_building=None, ignore_decor=None):
     """Nearest buildable cell (shared grid) where the piece is not blocked; deterministic. The harbour
     only looks at coast cells. None when there is no free cell at all (never an occupied one)."""
@@ -1806,6 +1867,11 @@ def nearest_free_cell(state, position, kind, ignore_building=None, ignore_decor=
     cells = sorted(coast_cells(state["land"]) if ignore_building == "HARBOUR" else grid_cells(state["land"]),
                    key=lambda c: ((c[0] - x) ** 2 + (c[1] - y) ** 2, c[1], c[0]))
     for cell in cells:
+        if masks_active():
+            # version 5: the whole mask must fit (ground on the land, harbour rule), not only the free spot
+            key = held_key(state, kind, ignore_building, ignore_decor)
+            if base_error(state, cell, key, harbour=ignore_building == "HARBOUR"):
+                continue
         if not placement_blocked(state, cell, kind, ignore_building, ignore_decor):
             return cell
     return None
@@ -1863,21 +1929,42 @@ def island_occupied(conn, user_id):
 
 def building_footprint(state, b):
     position = state.get("positions", {}).get(b, ISLAND_DEFAULT_POSITIONS[b])
+    if masks_active():
+        return mask_cells(building_mask_key(state, b), state["land"], position)
     return footprint_cells(position, rings_of("starter" if b in state.get("starters", []) else "big", state["land"]))
 
 
 def decor_footprint(state, d):
+    if masks_active():
+        return mask_cells(decor_mask_key(d.get("item", "")), state["land"], d["position"])
     return footprint_cells(d["position"], rings_of("special" if is_special(d) else "decor", state["land"]))
 
 
-def placement_blocked(state, position, kind, ignore_building=None, ignore_decor=None):
-    """Footprint overlap (FOOTPRINT_RINGS), nothing else. kind "building" = function building or special
-    decoration, "decor" = ordinary decoration. The piece that is being moved ([ignore_building] /
+def held_key(state, kind, ignore_building=None, ignore_decor=None, item=None):
+    """grid_version 5: the mask of the piece being placed (a building in its current state, the moved decoration
+    object, or a new item)."""
+    if ignore_building is not None:
+        return building_mask_key(state, ignore_building)
+    if ignore_decor is not None:
+        d = next((d for d in state.get("decor", []) if d["id"] == ignore_decor), None)
+        if d is not None:
+            return decor_mask_key(d.get("item", ""))
+    if item is not None:
+        return decor_mask_key(item)
+    return decor_mask_key("place_?" if kind == "building" else "?")
+
+
+def placement_blocked(state, position, kind, ignore_building=None, ignore_decor=None, item=None):
+    """Footprint overlap (FOOTPRINT_RINGS, version 5: the graphic masks), nothing else. kind "building" = function
+    building or special decoration, "decor" = ordinary decoration. The piece that is being moved ([ignore_building] /
     [ignore_decor]) never blocks itself, so its old spot is free for it."""
     starters = set(state.get("starters", []))
     # 7.9.9: stage-0 pieces (hammock, palm, ...) are small, so all six fit on the starter island.
     small = ignore_building is not None and ignore_building in starters
-    mine = footprint_cells(position, rings_of("decor" if kind != "building" else "starter" if small else "big", state["land"]))
+    if masks_active():
+        mine = mask_cells(held_key(state, kind, ignore_building, ignore_decor, item), state["land"], position)
+    else:
+        mine = footprint_cells(position, rings_of("decor" if kind != "building" else "starter" if small else "big", state["land"]))
     for b in standing(state):
         if b != ignore_building and building_footprint(state, b) & mine:
             return "Bauplatz ist durch ein Gebäude belegt"
@@ -1895,14 +1982,23 @@ def building_spot_error(state, position, building):
         return "Bauplatz liegt außerhalb der bebaubaren Fläche"
     if building == "HARBOUR" and not grid_coast(x, y, state["land"]):
         return "Der Hafen kann nur an der Küste stehen"
+    if masks_active():
+        reason = base_error(state, [x, y], building_mask_key(state, building), harbour=building == "HARBOUR")
+        if reason:
+            return reason
     reason = placement_blocked(state, [x, y], "building", ignore_building=building)
     if reason:
         return "Bauplatz ist bereits belegt" if "Gebäude" in reason else "Bauplatz ist durch einen Ort oder Deko belegt"
     return None
 
 
-def decor_blocked(conn, user_id, state, position, ignore_id=None, special=False):
-    return placement_blocked(state, position, "building" if special else "decor", ignore_decor=ignore_id)
+def decor_blocked(conn, user_id, state, position, ignore_id=None, special=False, item=None):
+    if masks_active():
+        key = held_key(state, "building" if special else "decor", ignore_decor=ignore_id, item=item)
+        reason = base_error(state, position, key)
+        if reason:
+            return reason
+    return placement_blocked(state, position, "building" if special else "decor", ignore_decor=ignore_id, item=item)
 
 
 def valid_island_cell(position, land=5):
@@ -2045,7 +2141,8 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
                             raise HTTPException(403, "Diese Deko ist noch nicht freigeschaltet")
                         if sum(1 for d in decor if not is_special(d)) >= DECOR_LIMITS[state["land"]]:
                             raise HTTPException(403, "Für mehr Deko zuerst die Insel erweitern")
-                reason = decor_blocked(conn, uid, state, [x, y], ignore_id=None if target is None else target["id"], special=special)
+                reason = decor_blocked(conn, uid, state, [x, y], ignore_id=None if target is None else target["id"], special=special,
+                                       item=payload.item if target is None else None)
                 if reason:
                     raise HTTPException(422, reason)
                 if target is None:
@@ -2086,13 +2183,28 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
         if relocating:
             if payload.building not in ISLAND_BUILDINGS:
                 raise HTTPException(422, "Ungültiger Bauplatz")
-            x, y = valid_island_cell(payload.position if payload.position is not None else ISLAND_DEFAULT_POSITIONS[payload.building], state["land"])
+            spot = payload.position
+            if spot is None and masks_active():
+                # An old client that names no spot for a NEW building (version 5): the default spot, moved onto the
+                # land if the picture's ground would stick out there (nearest such cell, like normalize_layout). It is
+                # then validated like any spot: another piece standing there is never bypassed.
+                spot = land_fit_cell(state, ISLAND_DEFAULT_POSITIONS[payload.building], payload.building)
+            x, y = valid_island_cell(spot if spot is not None else ISLAND_DEFAULT_POSITIONS[payload.building], state["land"])
             # Same island in both modes, so other buildings, special and ordinary decoration always block;
             # the harbour only stands on the coast (7.9.10).
             reason = building_spot_error(state, [x, y], payload.building)
             if reason:
                 raise HTTPException(422, reason)
             state.setdefault("positions", {})[payload.building] = [x, y]
+        elif payload.action == "upgrade" and masks_active():
+            # 7.9.12 (version 5): the next stage is a bigger picture. It must fit where the building stands (ground
+            # on the land, no other piece inside its mask) BEFORE anything is paid; otherwise it is moved first by
+            # the owner. Nothing is ever relocated on its own.
+            here = state.get("positions", {}).get(payload.building, ISLAND_DEFAULT_POSITIONS[payload.building])
+            reason = building_spot_error(state, here, payload.building)
+            if reason:
+                raise HTTPException(422, "Für die nächste Stufe ist hier kein Platz (%s) – bitte zuerst verschieben "
+                                        "oder die Insel erweitern" % reason)
         elif payload.action == "upgrade" and was_starter:
             # A stage-0 piece grows into a big building: if it now stands too close, it moves to the
             # nearest free cell (deterministic, like normalize_layout); nothing is ever lost.
@@ -2103,7 +2215,9 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             # The coast moves with the land: a harbour that would now stand inland (or outside) goes to the
             # nearest free coast cell, deterministically. Saved inland harbours are otherwise never moved.
             here = state.get("positions", {}).get("HARBOUR", ISLAND_DEFAULT_POSITIONS["HARBOUR"])
-            if building_spot_error(state, here, "HARBOUR"):
+            # version 5: only a harbour that is no longer on the coast moves; a stricter picture rule alone never
+            # relocates a saved harbour (it is shown and offered better spots when the owner moves it).
+            if (not grid_coast(here[0], here[1], state["land"])) if masks_active() else building_spot_error(state, here, "HARBOUR"):
                 state.setdefault("positions", {})["HARBOUR"] = free_cell_or_422(state, here, "building", ignore_building="HARBOUR")
         if payload.mode == "normal":
             if view["age_days"] < day:
@@ -2160,7 +2274,7 @@ def set_decor(payload: DecorUpdate, user: sqlite3.Row = Depends(current_user)) -
                 raise HTTPException(422, "Unbekannte Deko")
             if DECOR_ITEMS[item] > score:
                 raise HTTPException(403, "Diese Deko ist noch nicht freigeschaltet")
-            if slot not in decor_of(conn,user["id"]) and island_building_blocks(island_state(conn,user["id"],"normal"),ISLAND_DECOR_POSITIONS[int(slot)]):
+            if slot not in decor_of(conn,user["id"]) and island_building_blocks(island_state(conn,user["id"],"normal"),ISLAND_DECOR_POSITIONS[int(slot)], item):
                 raise HTTPException(422, "Dekoplatz ist durch ein Inselgebäude belegt")
             clean[int(slot)] = item
         conn.execute("DELETE FROM island_decor WHERE user_id=?", (user["id"],))

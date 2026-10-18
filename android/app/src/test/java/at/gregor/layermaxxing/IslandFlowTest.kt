@@ -110,8 +110,12 @@ class IslandFlowTest {
         val p = saved.state.positions["POST"]
         assertTrue("saved at $p, must be a land cell", p != null && IslandGrid.buildable(p, saved.state.land))
         assertTrue("moved towards the finger, not left in the middle: $p", p!![0] < 11)
-        // it stands on the shore: at least one neighbour cell is water
-        assertTrue("on the shore: $p", listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1).any { (dx, dy) -> !IslandGrid.buildable(p[0] + dx, p[1] + dy, saved.state.land) })
+        // 7.9.12: it stands at the edge where its whole picture still fits on the land: one more step towards the
+        // finger (up or left) and its ground would hang over the shore
+        val c = saved.state
+        assertTrue("fits at $p", IslandLayout.valid(c.copy(positions = c.positions - "POST"), IsleBuilding.POST, p))
+        assertTrue("at the edge: $p", listOf(-1 to 0, 0 to -1).any { (dx, dy) ->
+            IslandMasks.landProblem(IslandLayout.key(c, IslandTarget.Building(IsleBuilding.POST)), c.land, listOf(p[0] + dx, p[1] + dy), false) != null })
     }
 
     @Test fun aTapInTheWaterDoesNotMoveThePreview() {

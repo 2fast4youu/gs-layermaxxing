@@ -102,7 +102,7 @@ class StageSceneRenderTest {
                 IsleBuilding.HARBOUR -> rule.onAllNodesWithText("Gemeinsam auf den Gipfel")[0].assertExists()
                 IsleBuilding.LIGHTHOUSE -> { rule.onAllNodesWithText("Jonas")[0].assertExists(); rule.onAllNodesWithText("Gerfried")[0].assertExists() }
                 IsleBuilding.LIBRARY -> rule.onAllNodesWithContentDescription("Kategorie Witze")[0].assertExists()
-                IsleBuilding.CAMPFIRE -> rule.onAllNodesWithText("Bergfreunde")[0].assertExists()
+                IsleBuilding.CAMPFIRE -> rule.onAllNodesWithText("Bergfreunde", substring = true)[0].assertExists()
                 IsleBuilding.HOUSE -> rule.onAllNodesWithText("Gregor")[0].assertExists()
             }
             // header readability on the pixels: the cream title against its painted sign and shadow (WCAG AA 4.5:1)
@@ -125,6 +125,8 @@ class StageSceneRenderTest {
             }
             // the light on the open sea is the configured one: blue-green by day, warm in the evening, dark at night
             for (level in 0..2) {
+                // (7.9.12: where the open book of a stage lies over that strip of sea, the sea is not visible there)
+                if ((StageScenes.of(b, level).book?.top ?: 1f) < .19f) continue
                 val (r, g, bl) = sea.getValue(b to level)
                 val l = lum((0xFF shl 24) or (r shl 16) or (g shl 8) or bl)
                 val m = "$b stage $level sea ($r,$g,$bl)"

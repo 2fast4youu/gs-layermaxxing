@@ -134,24 +134,24 @@ class IslandWorldTest {
         // Creative mode builds on the same island: places and decoration still block.
         assertTrue(!IslandLayout.valid(withDecor.copy(mode="creative"),IsleBuilding.POST,listOf(8,9)))
     }
-    /** Version 3 (7.9.10 rings); version 4 and 2 are pinned in IslandRasterTest. */
+    /** Version 3 (7.9.10 rings), the rule itself ([IslandLayout.ruleValidDecor]); 7.9.12 masks: IslandMasksTest. */
     @Test fun freeDecorationFollowsTheSameGridRulesAsTheServer() {
         val c=ApiClient.IslandConstruction(buildings=mapOf("POST" to 1),positions=mapOf("POST" to listOf(10,11)),land=5,
             decor=listOf(ApiClient.IslandDecor(100,"bench",listOf(12,14))),gridVersion=PlacementRule.DIAMONDS)
-        assertTrue(!IslandLayout.validDecor(c,listOf(0,0)))              // sea
-        assertTrue(!IslandLayout.validDecor(c,listOf(11,10)))            // on the building's footprint (behind its foot)
-        assertTrue(!IslandLayout.validDecor(c,listOf(12,14)))            // on other decor
-        assertTrue(IslandLayout.validDecor(c,listOf(12,14),ignoreId=100)) // moving itself
+        assertTrue(!IslandLayout.ruleValidDecor(c,listOf(0,0)))              // sea
+        assertTrue(!IslandLayout.ruleValidDecor(c,listOf(11,10)))            // on the building's footprint (behind its foot)
+        assertTrue(!IslandLayout.ruleValidDecor(c,listOf(12,14)))            // on other decor
+        assertTrue(IslandLayout.ruleValidDecor(c,listOf(12,14),ignoreId=100)) // moving itself
         // 7.9.10: right beside / in front of a footprint is free, no hidden clearance (7.9.9 refused these by distance)
-        assertTrue(IslandLayout.validDecor(c,listOf(11,12)))
-        assertTrue(IslandLayout.validDecor(c,listOf(10,12)))
-        assertTrue(IslandLayout.validDecor(c,listOf(12,15)))
-        assertTrue(IslandLayout.validDecor(c,listOf(6,14)))
+        assertTrue(IslandLayout.ruleValidDecor(c,listOf(11,12)))
+        assertTrue(IslandLayout.ruleValidDecor(c,listOf(10,12)))
+        assertTrue(IslandLayout.ruleValidDecor(c,listOf(12,15)))
+        assertTrue(IslandLayout.ruleValidDecor(c,listOf(6,14)))
         val draft=IslandDraft(IslandTarget.Decor("palm"),listOf(6,14))
         val preview=IslandLayout.preview(ApiClient.HomeIsland(1,emptyMap(),0,emptyList(),construction=c),draft)
         assertEquals(2,preview.construction.decor.size)
-        val free=IslandLayout.freeCell(listOf(11,12)) { IslandLayout.validDecor(c,it) }
-        assertTrue(IslandLayout.validDecor(c,free))
+        val free=IslandLayout.freeCell(listOf(11,12)) { IslandLayout.ruleValidDecor(c,it) }
+        assertTrue(IslandLayout.ruleValidDecor(c,free))
     }
     @Test fun buildingFootprintsScaleWithLandSoAdjacentGridCellsDoNotOverlap() {
         // 7.9.10 (version 3): two buildings whose footprints touch (2·rings+1 cells apart) stand far enough apart that

@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -117,7 +119,9 @@ internal fun IslandUpgradeContent(
             CostLine(listOf("gratis" to true), "Start: gratis · Ausbau ab Stufe 1 kostet Punkte.")
             IslandWoodButton(if(busy) "Wird gespeichert…" else "Gratis bauen", { onAction("upgrade") }, Modifier.fillMaxWidth(), enabled=!busy)
         } else if(level<max) {
-            val allowed=IslandEvolution.allowed(c,cost,day)
+            // 7.9.12: the next stage's bigger picture must fit where the building stands, checked before paying
+            val room=building?.let { IslandLayout.upgradeProblem(c, it) }
+            val allowed=IslandEvolution.allowed(c,cost,day) && room==null
             CostLine(
                 if(creative) listOf("gratis" to true) else listOfNotNull("$cost P" to (c.available>=cost), ("ab Tag $day" to (c.ageDays>=day)).takeIf { day>0 }),
                 when {
@@ -128,6 +132,11 @@ internal fun IslandUpgradeContent(
                 })
             IslandWoodButton(if(busy) "Wird gespeichert…" else if(building==null) "Land erweitern" else if(level==0) "Gebäude bauen" else "Auf Stufe ${level+1} ausbauen",
                 { onAction(if(building==null) "expand" else "upgrade") }, Modifier.fillMaxWidth(), enabled=!busy && allowed)
+            if(room!=null) {
+                Text(room, color=Color(0xFF8C2F22), fontFamily=Kit.Body, fontWeight=androidx.compose.ui.text.font.FontWeight.Bold, fontSize=13.sp,
+                    modifier=Modifier.semantics { contentDescription="Kein Platz: $room" })
+                IslandWoodButton("Zuerst verschieben", { onAction("move") }, Modifier.fillMaxWidth(), enabled=!busy, secondary=true)
+            }
         } else Row(Modifier.background(IslandWood.Paper, androidx.compose.foundation.shape.RoundedCornerShape(50)).border(1.5.dp, IslandWood.Moss, androidx.compose.foundation.shape.RoundedCornerShape(50))
             .padding(horizontal=14.dp, vertical=6.dp), verticalAlignment=Alignment.CenterVertically) {
             AppIcon(R.drawable.ico_check, null, tint=IslandWood.Moss, size=16.dp); Spacer(Modifier.width(6.dp))

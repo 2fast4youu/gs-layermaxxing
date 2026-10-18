@@ -22,7 +22,8 @@ def test_every_stage_zero_building_is_free_without_points_or_day_gate(tmp_path):
         st = state(c, a)
         assert st["construction"]["available"] == 0 and st["construction"]["age_days"] == 0
         assert st["construction"]["starter_cost"] == 0 and st["construction"]["starters"] == []
-        for b in m.ISLAND_BUILDINGS:
+        # 7.9.12 (grid_version 5): the harbour first, its coast spot with open water in front is the scarce one.
+        for b in ["HARBOUR"] + [x for x in m.ISLAND_BUILDINGS if x != "HARBOUR"]:
             con = st["construction"]
             # 7.9.10: the full spot rule (grid, harbour only on the coast, footprint overlap).
             spot = next(list(cell) for cell in m.grid_cells(con["land"]) if not m.building_spot_error(con, cell, b))
@@ -42,7 +43,8 @@ def test_upgrade_from_stage_zero_costs_the_first_step_and_keeps_the_spot(tmp_pat
     m = load_app(tmp_path)
     with TestClient(m.app) as c:
         a, b = register(c, "A"), register(c, "B")
-        st = post(c, a, state(c, a), action="build", building="POST", position=[4, 9]).json()
+        # 7.9.12: a spot where the stage-1 picture fits as well ([4, 9] is the land-0 rim, see test_v16_masks)
+        st = post(c, a, state(c, a), action="build", building="POST", position=[10, 11]).json()
         assert post(c, a, st, action="upgrade", building="POST").status_code == 403  # 25 P missing
         befriend(c, a, b)
         earn(c, a, b, 30)
@@ -51,11 +53,12 @@ def test_upgrade_from_stage_zero_costs_the_first_step_and_keeps_the_spot(tmp_pat
         assert up.status_code == 200, up.text
         con = up.json()["construction"]
         assert con["buildings"]["POST"] == 1 and con["spent"] == 25
-        assert con["starters"] == [] and con["positions"]["POST"] == [4, 9]
+        assert con["starters"] == [] and con["positions"]["POST"] == [10, 11]
 
 
 def test_stage_zero_pieces_block_the_grid_move_and_demolish_without_refund(tmp_path):
     m = load_app(tmp_path)
+    m.GRID_VERSION = 4  # historic 7.9.11 rule, kept exactly; version 5: test_v16_masks
     with TestClient(m.app) as c:
         a = register(c, "A")
         st = post(c, a, state(c, a), action="build", building="HOUSE", position=[10, 6]).json()
@@ -87,7 +90,9 @@ def test_old_ledgers_are_untouched_and_old_upgrade_from_nothing_still_costs(tmp_
         con = st["construction"]
         assert con["buildings"] == {"POST": 2} and con["spent"] == 85 and con["starters"] == []
         # An old client still places a building straight at stage 1 for the first step's price (no refund, no change).
-        spot = next(list(cell) for cell in m.grid_cells(con["land"]) if not m.placement_blocked(con, cell, "building"))
+        # 7.9.12: the full spot rule for the stage-1 hut (version 5: its whole picture must fit)
+        house = {**con, "buildings": {**con["buildings"], "HOUSE": 1}}
+        spot = next(list(cell) for cell in m.grid_cells(con["land"]) if not m.building_spot_error(house, cell, "HOUSE"))
         up = post(c, a, st, action="upgrade", building="HOUSE", position=spot)
         assert up.status_code == 200, up.text
         up = up.json()["construction"]
@@ -101,7 +106,7 @@ def test_creative_downgrade_from_stage_one_leaves_the_stage_zero_piece(tmp_path)
         with m.db() as conn:
             conn.execute("UPDATE users SET creative_entitled=1 WHERE id=?", (a["user_id"],))
         st = state(c, a, "creative")
-        st = post(c, a, st, mode="creative", action="upgrade", building="POST", position=[4, 9]).json()
+        st = post(c, a, st, mode="creative", action="upgrade", building="POST", position=[10, 11]).json()
         st = post(c, a, st, mode="creative", action="downgrade", building="POST").json()
         assert st["construction"]["buildings"].get("POST", 0) == 0 and st["construction"]["starters"] == ["POST"]
         st = post(c, a, st, mode="creative", action="downgrade", building="POST").json()
@@ -110,6 +115,9 @@ def test_creative_downgrade_from_stage_one_leaves_the_stage_zero_piece(tmp_path)
 
 def test_a_stage_zero_piece_that_grows_too_close_moves_to_a_free_cell(tmp_path):
     m = load_app(tmp_path)
+    # Historic 7.9.10/7.9.11 rule (version-4 code path, kept exactly). Version 5 never relocates on an upgrade:
+    # it refuses before paying and asks to move first (test_v16_masks).
+    m.GRID_VERSION = 4
     with TestClient(m.app) as c:
         a = register(c, "A")
         with m.db() as conn:

@@ -49,3 +49,14 @@ internal fun vale(
     built = built, lettersInTransit = transit, epEnabled = epEnabled, lettersEnabled = lettersEnabled,
     abandoned = false,
 )
+
+/**
+ * 7.9.12: a full island (land 5) where every function stands at stage 1, 2 or 3 and three decorations lie beside them
+ * without any two painted pictures overlapping (rule 5, checked by the server's test_v16 reference and IslandMasksTest).
+ */
+internal object FitIsland {
+    val SPOTS = mapOf("HARBOUR" to listOf(10, 15), "HOUSE" to listOf(8, 6), "POST" to listOf(12, 6), "LIGHTHOUSE" to listOf(15, 9),
+        "LIBRARY" to listOf(5, 8), "CAMPFIRE" to listOf(7, 11))
+    val DECOR = listOf(ApiClient.IslandDecor(0, "flowers", listOf(15, 11), 0), ApiClient.IslandDecor(101, "bench", listOf(13, 13)),
+        ApiClient.IslandDecor(201, "place_hut", listOf(10, 9), name = "Brennerhaus"))
+}
