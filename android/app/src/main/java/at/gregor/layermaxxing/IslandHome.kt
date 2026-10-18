@@ -102,8 +102,22 @@ internal object IsleDecor {
         "flowers", "campfire" -> .075f
         else -> .09f
     } }
+    /**
+     * 7.9.11: an item this app has no picture for (old data, or a newer server) still stands on the island and the
+     * server counts it as an obstacle. It is drawn as a painted wooden signpost with its key in the name, so the
+     * blocked cell is visible and the piece can be tapped (and removed by the owner); it is never hidden, ignored
+     * or deleted automatically.
+     */
+    val UNKNOWN_RES = R.drawable.fief_signpost
+    fun known(key: String) = res(key) != null
+    /** The sprite that is drawn: the item's own picture or the placeholder signpost. */
+    fun shown(key: String): Int = res(key) ?: UNKNOWN_RES
     /** Name on the island: the own name of a special piece ("Coden am Berg"), else the item's label. */
-    fun name(d: ApiClient.IslandDecor): String = if (SpecialDecor.isSpecial(d.item)) d.name.ifBlank { SpecialDecor.label(d.item) } else labels[d.item] ?: "Deko"
+    fun name(d: ApiClient.IslandDecor): String = when {
+        !known(d.item) -> d.name.ifBlank { "Unbekannte Deko (${d.item})" }
+        SpecialDecor.isSpecial(d.item) -> d.name.ifBlank { SpecialDecor.label(d.item) }
+        else -> labels[d.item] ?: "Deko"
+    }
 
     /** Taller items get a bit more room so they read at the same visual weight. */
     fun size(key: String, islandWidth: Dp): Dp = islandWidth * when (key) {
@@ -119,10 +133,11 @@ internal fun decorPieces(decor: Map<Int, String>, life: ApiClient.HomeIsland?, l
         else IslandPlans.homeSlots.mapIndexedNotNull { i, (sx, sy) -> decor[i]?.let { ApiClient.IslandDecor(i, it, listOf((sx * 20).toInt(), (sy * 20).toInt()), i) } } +
             // A server without the construction ledger still lists old life places: shown as the special pieces they are now.
             SpecialDecor.legacyPlaces(life?.places.orEmpty())
-    return objects.mapNotNull { d ->
+    // 7.9.11: unknown items are not filtered out any more (they are obstacles): they get the placeholder sprite.
+    return objects.map { d ->
         val (x, y) = IslandPlans.onLand(d.position[0] / 20f, d.position[1] / 20f, landScale)
-        IsleDecor.res(d.item)?.let { d to IslandPiece(it, x, y, IsleDecor.share(d.item) * IslandPlans.pieceScale(landScale) / IslandPlans.pieceScale(1f),
-            sway = d.item == "palm" || d.item == "flag", name = IsleDecor.name(d), lifted = d.id == lifted) }
+        d to IslandPiece(IsleDecor.shown(d.item), x, y, IsleDecor.share(d.item) * IslandPlans.pieceScale(landScale) / IslandPlans.pieceScale(1f),
+            sway = d.item == "palm" || d.item == "flag", name = IsleDecor.name(d), lifted = d.id == lifted)
     }
 }
 
@@ -162,6 +177,8 @@ internal fun HubIsland(
     selectionBar: (@Composable () -> Unit)? = null,
     /** While a piece is held: every other piece's footprint, outlined in quiet red (7.9.10). */
     obstacles: List<IslandLayout.Obstacle> = emptyList(),
+    /** While a piece is held: the only cells drawn as usable, [IslandLayout.targets] (7.9.11). */
+    placementTargets: List<List<Int>> = emptyList(),
 ) {
     val liftedBuilding = (placement?.target as? IslandTarget.Building)?.building
     val liftedDecor = (placement?.target as? IslandTarget.Decor)?.let { it.id ?: IslandLayout.DRAFT_DECOR_ID }
@@ -180,7 +197,7 @@ internal fun HubIsland(
         is IslandTarget.Decor -> IsleDecor.share(t.item) * IslandPlans.pieceScale(plan.landScale) / IslandPlans.pieceScale(1f)
     }
     val surfaceActive = placement != null
-    // 7.9.10: the held piece's footprint in grid cells, the same rule the server checks.
+    // The held piece's footprint in grid cells under the rule the server declares (7.9.10, versioned 7.9.11).
     val heldRings = placement?.let { IslandLayout.rings(life?.construction ?: ApiClient.IslandConstruction(), it.target) } ?: 0
     // 7.9.10: the held harbour only ever stands on (and is drawn over) the coast cells.
     val coastOnly = liftedBuilding == IsleBuilding.HARBOUR
@@ -202,7 +219,7 @@ internal fun HubIsland(
                 IslandGridUnderlay(land, showGrid = placement != null, focus = placement?.position,
                     focusRings = heldRings, valid = placementValid, selection = outline,
                     obstacles = if (placement != null) obstacles else emptyList(),
-                    coastOnly = coastOnly)
+                    coastOnly = coastOnly, targets = if (placement != null) placementTargets else emptyList())
             }
         },
     ) {

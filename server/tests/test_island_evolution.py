@@ -246,10 +246,12 @@ def test_creative_shrink_never_saves_overlapping_layout_or_loses_buildings(tmp_p
         with m.db() as conn: conn.execute('UPDATE users SET creative_entitled=1 WHERE id=?',(a['user_id'],))
         current=state(c,a,'creative')
         for _ in range(5): current=action(c,a,current,action='expand',building=None,mode='creative').json()
-        for b,p in [('POST',[8,9]),('HOUSE',[12,9])]:
+        for b,p in [('POST',[9,9]),('HOUSE',[11,9])]:
             r=c.post('/api/island/construction',headers=auth(a),json={'mode':'creative','action':'upgrade','building':b,'position':p,'expected_revision':current['construction']['revision']})
             assert r.status_code==200,r.text;current=r.json()
-        # 7.9.10 footprints: 4 cells apart fit down to land 2 (1 ring each), land 1 (2 rings each) would overlap.
+        # 7.9.11 compact footprints (version 4): 2 cells apart fit down to land 2 (one cell each), on land 1 the
+        # big pieces have one ring each and would overlap. (7.9.10, version 3: 4 cells apart, 1 vs 2 rings.)
+        assert m.FOOTPRINT_RINGS['big'][2]==0 and m.FOOTPRINT_RINGS['big'][1]==1
         for _ in range(3): current=action(c,a,current,action='shrink',building=None,mode='creative').json()
         assert current['construction']['land']==2
         assert action(c,a,current,action='shrink',building=None,mode='creative').status_code==422

@@ -69,6 +69,8 @@ class ApiClient(
     data class ServerInfo(
         val name: String, val role: String, val version: String, val warning: String,
         val features: List<String>,
+        /** 7.9.11: the placement rule the server validates; null = an older server that does not publish it. */
+        val gridVersion: Int? = null,
     )
     data class Auth(val token: String, val userId: Long, val name: String, val recoveryCode: String?)
     data class Status(
@@ -143,6 +145,11 @@ class ApiClient(
         val specialLimit: Int = SpecialDecor.LIMIT,
         /** 7.9.9: functions standing at their free stage 0 (hammock, letter tree, …); not a level. */
         val starters: Set<String> = emptySet(),
+        /**
+         * 7.9.11: the placement rule the server validates ([PlacementRule]). Local fixtures use the current rule;
+         * a network payload without the field is [PlacementRule.LEGACY] (parseHomeIsland), never silently the newest.
+         */
+        val gridVersion: Int = PlacementRule.CURRENT,
     )
     /** [name] = own name of a special decoration ("Coden am Berg"), empty for ordinary decoration. */
     data class IslandDecor(val id: Int, val item: String, val position: List<Int>, val slot: Int? = null, val name: String = "")
@@ -219,6 +226,7 @@ class ApiClient(
         ServerInfo(
             json.getString("name"), json.getString("role"), json.getString("version"),
             json.optString("warning"), json.getJSONArray("features").strings(),
+            gridVersion = PlacementRule.read(json),
         )
     }
 
@@ -548,8 +556,9 @@ class ApiClient(
                     decorLimits = ints("decor_limits", listOf(6, 8, 10, 12, 14, 16)),
                     specialCosts = c.optJSONObject("special_costs")?.let { s -> s.keys().asSequence().associateWith { s.getInt(it) } } ?: SpecialDecor.defaultCosts,
                     specialLimit = c.optInt("special_limit", SpecialDecor.LIMIT),
-                    starters = c.optJSONArray("starters")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty())
-            } ?: IslandConstruction(supported = false),
+                    starters = c.optJSONArray("starters")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty(),
+                    gridVersion = PlacementRule.parse(c))
+            } ?: IslandConstruction(supported = false, gridVersion = PlacementRule.LEGACY),
         )
     }
     suspend fun setPlaces(token: String, places: Map<Int, LifePlace>) = unitCall(

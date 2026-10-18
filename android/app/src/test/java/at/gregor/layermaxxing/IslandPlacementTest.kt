@@ -13,6 +13,8 @@ import java.io.File
  * 7.9.10: ONE occupancy rule for preview, ✓ and server. A piece occupies the grid cells of its footprint
  * (|di| + |dj| <= rings, pinned in server/app/island_grid.json like the grid itself); two pieces never share
  * a cell and there is no other clearance. Only the harbour has the extra coast rule.
+ * 7.9.11: the rings follow the server's grid_version; tests of the 7.9.10 rings say gridVersion = 3 explicitly,
+ * the default fixtures run the current compact rule 4 (IslandRasterTest covers versions 2/3/4/unknown).
  */
 class IslandPlacementTest {
     private val json by lazy {
@@ -22,15 +24,22 @@ class IslandPlacementTest {
     private fun cellsOf(key: String, land: Int): Set<List<Int>> = json.getJSONObject(key).getJSONArray("$land").let { a ->
         (0 until a.length()).map { a.getJSONArray(it).let { c -> listOf(c.getInt(0), c.getInt(1)) } }.toSet()
     }
-    private fun rings(key: String) = json.getJSONObject("footprints").getJSONArray(key).let { a -> (0 until a.length()).map { a.getInt(it) } }
+    private fun rings(key: String, table: String = "footprints") = json.getJSONObject(table).getJSONArray(key).let { a -> (0 until a.length()).map { a.getInt(it) } }
     private fun empty(land: Int) = ApiClient.IslandConstruction(land = land)
+    private fun table(version: Int) = PlacementRule.rings(version)!!
     private fun l1(p: List<Int>, q: List<Int>) = kotlin.math.abs(p[0] - q[0]) + kotlin.math.abs(p[1] - q[1])
 
     @Test fun coastCellsAndFootprintsAreTheServerFixture() {
         for (land in 0..5) assertEquals("coast $land", cellsOf("coast", land), IslandGrid.coastCells(land).toSet())
-        assertEquals(rings("big"), (0..5).map { IslandFootprint.BIG[it] })
-        assertEquals(rings("starter"), (0..5).map { IslandFootprint.STARTER[it] })
-        assertEquals(rings("decor"), (0..5).map { IslandFootprint.DECOR[it] })
+        assertEquals(4, json.getInt("version"))
+        assertEquals(PlacementRule.CURRENT, json.getInt("version"))
+        assertEquals(rings("big"), IslandFootprint.V4.big)
+        assertEquals(rings("starter"), IslandFootprint.V4.starter)
+        assertEquals(rings("decor"), IslandFootprint.V4.decor)
+        // version 3 stays exactly the 7.9.10 rule
+        assertEquals(rings("big", "footprints_v3"), IslandFootprint.V3.big)
+        assertEquals(rings("starter", "footprints_v3"), IslandFootprint.V3.starter)
+        assertEquals(rings("decor", "footprints_v3"), IslandFootprint.V3.decor)
         assertEquals(listOf(1, 5, 13), (0..2).map { IslandFootprint.cells(listOf(10, 10), it).size })
         // the spot (the sprite's foot) is the front tip, the diamond lies behind it — the server's footprint_cells
         assertEquals(setOf(listOf(10, 10), listOf(9, 9), listOf(10, 9), listOf(11, 9), listOf(10, 8)), IslandFootprint.cells(listOf(10, 10), 1))
@@ -53,17 +62,17 @@ class IslandPlacementTest {
     }
 
     @Test fun everyCellWhoseFootprintIsFreeIsUsableNoHiddenGap() {
-        for (land in 0..5) {
+        for (version in listOf(PlacementRule.DIAMONDS, PlacementRule.COMPACT)) for (land in 0..5) {
             val house = listOf(10, 10)
-            val c = ApiClient.IslandConstruction(land = land, buildings = mapOf("HOUSE" to 1), positions = mapOf("HOUSE" to house))
-            val taken = IslandFootprint.cells(house, IslandFootprint.BIG[land])
+            val c = ApiClient.IslandConstruction(land = land, buildings = mapOf("HOUSE" to 1), positions = mapOf("HOUSE" to house), gridVersion = version)
+            val taken = IslandFootprint.cells(house, table(version).big[land])
             for (p in IslandGrid.buildableCells(land)) {
-                val free = IslandFootprint.cells(p, IslandFootprint.DECOR[land]).none { it in taken }
-                assertEquals("decor $p land $land", free, IslandLayout.validDecor(c, p))
+                val free = IslandFootprint.cells(p, table(version).decor[land]).none { it in taken }
+                assertEquals("v$version decor $p land $land", free, IslandLayout.validDecor(c, p))
             }
             // Right beside the footprint is free: touching (a cell next to it), not overlapping.
             val touching = IslandGrid.buildableCells(land).filter { p ->
-                val mine = IslandFootprint.cells(p, IslandFootprint.DECOR[land])
+                val mine = IslandFootprint.cells(p, table(version).decor[land])
                 mine.none { it in taken } && mine.any { (x, y) -> listOf(listOf(x + 1, y), listOf(x - 1, y), listOf(x, y + 1), listOf(x, y - 1)).any { it in taken } }
             }
             assertTrue("land $land", touching.isNotEmpty() && touching.all { IslandLayout.validDecor(c, it) })
@@ -71,9 +80,11 @@ class IslandPlacementTest {
         }
     }
 
+    /** Version 3 (7.9.10 rings); the compact version 4 is [theOwnOldSpotNeverBlocksUnderTheCompactRule]. */
     @Test fun theMovedPiecesOwnOldSpotNeverBlocksForeignOverlapAlways() {
         val c = ApiClient.IslandConstruction(land = 5, buildings = mapOf("POST" to 2, "HOUSE" to 1),
-            positions = mapOf("POST" to listOf(10, 10), "HOUSE" to listOf(10, 6)), decor = listOf(ApiClient.IslandDecor(100, "bench", listOf(14, 10))))
+            positions = mapOf("POST" to listOf(10, 10), "HOUSE" to listOf(10, 6)), decor = listOf(ApiClient.IslandDecor(100, "bench", listOf(14, 10))),
+            gridVersion = PlacementRule.DIAMONDS)
         // one step: overlaps only its own old footprint
         assertTrue(IslandLayout.valid(c, IsleBuilding.POST, listOf(10, 11)))
         assertTrue(IslandLayout.validDecor(c, listOf(14, 11), ignoreId = 100))
@@ -84,20 +95,36 @@ class IslandPlacementTest {
         assertEquals("Belegt – rot markierte Fläche", IslandLayout.reason(h, IslandDraft(IslandTarget.Building(IsleBuilding.POST), listOf(10, 8))))
     }
 
-    @Test fun obstaclesAreEveryOtherPieceWithItsFootprintNeverTheHeldOne() {
+    @Test fun theOwnOldSpotNeverBlocksUnderTheCompactRule() {
+        val c = ApiClient.IslandConstruction(land = 5, buildings = mapOf("POST" to 2, "HOUSE" to 1),
+            positions = mapOf("POST" to listOf(10, 10), "HOUSE" to listOf(10, 6)), decor = listOf(ApiClient.IslandDecor(100, "bench", listOf(14, 10))))
+        assertEquals(PlacementRule.COMPACT, c.gridVersion)
+        // its own cell and every neighbour are free for the moved post; the house and the bench hold exactly their cell
+        assertTrue(IslandLayout.valid(c, IsleBuilding.POST, listOf(10, 10)))
+        assertTrue(IslandLayout.valid(c, IsleBuilding.POST, listOf(10, 7)))
+        assertTrue(IslandLayout.valid(c, IsleBuilding.POST, listOf(14, 11)))
+        assertFalse(IslandLayout.valid(c, IsleBuilding.POST, listOf(10, 6)))
+        assertFalse(IslandLayout.valid(c, IsleBuilding.POST, listOf(14, 10)))
+        assertTrue(IslandLayout.validDecor(c, listOf(14, 10), ignoreId = 100))
+        val h = ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c)
+        assertEquals("Belegt – rot markierte Fläche", IslandLayout.reason(h, IslandDraft(IslandTarget.Building(IsleBuilding.POST), listOf(10, 6))))
+    }
+
+    @Test fun obstaclesAreEveryOtherPieceWithItsFootprintNeverTheHeldOne() = listOf(PlacementRule.DIAMONDS, PlacementRule.COMPACT).forEach { version ->
         val c = ApiClient.IslandConstruction(land = 5, buildings = IsleBuilding.entries.associate { it.name to 2 },
-            decor = listOf(ApiClient.IslandDecor(100, "bench", listOf(14, 12)), ApiClient.IslandDecor(201, "place_hut", listOf(10, 10), name = "Hütte")))
+            decor = listOf(ApiClient.IslandDecor(100, "bench", listOf(14, 12)), ApiClient.IslandDecor(201, "place_hut", listOf(10, 10), name = "Hütte")),
+            gridVersion = version)
         val held = IslandTarget.Building(IsleBuilding.POST)
         val obstacles = IslandLayout.obstacles(c, held)
         assertEquals(IsleBuilding.entries.size - 1 + 2, obstacles.size)
         assertFalse(obstacles.any { it.target == held })
         val hut = obstacles.single { it.target == IslandTarget.Decor("place_hut", 201) }
-        assertEquals(IslandFootprint.cells(listOf(10, 10), IslandFootprint.BIG[5]), hut.cells)
+        assertEquals(IslandFootprint.cells(listOf(10, 10), table(version).big[5]), hut.cells)
         // a held decoration is not its own obstacle either
         assertFalse(IslandLayout.obstacles(c, IslandTarget.Decor("bench", 100)).any { it.target == IslandTarget.Decor("bench", 100) })
         // the held piece's footprint: a new building is its stage 0, a standing one keeps its stage
-        assertEquals(IslandFootprint.BIG[5], IslandLayout.rings(c, held))
-        assertEquals(IslandFootprint.STARTER[0], IslandLayout.rings(empty(0), held))
+        assertEquals(table(version).big[5], IslandLayout.rings(c, held))
+        assertEquals(table(version).starter[0], IslandLayout.rings(empty(0).copy(gridVersion = version), held))
     }
 
     /** The harbour's snap: every finger (inland, shore, water) gives a coast cell; every other piece keeps the land snap. */
@@ -145,7 +172,7 @@ class IslandPlacementTest {
     @Test fun freeCellSearchesTheWholeIslandAndNeverPicksATakenSpot() {
         val target = listOf(17, 9); val from = listOf(3, 9)
         assertTrue(kotlin.math.abs(target[0] - from[0]) > 10)
-        val keep = IslandFootprint.cells(target, IslandFootprint.STARTER[5])
+        val keep = IslandFootprint.cells(target, IslandFootprint.V4.starter[5])
         val others = IslandGrid.coastCells(5).filter { it !in keep }
         val c = ApiClient.IslandConstruction(land = 5, decor = others.mapIndexed { n, p -> ApiClient.IslandDecor(100 + n, "flowers", p) })
         assertEquals(listOf(target), IslandGrid.coastCells(5).filter { IslandLayout.valid(c, IsleBuilding.HARBOUR, it) })
@@ -168,14 +195,32 @@ class IslandPlacementTest {
         assertTrue(UpgradePreview.height(170.dp) > UpgradePreview.height(150.dp))
     }
 
-    /** No oversized padding: the footprint is about as wide as the drawn sprite, on every land and stage. */
+    /** Version 3 (7.9.10): no oversized padding, the footprint is about as wide as the drawn sprite, on every land and stage. */
     @Test fun footprintWidthFollowsTheSprite() {
+        for (land in 0..5) for (tier in 0..3) {
+            val c = if (tier == 0) ApiClient.IslandConstruction(land = land, starters = IsleBuilding.entries.map { it.name }.toSet(), gridVersion = PlacementRule.DIAMONDS)
+                else ApiClient.IslandConstruction(land = land, buildings = IsleBuilding.entries.associate { it.name to tier }, gridVersion = PlacementRule.DIAMONDS)
+            IslandPlans.placedBuildings(0, c).forEach { (b, p) ->
+                val print = (2 * IslandLayout.buildingRings(c, b) + 1) * IslandGrid.step(land)
+                assertTrue("$b tier $tier land $land: ${print / p.size}", print / p.size in .6f..1.7f)
+            }
+        }
+    }
+
+    /**
+     * Version 4 (7.9.11): the footprint is never wider than the sprite's own box (no touch padding counts), never
+     * bigger than the version-3 one, and on the big land (2..5) and for every stage-0 piece it is one real ground cell.
+     */
+    @Test fun compactFootprintIsNeverWiderThanTheSpriteAndOneCellOnTheBigLand() {
         for (land in 0..5) for (tier in 0..3) {
             val c = if (tier == 0) ApiClient.IslandConstruction(land = land, starters = IsleBuilding.entries.map { it.name }.toSet())
                 else ApiClient.IslandConstruction(land = land, buildings = IsleBuilding.entries.associate { it.name to tier })
             IslandPlans.placedBuildings(0, c).forEach { (b, p) ->
-                val print = (2 * IslandLayout.buildingRings(c, b) + 1) * IslandGrid.step(land)
-                assertTrue("$b tier $tier land $land: ${print / p.size}", print / p.size in .6f..1.7f)
+                val rings = IslandLayout.buildingRings(c, b)
+                assertTrue("$b tier $tier land $land", (2 * rings + 1) * IslandGrid.step(land) <= p.size)
+                assertTrue(rings <= IslandLayout.buildingRings(c.copy(gridVersion = PlacementRule.DIAMONDS), b))
+                if (land >= 2 || tier == 0) assertEquals("$b tier $tier land $land", 0, rings)
+                assertTrue(IslandFootprint.cells(listOf(10, 10), rings).size <= 5)
             }
         }
     }

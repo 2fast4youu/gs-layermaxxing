@@ -441,13 +441,16 @@ class VillageVisualReview {
     @Test fun islandPlaceHall() = shot("34-gemeindehaus") { Isles(start = "home", placeKey = "CAMPFIRE") }
     @Test fun islandPlaceHouse() = shot("35-haus") { Isles(start = "home", placeKey = "HOUSE") }
     @Composable private fun EvolutionIsland(creative: Boolean = false, grown: Boolean = false, start: String = "home", startingPoints: Int = 500, rejectFirst: Boolean = false,
-                                            nav: Boolean = false, withLife: Boolean = false, level: Int = 3, eligible: Boolean = false, starters: Boolean = false) {
+                                            nav: Boolean = false, withLife: Boolean = false, level: Int = 3, eligible: Boolean = false, starters: Boolean = false,
+                                            version: Int = PlacementRule.CURRENT, legacyDecor: Boolean = false) {
         var creativeOn by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(creative) }
         var state by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(ApiClient.IslandConstruction(
             mode=if(creative) "creative" else "normal", available=startingPoints, ageDays=if(startingPoints==0) 0 else 21,
             buildings=if(grown) IsleBuilding.entries.associate { it.name to level } else emptyMap(),land=if(grown) 5 else 0,
             starters=if(starters) IsleBuilding.entries.map { it.name }.toSet() else emptySet(),
-            decor=if(withLife) listOf(ApiClient.IslandDecor(0,"flowers",listOf(8,8),0),ApiClient.IslandDecor(100,"palm",listOf(13,9)),ApiClient.IslandDecor(101,"bench",listOf(14,13)),ApiClient.IslandDecor(201,"place_hut",listOf(10,10),name="Brennerhaus")) else emptyList())) }
+            decor=(if(withLife) listOf(ApiClient.IslandDecor(0,"flowers",listOf(8,8),0),ApiClient.IslandDecor(100,"palm",listOf(13,9)),ApiClient.IslandDecor(101,"bench",listOf(14,13)),ApiClient.IslandDecor(201,"place_hut",listOf(10,10),name="Brennerhaus")) else emptyList()) +
+                (if(legacyDecor) listOf(ApiClient.IslandDecor(102,"gnome_legacy",listOf(8,11))) else emptyList()),
+            gridVersion=version)) }
         var firstAttempt by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
         val items=IsleDecor.labels.keys.mapIndexed { i, k -> ApiClient.DecorItem(k, i * 30, i * 30 <= startingPoints) }
         val home=ApiClient.HomeIsland(1,emptyMap(),startingPoints,items,construction=state,
@@ -917,14 +920,15 @@ class VillageVisualReview {
     @Test fun placementMoveBuildingNextToHut() = shot("placement-03-post-direkt-neben-fremder-flaeche-gueltig", gesture={
         liftPiece("Post")
         // the closest free cell left of the special decoration "Brennerhaus" (10,10): touching, no hidden gap
-        val cell = listOf(10 - IslandFootprint.BIG[5] - IslandFootprint.BIG[5] - 1, 10)
+        val cell = listOf(10 - IslandFootprint.V4.big[5] - IslandFootprint.V4.big[5] - 1, 10)
         check(IslandLayout.valid(grownFixture(), IsleBuilding.POST, cell)) { "$cell" }
         groundTap(cell, 5); settle()
         rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsEnabled()
     }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
     @Test fun placementMoveBuildingOntoForeignFootprint() = shot("placement-04-post-auf-fremder-flaeche-ungueltig", gesture={
         liftPiece("Post")
-        groundTap(listOf(9, 10), 5); settle()
+        // 7.9.11 (version 4): the hut holds exactly its own cell (10,10)
+        groundTap(listOf(10, 10), 5); settle()
         rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsNotEnabled()
         rule.onAllNodesWithContentDescription("Hier nicht möglich: Belegt – rot markierte Fläche")[0].assertExists()
     }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
@@ -996,4 +1000,43 @@ class VillageVisualReview {
         rule.onAllNodesWithContentDescription("Land erweitern")[0].performClick(); settle(900)
         rule.onAllNodesWithText("Insel vergrößern")[0].assertExists()
     }) { EvolutionIsland(startingPoints=140, nav=true, starters=true) }
+
+    // 7.9.11-raster: the grid shows only the held piece's real targets under the server's declared rule.
+    private fun drawnTargets() = rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].fetchSemanticsNode().config.getOrNull(GridTargetsKey).orEmpty()
+    @Test fun rasterHarbourOnlyFreeCoast() = shot("raster-01-hafen-nur-freie-kuestenfelder", gesture={
+        liftPiece("Hafen")
+        val c = grownFixture(); val want = IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.HARBOUR))
+        check(drawnTargets().toSet() == want.toSet() && want.all { IslandGrid.coast(it, 5) }) { "${drawnTargets()}" }
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun rasterPostOnlyFreeTargets() = shot("raster-02-post-nur-freie-zielfelder", gesture={
+        liftPiece("Post")
+        check(drawnTargets().toSet() == IslandLayout.targets(grownFixture(), IslandTarget.Building(IsleBuilding.POST)).toSet())
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun rasterCompactNeighbour() = shot("raster-03-kompakt-direkt-neben-dem-haus", gesture={
+        liftPiece("Post")
+        groundTap(listOf(11, 6), 5); settle()
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsEnabled()
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true) }
+    @Test fun rasterOldServerVersion2() = shot("raster-04-server-version2-alte-abstaende", gesture={
+        liftPiece("Post")
+        check(drawnTargets().toSet() == IslandLayout.targets(grownFixture().copy(gridVersion = PlacementRule.CIRCLES), IslandTarget.Building(IsleBuilding.POST)).toSet())
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true, version=PlacementRule.CIRCLES) }
+    @Test fun rasterUnknownVersion() = shot("raster-05-unbekannte-bauregel-update", gesture={
+        liftPiece("Post")
+        check(drawnTargets().isEmpty())
+        rule.onAllNodesWithContentDescription("Bestätigen")[0].assertIsNotEnabled()
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true, version=7) }
+    @Test fun rasterLegacyDecorPlaceholder() = shot("raster-06-unbekannte-deko-platzhalter") {
+        EvolutionIsland(creative=true, grown=true, nav=true, withLife=true, legacyDecor=true)
+    }
+    @Test fun rasterLegacyDecorBlocks() = shot("raster-07-unbekannte-deko-blockiert", gesture={
+        liftPiece("Post")
+        check(listOf(8, 11) !in drawnTargets())
+    }) { EvolutionIsland(creative=true, grown=true, nav=true, withLife=true, legacyDecor=true) }
+    @Test fun rasterSmallLand() = shot("raster-08-kleine-insel-land0-post", gesture={
+        rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Post platzieren")[0].performScrollTo(); settle()
+        rule.onAllNodesWithContentDescription("Post platzieren")[0].performClick(); settle()
+        check(drawnTargets().isNotEmpty())
+    }) { EvolutionIsland(creative=true, nav=true) }
 }

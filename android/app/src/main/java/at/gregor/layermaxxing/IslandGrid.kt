@@ -226,7 +226,7 @@ internal data class EditTarget(val target: IslandTarget, val cell: List<Int>, va
     }
 }
 
-/** Colours of the placement grid (7.9.10): free / held-valid / held-invalid / other pieces / coast for the harbour. */
+/** Colours of the placement grid (7.9.10): free target / held-valid / held-invalid / other pieces / coast target of the harbour. */
 internal object GridInk {
     val Free = Color(0xFFFFF4D6)
     val Line = Color(0xFF3B2A18)
@@ -237,29 +237,37 @@ internal object GridInk {
     val Coast = Color(0xFF8FD3D6)
 }
 
+/** 7.9.11: the cells the grid draws as usable while a piece is held (exactly [IslandLayout.targets]), for tests and a11y. */
+internal val GridTargetsKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<List<Int>>>("GridTargets")
+
 /**
  * The build grid as cells ("Kästchen") + the held piece's footprint + selection footprint, drawn between
- * terrain and sprites. Only the buildable cells of the current land are drawn ([IslandGrid.buildableCells]:
- * exactly the spots app and server accept). While a piece is held (7.9.10):
+ * terrain and sprites. While a piece is held (7.9.11) ONLY [targets] are drawn as cells: the spots where the
+ * held piece may really stand under the server's rule ([IslandLayout.targets], the same decision as the green
+ * preview and ✓). No other cell looks buildable:
+ *  - the harbour ([coastOnly]): only free coast cells, sea-blue; no mesh inland, on the water or on taken coast;
+ *  - every other piece: every free cell where it fits, nothing on occupied cells;
  *  - every OTHER piece's footprint ([obstacles], [IslandLayout.obstacles]) is tinted and outlined in a quiet
- *    brick red: exactly the cells nobody else may use, no hidden margin around them;
- *  - every other cell stays light and usable;
+ *    brick red (dezent, not a warning, and never light like a free cell);
  *  - the held footprint is drawn cell by cell: green where it is free, red where it would overlap (or the
- *    whole footprint red when the spot is impossible for another reason, e.g. the harbour inland);
- *  - [coastOnly] (the harbour): the coast cells are sea-blue, inland cells fade back.
+ *    whole footprint red when the spot is impossible for another reason, e.g. the harbour inland).
  * At rest ([showGrid] false) nothing of this is drawn, only the gold outline of a tapped piece.
  */
 @Composable
 internal fun IslandGridUnderlay(
     land: Int, showGrid: Boolean, focus: List<Int>?, focusRings: Int, valid: Boolean,
     selection: Triple<Float, Float, Float>?, obstacles: List<IslandLayout.Obstacle> = emptyList(), coastOnly: Boolean = false,
+    targets: List<List<Int>> = emptyList(),
 ) {
     val fade by animateFloatAsState(if (showGrid) 1f else 0f, tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "grid-fade")
     val taken = androidx.compose.runtime.remember(obstacles) { obstacles.flatMapTo(HashSet()) { it.cells } }
-    val coast = if (coastOnly) IslandGrid.coastCells(land).toHashSet() else emptySet()
+    val drawn = if (showGrid) targets else emptyList()
     Canvas(Modifier.fillMaxSize().semantics {
         contentDescription = if (showGrid) "Baufeld mit Kästchen" else "Boden"
-        if (showGrid) stateDescription = "${obstacles.size} belegte Flächen rot markiert" + if (coastOnly) " · Küstenfelder markiert" else ""
+        if (showGrid) {
+            stateDescription = "${obstacles.size} belegte Flächen rot markiert" + if (coastOnly) " · Küstenfelder markiert" else ""
+            set(GridTargetsKey, drawn)
+        }
     }) {
         val w = size.width; val h = size.height
         fun cellPath(c: List<Int>) = Path().apply {
@@ -274,15 +282,13 @@ internal fun IslandGridUnderlay(
         }
         if (fade > .01f) {
             val thin = 1.dp.toPx()
-            IslandGrid.buildableCells(land).forEach { c ->
+            // Other pieces: a quiet red tint on exactly the cells they hold.
+            taken.forEach { c -> if (IslandGrid.buildable(c, land)) drawPath(cellPath(c), GridInk.Taken.copy(alpha = .26f * fade)) }
+            // Only the real targets of the held piece are drawn as cells.
+            drawn.forEach { c ->
                 val near = focus?.let { f -> (1f - (abs(c[0] - f[0]) + abs(c[1] - f[1])) / 10f).coerceIn(0f, 1f) } ?: 0f
                 val path = cellPath(c)
-                when {
-                    c in taken -> drawPath(path, GridInk.Taken.copy(alpha = .26f * fade))
-                    coastOnly && c in coast -> drawPath(path, GridInk.Coast.copy(alpha = (.42f + .2f * near) * fade))
-                    coastOnly -> drawPath(path, GridInk.Free.copy(alpha = .10f * fade))
-                    else -> drawPath(path, GridInk.Free.copy(alpha = (.20f + .22f * near) * fade))
-                }
+                drawPath(path, (if (coastOnly) GridInk.Coast.copy(alpha = (.42f + .2f * near) * fade) else GridInk.Free.copy(alpha = (.20f + .22f * near) * fade)))
                 drawPath(path, GridInk.Line.copy(alpha = (.30f + .25f * near) * fade), style = Stroke(thin))
             }
             // The outline of every other piece's footprint, along the isometric mesh (dezent, not a warning).

@@ -26,7 +26,7 @@ APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
-SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories"]
+SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4"]
 # 7.9.9: the four glossary categories (the first one is the default for old clients and old rows).
 GLOSSARY_CATEGORIES = ("Begriffe", "Witze", "Sprüche", "Zitate")
 # One-time creative entitlement for the accounts that already exist on the test
@@ -835,6 +835,8 @@ def server_info() -> dict:
         "version": APP_VERSION,
         "warning": TESTSERVER_WARNING if SERVER_ROLE == "test" else "",
         "features": SUPPORTED_FEATURES,
+        # The placement rule this server really validates (the same value as construction.grid_version).
+        "grid_version": GRID_VERSION,
     }
 
 
@@ -1703,16 +1705,27 @@ def coast_cells(land):
     return [c for c in grid_cells(land) if grid_coast(c[0], c[1], land)]
 
 
-# 7.9.10: THE occupancy rule, shared with the app (IslandLayout.kt) and pinned in island_grid.json. A piece
+# THE occupancy rule, shared with the app (IslandLayout.kt) and pinned in island_grid.json. A piece
 # occupies the lattice cells of its footprint: a diamond of |di| + |dj| <= rings grid cells whose front tip
 # is its spot (where the sprite's foot stands), drawn exactly like that while moving; two pieces may not share
 # a cell and there is no other clearance.
-# The sprites keep their size while the lattice scales with the land, so a small island needs more rings.
-# Every pair the 7.9.9 distance rule accepted still fits (test_v14_placement), so no saved layout breaks.
+# GRID_VERSION is the rule this server validates; construction_view and /api/server-info publish it, so an app
+# never guesses (the app keeps the exact rules of version 2 and 3 for servers that still run them):
+#   2 = 7.9.7-7.9.9 circular clearances (3 / 2.4 / 1.5 cells / land factor), no coast rule
+#   3 = 7.9.10 diamonds FOOTPRINT_RINGS_V3 + harbour on the coast
+#   4 = 7.9.11 compact diamonds FOOTPRINT_RINGS + harbour on the coast: on the big land a piece holds one real
+#       ground cell, only the small land 0-1 keeps one ring for the big sprites. Never stricter than 2 or 3, so
+#       every saved layout stays valid (test_v14_placement / test_v15_raster).
+GRID_VERSION = 4
+FOOTPRINT_RINGS_V3 = {
+    "big": (2, 2, 1, 1, 1, 1),
+    "starter": (1, 1, 1, 1, 1, 1),
+    "decor": (1, 1, 1, 0, 0, 0),
+}
 FOOTPRINT_RINGS = {
-    "big": (2, 2, 1, 1, 1, 1),      # function buildings at stage 1..3 and special decoration
-    "starter": (1, 1, 1, 1, 1, 1),  # free stage-0 pieces (hammock, letter tree, ...)
-    "decor": (1, 1, 1, 0, 0, 0),    # ordinary decoration
+    "big": (1, 1, 0, 0, 0, 0),      # function buildings at stage 1..3 and special decoration
+    "starter": (0, 0, 0, 0, 0, 0),  # free stage-0 pieces (hammock, letter tree, ...)
+    "decor": (0, 0, 0, 0, 0, 0),    # ordinary decoration
 }
 
 
@@ -1917,7 +1930,7 @@ def construction_view(conn, user_id, mode, score):
             "age_days": max(0, (now_ts() - created) // 86400),
             "build_costs": list(BUILD_COSTS), "build_days": list(BUILD_DAYS),
             "land_costs": list(LAND_COSTS), "land_days": list(LAND_DAYS), "decor_limits": list(DECOR_LIMITS),
-            "special_costs": dict(SPECIAL_DECOR), "special_limit": SPECIAL_DECOR_LIMIT, "grid_version": 3}
+            "special_costs": dict(SPECIAL_DECOR), "special_limit": SPECIAL_DECOR_LIMIT, "grid_version": GRID_VERSION}
 
 
 def island_view(conn, user_id, own, mode=None):
