@@ -31,6 +31,9 @@ class IsleMotionTest {
         assertEquals("2 Tage", IsleMotion.seaTimeShort(2 * 86_400L + 5, 0L))
         assertEquals("Land in Sicht!", IsleMotion.seaTime(100L, 100L))
         assertTrue(IsleMotion.seaTime(1_800L, 0L).contains("30 Min"))
+        // 7.9.13: an inland harbour is no port: the boat is "gleich am Warteliegeplatz", never "im Hafen"
+        assertTrue(IsleMotion.seaTime(1_800L, 0L).contains("im Hafen"))
+        assertTrue(IsleMotion.seaTime(1_800L, 0L, waitingBerth = true).let { it.contains("Warteliegeplatz") && !it.contains("Hafen") })
         assertTrue(IsleMotion.seaTime(5 * 3600L, 0L).contains("5 Stunden"))
         assertTrue(IsleMotion.seaTime(3 * 86_400L, 0L).contains("3 Tage"))
         assertTrue(IsleMotion.seaTime(15 * 86_400L, 0L).contains("2 Wochen"))

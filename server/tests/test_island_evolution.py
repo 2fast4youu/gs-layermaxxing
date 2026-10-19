@@ -225,8 +225,15 @@ def test_layout_moves_are_atomic_persistent_and_free(tmp_path):
         assert state(c,a)['construction']['spent']==25
 
 
-def test_layout_blocks_decor_and_places_in_both_directions(tmp_path):
+import pytest
+
+
+@pytest.mark.parametrize("version,spot", [(5, [10, 8]), (6, [10, 7])])
+def test_layout_blocks_decor_and_places_in_both_directions(tmp_path, version, spot):
     m=load_app(tmp_path)
+    # version 5 (7.9.12, history): the post office's picture at [10, 8] covers the house's default spot; version 6
+    # (7.9.13): only grounds count, so the post office's ground at [10, 7] (rows 6..7) covers the house's (rows 5..6).
+    m.GRID_VERSION=version
     with TestClient(m.app) as c:
         a,b=register(c,'A'),register(c,'B'); befriend(c,a,b);earn(c,a,b);earn(c,a,b)
         with m.db() as conn: conn.execute('UPDATE users SET created_at=? WHERE id=?',(m.now_ts()-86400*3,a['user_id']))
@@ -237,7 +244,8 @@ def test_layout_blocks_decor_and_places_in_both_directions(tmp_path):
         assert c.put('/api/island/decor',headers=auth(a),json={'slots':{'0':'flowers'}}).status_code==422
         assert action(c,a,built).status_code==200  # ordinary upgrade does not relocate
         current=state(c,a)
-        moved=c.post('/api/island/construction',headers=auth(a),json={'action':'move','building':'POST','position':[10,8],'expected_revision':current['construction']['revision']}).json()
+        moved=c.post('/api/island/construction',headers=auth(a),json={'action':'move','building':'POST','position':spot,'expected_revision':current['construction']['revision']}).json()
+        assert moved['construction']['positions']['POST']==spot
         # 7.9.12: [10, 8] (version 5: the stage-2 post office fits there; [10, 6] of 7.9.11 sticks out of the land 0 rim)
         # still covers the house's default spot, so the default build below must be refused.
         expanded=action(c,a,moved,action='expand',building=None).json()

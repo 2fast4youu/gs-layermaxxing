@@ -1,0 +1,53 @@
+package at.gregor.layermaxxing
+
+import android.graphics.Bitmap
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.Density
+import org.junit.Assume.assumeTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
+
+/**
+ * 7.9.13 opt-in renders for the review of the small-phone fixes: 360 × 640 dp with a 1.5× system font (as checked by
+ * StageSceneSmallScreenTest), production composables and fixture data. Skipped unless VILLAGE_SHOTS points to an
+ * output directory. The PNGs are the real Android window drawn on Robolectric (JVM), not device screenshots.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [34], qualifiers = "w360dp-h640dp-xhdpi")
+class StageSmallFontVisualReview {
+    @get:Rule val rule = createAndroidComposeRule<androidx.activity.ComponentActivity>()
+    private val out = System.getenv("VILLAGE_SHOTS")?.let(::File)
+
+    private fun shot(b: IsleBuilding, level: Int) {
+        assumeTrue(out != null)
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            val d = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale = 1.5f)) { StageFixtures.Place(b, level) }
+        }
+        repeat(40) { rule.mainClock.advanceTimeByFrame() }
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        val view = rule.activity.window.decorView
+        val bmp = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        view.draw(android.graphics.Canvas(bmp))
+        out!!.mkdirs()
+        File(out, "klein-font15-${b.name.lowercase()}-$level.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test fun lighthouse0() = shot(IsleBuilding.LIGHTHOUSE, 0)
+    @Test fun lighthouse2() = shot(IsleBuilding.LIGHTHOUSE, 2)
+    @Test fun library2() = shot(IsleBuilding.LIBRARY, 2)
+    @Test fun library3() = shot(IsleBuilding.LIBRARY, 3)
+    @Test fun harbour0() = shot(IsleBuilding.HARBOUR, 0)
+    @Test fun harbour1() = shot(IsleBuilding.HARBOUR, 1)
+    @Test fun harbour2() = shot(IsleBuilding.HARBOUR, 2)
+    @Test fun harbour3() = shot(IsleBuilding.HARBOUR, 3)
+}

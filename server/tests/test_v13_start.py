@@ -25,8 +25,10 @@ def test_every_stage_zero_building_is_free_without_points_or_day_gate(tmp_path):
         # 7.9.12 (grid_version 5): the harbour first, its coast spot with open water in front is the scarce one.
         for b in ["HARBOUR"] + [x for x in m.ISLAND_BUILDINGS if x != "HARBOUR"]:
             con = st["construction"]
-            # 7.9.10: the full spot rule (grid, harbour only on the coast, footprint overlap).
-            spot = next(list(cell) for cell in m.grid_cells(con["land"]) if not m.building_spot_error(con, cell, b))
+            # 7.9.10: the full spot rule (grid, harbour only on the coast, footprint overlap). 7.9.13 (version 6): the
+            # harbour's rowboat lies on the beach of the cove, outside the meadow's build ellipse: every lattice cell is
+            # a candidate, the rule alone decides.
+            spot = next([i, j] for j in range(21) for i in range(21) if not m.building_spot_error(con, [i, j], b))
             r = post(c, a, st, action="build", building=b, position=spot)
             assert r.status_code == 200, (b, r.text)
             st = r.json()

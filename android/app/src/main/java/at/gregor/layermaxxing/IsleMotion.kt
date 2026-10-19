@@ -74,7 +74,7 @@ internal object IsleMotion {
      * Remaining time in sailor speak, for the label on a route.
      * null arrival = waits at anchor (approval / presence).
      */
-    fun seaTime(arrivalSec: Long?, nowSec: Long): String {
+    fun seaTime(arrivalSec: Long?, nowSec: Long, waitingBerth: Boolean = false): String {
         if (arrivalSec == null) return "vor Anker · wartet auf Wind"
         val left = arrivalSec - nowSec
         if (left <= 0) return "Land in Sicht!"
@@ -82,7 +82,8 @@ internal object IsleMotion {
         val h = left / 3600
         val d = left / 86_400
         return when {
-            min < 60 -> "noch ${min.coerceAtLeast(1)} Min · gleich im Hafen"
+            // 7.9.13: a harbour standing inland is no port: the boat only reaches the waiting berth in the cove
+            min < 60 -> "noch ${min.coerceAtLeast(1)} Min · gleich ${if (waitingBerth) "am Warteliegeplatz" else "im Hafen"}"
             h < 24 -> "noch $h ${if (h == 1L) "Stunde" else "Stunden"} auf See"
             d < 7 -> "noch $d ${if (d == 1L) "Tag" else "Tage"} auf See"
             else -> "noch ${d / 7} ${if (d / 7 == 1L) "Woche" else "Wochen"} auf hoher See"

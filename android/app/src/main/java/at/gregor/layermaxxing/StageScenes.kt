@@ -97,13 +97,14 @@ internal object StageScenes {
             slots.size, props.joinToString("+") { "${it.res}" }).joinToString(" · ")
     }
 
+    /** 7.9.13: ordinary starters (stage 0) stand on the island's land, a clearing; only the harbour's starter on the beach. */
     private val sand = R.drawable.terrain_sand
     private val meadow = R.drawable.terrain_home
     private fun a(x: Float, y: Float, t: Float = 0f) = Anchor(x, y, t)
 
     private val table: Map<IsleBuilding, List<Scene>> = mapOf(
         IsleBuilding.POST to listOf(
-            Scene(IsleBuilding.POST, 0, Backdrop.DAY_BEACH, null, ground = sand, groundTop = .84f,
+            Scene(IsleBuilding.POST, 0, Backdrop.DAY_BEACH, null, ground = meadow, groundTop = .84f,
                 piece = SetPiece(R.drawable.n_tree, .5f, .97f, 1.3f), holder = Holder.PINNED_ENVELOPE,
                 caption = "Großer Briefbaum: an Stamm und Ästen hängt für jeden Freund ein Umschlag an einer Nadel",
                 props = listOf(Prop(R.drawable.n_rocks, .1f, .95f, .18f), Prop(R.drawable.n_flowerbush, .9f, .95f, .16f)),
@@ -128,9 +129,9 @@ internal object StageScenes {
                 detailSlots = listOf(a(.28f, .66f, -4f), a(.48f, .65f, 3f), a(.68f, .66f, -3f), a(.36f, .80f, 4f), a(.60f, .81f, -4f))),
         ),
         IsleBuilding.CAMPFIRE to listOf(
-            Scene(IsleBuilding.CAMPFIRE, 0, Backdrop.EVENING_BEACH, null, ground = sand, groundTop = .36f,
+            Scene(IsleBuilding.CAMPFIRE, 0, Backdrop.EVENING_BEACH, null, ground = meadow, groundTop = .36f,
                 piece = SetPiece(R.drawable.lm_campfire, .5f, .72f, 1.0f), holder = Holder.FIRE_RING,
-                caption = "Feuerkreis am Abendstrand: die Gruppe sitzt auf Steinen und Hockern rund um das Feuer",
+                caption = "Feuerkreis auf der Lichtung am Abend: die Gruppe sitzt auf Steinen und Hockern rund um das Feuer",
                 props = listOf(Prop(R.drawable.n_rocks, .1f, .4f, .14f), Prop(R.drawable.n_pine, .9f, .4f, .12f)),
                 space = Space.PIECE, slots = emptyList(), centre = a(.52f, .44f), ring = .36f to .74f),
             Scene(IsleBuilding.CAMPFIRE, 1, Backdrop.INTERIOR, R.drawable.fief_build_closeup,
@@ -146,9 +147,9 @@ internal object StageScenes {
                 space = Space.ROOM, slots = listOf(a(.33f, .44f), a(.67f, .56f), a(.42f, .76f))),
         ),
         IsleBuilding.HOUSE to listOf(
-            Scene(IsleBuilding.HOUSE, 0, Backdrop.EVENING_BEACH, null, ground = sand, groundTop = .5f,
+            Scene(IsleBuilding.HOUSE, 0, Backdrop.EVENING_BEACH, null, ground = meadow, groundTop = .5f,
                 piece = SetPiece(R.drawable.decor_hammock, .5f, .86f, 1.0f), holder = Holder.KEEPSAKES,
-                caption = "Schlafplatz: du in der Hängematte zwischen den Pfosten, deine Schätze liegen darunter im Sand",
+                caption = "Schlafplatz: du in der Hängematte zwischen den Pfosten, deine Schätze liegen darunter im Gras",
                 props = listOf(Prop(R.drawable.decor_palm, .14f, .52f, .26f), Prop(R.drawable.decor_campfire, .86f, .54f, .14f)),
                 space = Space.PIECE, slots = listOf(a(.18f, .9f), a(.39f, .95f), a(.61f, .95f), a(.82f, .9f)),
                 centre = a(.52f, .5f)),
@@ -166,9 +167,9 @@ internal object StageScenes {
                 space = Space.ROOM, slots = listOf(a(.24f, .5f), a(.41f, .5f), a(.59f, .5f), a(.76f, .5f)), centre = a(.55f, .24f)),
         ),
         IsleBuilding.LIBRARY to listOf(
-            Scene(IsleBuilding.LIBRARY, 0, Backdrop.DAY_BEACH, null, ground = sand, groundTop = .7f,
+            Scene(IsleBuilding.LIBRARY, 0, Backdrop.DAY_BEACH, null, ground = meadow, groundTop = .7f,
                 piece = SetPiece(R.drawable.n_crates, .5f, .99f, .62f), holder = Holder.PARCHMENT,
-                caption = "Treibholzkisten am Strand: das Wörterbuch liegt aufgeschlagen auf der obersten Kiste",
+                caption = "Treibholzkisten auf der Lichtung: das Wörterbuch liegt aufgeschlagen auf der obersten Kiste",
                 props = listOf(Prop(R.drawable.n_rowboat, .1f, .84f, .16f), Prop(R.drawable.n_rocks, .9f, .9f, .14f)),
                 space = Space.SCREEN, slots = emptyList(), book = Region(.04f, .17f, .96f, .74f)),
             Scene(IsleBuilding.LIBRARY, 1, Backdrop.DAY_BEACH, null, ground = meadow, groundTop = .8f,
@@ -185,9 +186,9 @@ internal object StageScenes {
                 space = Space.SCREEN, slots = emptyList(), book = Region(.05f, .17f, .95f, .82f)),
         ),
         IsleBuilding.LIGHTHOUSE to listOf(
-            Scene(IsleBuilding.LIGHTHOUSE, 0, Backdrop.DAY_BEACH, null, ground = sand, groundTop = .82f,
+            Scene(IsleBuilding.LIGHTHOUSE, 0, Backdrop.DAY_BEACH, null, ground = meadow, groundTop = .82f,
                 piece = SetPiece(R.drawable.decor_palm, .17f, .97f, .62f), holder = Holder.ROWBOAT,
-                caption = "Von der Aussichtspalme: die Boote deiner Freunde treiben in Sichtweite, Flaschenpost am Strand",
+                caption = "Von der Aussichtspalme auf der Lichtung: die Boote deiner Freunde treiben in Sichtweite, Flaschenpost im Gras",
                 space = Space.SCREEN,
                 slots = listOf(a(0.55f, 0.30f), a(0.82f, 0.30f), a(0.55f, 0.46f), a(0.82f, 0.46f), a(0.55f, 0.62f), a(0.82f, 0.62f))),
             Scene(IsleBuilding.LIGHTHOUSE, 1, Backdrop.EVENING_BEACH, null, ground = sand, groundTop = .84f,
@@ -211,19 +212,22 @@ internal object StageScenes {
                 piece = SetPiece(R.drawable.fief_signpost, .36f, .94f, 1.0f), holder = Holder.NOTES_ON_POST,
                 caption = "Strandtreff: Auftragszettel an den Pfahl gebunden, das Ruderboot mit Wimpel liegt daneben",
                 props = listOf(Prop(R.drawable.n_rowboat, .82f, .95f, .3f), Prop(R.drawable.decor_flag, .9f, .78f, .12f)),
-                space = Space.PIECE, slots = listOf(a(.46f, .22f, -6f), a(.82f, .38f, 5f), a(.62f, .72f, 4f))),
+                space = Space.PIECE, slots = listOf(a(.36f, .18f, -6f), a(.84f, .44f, 5f), a(.50f, .76f, 4f))),
             Scene(IsleBuilding.HARBOUR, 1, Backdrop.DAY_BEACH, null, ground = null,
                 piece = SetPiece(R.drawable.fief_jetty, .52f, .9f, 1.24f), holder = Holder.JETTY_NOTES,
                 caption = "Bootssteg aus Treibholz: die Aufträge an die Pfähle genagelt, wo die Boote anlegen",
-                space = Space.PIECE, slots = listOf(a(.36f, .25f, -5f), a(.62f, .34f, 4f), a(.88f, .54f, -4f), a(.60f, .70f, 5f))),
+                // 7.9.13: three notes large enough for font 1.5 (title, partner, 48 dp buttons), more = pages
+                space = Space.PIECE, slots = listOf(a(.32f, .18f, -5f), a(.68f, .44f, 4f), a(.36f, .72f, 5f))),
             Scene(IsleBuilding.HARBOUR, 2, Backdrop.EVENING_BEACH, null, ground = sand, groundTop = .76f,
                 piece = SetPiece(R.drawable.b_board, .5f, .9f, 1.16f), holder = Holder.PLANK_BOARD,
                 caption = "Fester Anleger mit Aushangtafel unter dem Dach, Laterne im Abendlicht",
                 props = listOf(Prop(R.drawable.boat_sail, .14f, .3f, .14f)),
-                space = Space.PIECE, slots = listOf(a(.36f, .30f, -2f), a(.62f, .30f, 2f), a(.36f, .52f, 2f), a(.62f, .52f, -2f))),
+                // 7.9.13: two readable notes on the board per page (four 104 dp ones were too small), more = pages
+                space = Space.PIECE, slots = listOf(a(.31f, .32f, -2f), a(.67f, .32f, 2f))),
             Scene(IsleBuilding.HARBOUR, 3, Backdrop.INTERIOR, R.drawable.bg_harbour, piece = null, holder = Holder.CORK_BOARD,
                 caption = "Hafen mit großem Auftragsbrett am Steg",
-                space = Space.ROOM, slots = listOf(a(.37f, .35f), a(.63f, .35f), a(.37f, .46f), a(.63f, .46f), a(.37f, .57f), a(.63f, .57f))),
+                // 7.9.13: four readable notes on the cork board per page (six were too small), more = pages
+                space = Space.ROOM, slots = listOf(a(.34f, .40f), a(.66f, .40f), a(.34f, .60f), a(.66f, .60f))),
         ),
     )
 

@@ -21,7 +21,8 @@ class IslandBuildGridTest {
             cells.getJSONArray("$land").let { a -> (0 until a.length()).map { a.getJSONArray(it).let { c -> listOf(c.getInt(0), c.getInt(1)) } }.toSet() }
         }
     }
-    private fun empty(land: Int) = ApiClient.IslandConstruction(land = land)
+    /** 7.9.12 (rule 5) reference: pinned, rule 6 has its own test (IslandGroundTest). */
+    private fun empty(land: Int) = ApiClient.IslandConstruction(land = land, gridVersion = PlacementRule.MASKS)
     private val lattice = (0..20).flatMap { i -> (0..20).map { j -> listOf(i, j) } }
 
     @Test fun gridCellsAreExactlyTheServerCellsOfEveryLandStage() {

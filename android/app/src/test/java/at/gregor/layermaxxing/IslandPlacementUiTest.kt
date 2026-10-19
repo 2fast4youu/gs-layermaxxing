@@ -77,8 +77,11 @@ class IslandPlacementUiTest {
         tick(1200)
         return saved
     }
-    /** [version] = the server's grid_version: the 7.9.10 footprint tests pin 3, the default is the current rule. */
-    private fun grown(level: Int = 2, available: Int = 500, mode: String = "creative", version: Int = PlacementRule.CURRENT) = ApiClient.IslandConstruction(mode = mode, available = available, ageDays = 21,
+    /**
+     * [version] = the server's grid_version: the 7.9.10 footprint tests pin 3; the default is rule 5, for which the
+     * FitIsland layout was packed (7.9.13: rule 6 has its own UI test, IslandGroundUiTest).
+     */
+    private fun grown(level: Int = 2, available: Int = 500, mode: String = "creative", version: Int = PlacementRule.MASKS) = ApiClient.IslandConstruction(mode = mode, available = available, ageDays = 21,
         buildings = IsleBuilding.entries.associate { it.name to level }, land = 5, decor = FitIsland.DECOR, positions = FitIsland.SPOTS, gridVersion = version)
     private fun underlayState(): String? = rule.onAllNodesWithContentDescription("Baufeld mit Kästchen")[0].fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
     private fun lift(label: String) { rule.onAllNodesWithContentDescription(label).filter(hasClickAction())[0].performTouchInput { longClick() }; tick() }

@@ -34,9 +34,11 @@ class IslandPlacementTest {
 
     @Test fun coastCellsAndFootprintsAreTheServerFixture() {
         for (land in 0..5) assertEquals("coast $land", cellsOf("coast", land), IslandGrid.coastCells(land).toSet())
-        // 7.9.12: the fixture is at version 5; the version-4 rings stay pinned as footprints_v4
+        // 7.9.12: the fixture is at version 5; the version-4 rings stay pinned as footprints_v4. 7.9.13: version 6 is the
+        // ground contract (geometry/island_ground.json); this fixture keeps the build grid and the rules up to 5.
         assertEquals(5, json.getInt("version"))
-        assertEquals(PlacementRule.CURRENT, json.getInt("version"))
+        assertEquals(PlacementRule.MASKS, json.getInt("version"))
+        assertEquals(PlacementRule.GROUND, PlacementRule.CURRENT)
         assertEquals(rings("big"), IslandFootprint.V4.big)
         assertEquals(rings("starter"), IslandFootprint.V4.starter)
         assertEquals(rings("decor"), IslandFootprint.V4.decor)
@@ -158,7 +160,7 @@ class IslandPlacementTest {
     /** An old inland harbour starts its first lift on the coast; only the local draft moves, the inland spot stays refused. */
     @Test fun legacyInlandHarbourStartsOnTheCoastAndATakenCoastCellIsNotSkipped() {
         val inland = listOf(10, 10)
-        val c = ApiClient.IslandConstruction(land = 5, buildings = mapOf("HARBOUR" to 2), positions = mapOf("HARBOUR" to inland))
+        val c = ApiClient.IslandConstruction(land = 5, gridVersion = PlacementRule.MASKS, buildings = mapOf("HARBOUR" to 2), positions = mapOf("HARBOUR" to inland))
         assertFalse(IslandGrid.coast(inland, 5))
         val start = IslandLayout.startCell(c, IsleBuilding.HARBOUR, viewCentre = null)
         assertTrue(IslandGrid.coast(start, 5))
@@ -174,7 +176,7 @@ class IslandPlacementTest {
         assertEquals(start, IslandLayout.startCell(taken, IsleBuilding.HARBOUR, viewCentre = null))
         assertFalse(IslandLayout.valid(taken, IsleBuilding.HARBOUR, start))
         // every other building keeps its stored spot
-        val post = ApiClient.IslandConstruction(land = 5, buildings = mapOf("POST" to 1), positions = mapOf("POST" to inland))
+        val post = ApiClient.IslandConstruction(land = 5, gridVersion = PlacementRule.MASKS, buildings = mapOf("POST" to 1), positions = mapOf("POST" to inland))
         assertEquals(inland, IslandLayout.startCell(post, IsleBuilding.POST, viewCentre = null))
     }
 
@@ -199,7 +201,7 @@ class IslandPlacementTest {
         val spots = IslandMasks.harbourSpots(0, 5)
         val west = spots.minBy { it[0] }; val east = spots.filter { it[0] >= 13 }
         val pier = east.flatMap { IslandMasks.cells("building:HARBOUR:0", 5, it) }.toSet()
-        val blocked = ApiClient.IslandConstruction(land = 5, decor = spots.filter { it !in east }.filter { IslandMasks.cells("decor:flowers", 5, it).none { c -> c in pier } }
+        val blocked = ApiClient.IslandConstruction(land = 5, gridVersion = PlacementRule.MASKS, decor = spots.filter { it !in east }.filter { IslandMasks.cells("decor:flowers", 5, it).none { c -> c in pier } }
             .mapIndexed { n, p -> ApiClient.IslandDecor(100 + n, "flowers", p) })
         val free = IslandLayout.targets(blocked, IslandTarget.Building(IsleBuilding.HARBOUR))
         assertTrue(free.isNotEmpty() && free.all { it[0] - west[0] >= 6 })

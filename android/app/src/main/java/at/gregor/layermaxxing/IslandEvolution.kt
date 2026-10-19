@@ -135,7 +135,8 @@ internal fun IslandUpgradeContent(
             if(room!=null) {
                 Text(room, color=Color(0xFF8C2F22), fontFamily=Kit.Body, fontWeight=androidx.compose.ui.text.font.FontWeight.Bold, fontSize=13.sp,
                     modifier=Modifier.semantics { contentDescription="Kein Platz: $room" })
-                IslandWoodButton("Zuerst verschieben", { onAction("move") }, Modifier.fillMaxWidth(), enabled=!busy, secondary=true)
+                // 7.9.13: hold the next stage and pick its spot (e.g. the rowboat's pier at the water); one upgrade on ✓
+                IslandWoodButton("Platz für die nächste Stufe wählen", { onAction("move") }, Modifier.fillMaxWidth(), enabled=!busy && IslandEvolution.allowed(c,cost,day), secondary=true)
             }
         } else Row(Modifier.background(IslandWood.Paper, androidx.compose.foundation.shape.RoundedCornerShape(50)).border(1.5.dp, IslandWood.Moss, androidx.compose.foundation.shape.RoundedCornerShape(50))
             .padding(horizontal=14.dp, vertical=6.dp), verticalAlignment=Alignment.CenterVertically) {

@@ -531,7 +531,10 @@ class ApiClient(
                 .apply { request.name?.let { put("name", it) } }
                 .put("expected_revision", state.revision).put("position", position?.let { org.json.JSONArray(it) } ?: JSONObject.NULL).body()).build()))
     }
-    internal fun parseHomeIsland(j: JSONObject): HomeIsland {
+    internal fun parseHomeIsland(j: JSONObject): HomeIsland = parseHome(j)
+    companion object {
+    /** 7.9.13: the one island parser, also used to read the persisted last server answer back ([IslandCodec]). */
+    internal fun parseHome(j: JSONObject): HomeIsland {
         val d = j.getJSONObject("decor")
         val items = j.getJSONArray("items")
         return HomeIsland(
@@ -560,6 +563,7 @@ class ApiClient(
                     gridVersion = PlacementRule.parse(c))
             } ?: IslandConstruction(supported = false, gridVersion = PlacementRule.LEGACY),
         )
+    }
     }
     suspend fun setPlaces(token: String, places: Map<Int, LifePlace>) = unitCall(
         authorized(token, "api/island/places").put(

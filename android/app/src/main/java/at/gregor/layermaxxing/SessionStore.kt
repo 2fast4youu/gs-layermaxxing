@@ -20,6 +20,15 @@ class SessionStore(context: Context) {
     // The previous local preview temporarily used the Gerfried slot for Gregor's
     // test endpoint. Never forward those saved tokens to Gerfried's real server.
     init {
+        // 7.9.13: the last real island per server/account/user, in its own file: a logout's clear() of the session
+        // file never touches it, IslandCache.forget does (by scope). No token is ever written there.
+        val islandPrefs = context.getSharedPreferences("layermaxxing_islands", Context.MODE_PRIVATE)
+        IslandCache.disk = object : IslandDisk {
+            override fun read(key: String) = islandPrefs.getString(key, null)
+            override fun write(key: String, value: String) { islandPrefs.edit().putString(key, value).apply() }
+            override fun remove(key: String) { islandPrefs.edit().remove(key).apply() }
+            override fun keys(): Set<String> = islandPrefs.all.keys.toSet()
+        }
         if (!prefs.getBoolean("three_profiles_v1", false)) {
             val wasGerfried = prefs.getString("server_profile", null) == "gerfried"
             val editor = prefs.edit().remove("accounts_gerfried")
@@ -202,7 +211,16 @@ class SessionStore(context: Context) {
         prefs.edit().putString(accountKey(), accountsJson(ordered.take(8))).apply()
     }
 
+    // 7.9.13: the user id the server last confirmed for this account on this server, so the own island
+    // starts loading before the full status refresh is through. Replaced by every fresh status.
+    private fun knownUserKey(account: String = name) = "known_user_${serverProfile.key}_$account"
+    fun knownUserId(): Long? = prefs.getLong(knownUserKey(), -1L).takeIf { it > 0 }
+    fun rememberUserId(id: Long) { if (knownUserId() != id) prefs.edit().putLong(knownUserKey(), id).apply() }
+    fun islandScope(account: String = name): String = IslandCache.scope(serverProfile.key, serverProfile.baseUrl, account)
+
     fun removeAccount(name: String) {
+        IslandCache.forget(islandScope(name))
+        prefs.edit().remove(knownUserKey(name)).apply()
         prefs.edit().putString(accountKey(), accountsJson(savedAccounts().filterNot { it.name == name })).apply()
     }
 
@@ -213,6 +231,7 @@ class SessionStore(context: Context) {
     }
 
     fun clear() {
+        IslandCache.forget(islandScope())
         val preservedTheme = theme
         val preservedProfile = serverProfile.key
         val warningAcknowledged = !warningConfirmationRequired

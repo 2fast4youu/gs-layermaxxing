@@ -182,8 +182,9 @@ class IslandRasterTest {
         assertEquals(PlacementRule.LEGACY, api.parseHomeIsland(JSONObject("""{"user_id":1,"decor":{},"score":0,"items":[]}""")).construction.gridVersion)
         // local fixtures (constructor default) use the current rule on purpose
         assertEquals(PlacementRule.CURRENT, ApiClient.IslandConstruction().gridVersion)
-        // 7.9.12: the newest rule is 5, the graphic masks
-        assertEquals(5, PlacementRule.CURRENT)
+        // 7.9.12: rule 5, the graphic masks; 7.9.13: the newest rule is 6, the ground rectangles
+        assertEquals(6, PlacementRule.CURRENT)
+        assertEquals(6, parse(""","grid_version":6"""))
         assertEquals(5, parse(""","grid_version":5"""))
     }
 
@@ -234,7 +235,8 @@ class IslandRasterTest {
         assertEquals(PlacementRule.V2_DECOR_BUILDING, v2.getDouble("decor_building"), 0.0)
         assertEquals(PlacementRule.V2_DECOR_DECOR, v2.getDouble("decor_decor"), 0.0)
         assertEquals((0..5).map { v2.getJSONArray("land_factor").getDouble(it) }, PlacementRule.LAND_FACTOR)
-        assertEquals(json.getInt("version"), PlacementRule.CURRENT)
+        // island_grid.json pins the build grid and the rules up to 5 (version 6: geometry/island_ground.json)
+        assertEquals(json.getInt("version"), PlacementRule.MASKS)
     }
 
     // ---------------------------------------------------------------- drawn target <=> valid <=> server rule
@@ -365,7 +367,7 @@ class IslandRasterTest {
     }
 
     @Test fun unknownAndMissingVersionsOfferNothingAndSayWhy() {
-        for (version in listOf(PlacementRule.LEGACY, 1, 6, 99, -3)) {
+        for (version in listOf(PlacementRule.LEGACY, 1, 7, 99, -3)) {
             val c = populated(5, 4).copy(gridVersion = version)
             val h = ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c)
             for (t in held) {
@@ -379,9 +381,10 @@ class IslandRasterTest {
             assertFalse(IslandLayout.valid(c, IsleBuilding.POST, listOf(10, 10)))
             assertFalse(IslandLayout.validDecor(c, listOf(10, 10)))
         }
-        assertTrue(PlacementRule.problem(6)!!.contains("App aktualisieren"))
+        // 7.9.13: version 6 (ground) is known; the next unknown one fails closed and asks for an app update
+        assertTrue(PlacementRule.problem(7)!!.contains("App aktualisieren"))
         assertTrue(PlacementRule.problem(PlacementRule.LEGACY)!!.contains("Server"))
-        for (v in listOf(2, 3, 4, 5)) assertNull(PlacementRule.problem(v))
+        for (v in listOf(2, 3, 4, 5, 6)) assertNull(PlacementRule.problem(v))
     }
 
     // ---------------------------------------------------------------- compact (version 4)

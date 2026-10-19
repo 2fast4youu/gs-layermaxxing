@@ -29,12 +29,14 @@ class IslandMasksTest {
     }
     private fun drawable(name: String): Int = R.drawable::class.java.getField(name).getInt(null)
 
-    @Test fun theAppReadsTheServersMaskFileAndRule5IsCurrent() {
+    /** 7.9.13: rule 6 (IslandGround) is current; these are the rule-5 cases, pinned to version 5 and kept as they were. */
+    @Test fun theAppReadsTheServersMaskFileOfRule5() {
         assertEquals(IslandMasks.parse(serverFile.readText()), IslandMasks.parse(
             IslandMasks::class.java.classLoader!!.getResourceAsStream(IslandMasks.RESOURCE)!!.use { it.readBytes().toString(Charsets.UTF_8) }))
         assertEquals(5, IslandMasks.version())
-        assertEquals(PlacementRule.MASKS, PlacementRule.CURRENT)
-        assertEquals(grid.getInt("version"), PlacementRule.CURRENT)
+        assertEquals(PlacementRule.GROUND, PlacementRule.CURRENT)
+        // island_grid.json pins the build grid and the rules up to 5; version 6's contract is geometry/island_ground.json
+        assertEquals(grid.getInt("version"), PlacementRule.MASKS)
         assertEquals("geometry/island_masks.json", grid.getString("masks"))
         for (b in IsleBuilding.entries) for (stage in 0..3) for (land in 0..5) assertNotNull(IslandMasks.building(b, stage, land))
         for (item in IsleDecor.labels.keys + SpecialDecor.items.map { it.key }) assertEquals("decor:$item", IslandMasks.decorKey(item))
@@ -51,8 +53,8 @@ class IslandMasksTest {
             assertEquals("$b $stage accent", entry.optString("accent").takeIf { !entry.isNull("accent") }?.let(::drawable), s.accent)
             assertEquals("$b $stage flag", stage == 3, entry.getBoolean("flag"))
             for (land in 0..5) {
-                val c = if (stage == 0) ApiClient.IslandConstruction(land = land, starters = setOf(b.name))
-                    else ApiClient.IslandConstruction(land = land, buildings = mapOf(b.name to stage))
+                val c = if (stage == 0) ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = land, starters = setOf(b.name))
+                    else ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = land, buildings = mapOf(b.name to stage))
                 val piece = IslandPlans.placedBuildings(0, c).getValue(b)
                 assertEquals("$b $stage land $land", entry.getJSONArray("lands").getJSONObject(land).getDouble("size").toFloat(), piece.size, 1e-6f)
                 assertEquals(s.res, piece.res)
@@ -60,7 +62,7 @@ class IslandMasksTest {
         }
         // decoration: the same sizes on the island as in the masks
         for (land in 0..5) {
-            val c = ApiClient.IslandConstruction(land = land, decor = (IsleDecor.labels.keys + "place_hut" + "gnome_legacy").mapIndexed { i, it -> ApiClient.IslandDecor(100 + i, it, listOf(10, 10)) })
+            val c = ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = land, decor = (IsleDecor.labels.keys + "place_hut" + "gnome_legacy").mapIndexed { i, it -> ApiClient.IslandDecor(100 + i, it, listOf(10, 10)) })
             decorPieces(emptyMap(), ApiClient.HomeIsland(1, emptyMap(), 0, emptyList(), construction = c), IslandPlans.constructionScale(land)).forEach { (d, p) ->
                 assertEquals("${d.item} land $land", IslandMasks.decor(d.item, land).size, p.size, 1e-6f)
             }
@@ -109,7 +111,7 @@ class IslandMasksTest {
         val rim = IslandGrid.buildableCells(0).first {
             IslandMasks.landProblem("building:POST:0", 0, it, false) == null && IslandMasks.landProblem("building:POST:1", 0, it, false) != null
         }
-        val c = ApiClient.IslandConstruction(land = 0, starters = setOf("POST"), positions = mapOf("POST" to rim))
+        val c = ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = 0, starters = setOf("POST"), positions = mapOf("POST" to rim))
         assertTrue(IslandLayout.valid(c.copy(positions = emptyMap()), IsleBuilding.POST, rim))
         val why = IslandLayout.upgradeProblem(c, IsleBuilding.POST)
         assertNotNull(why); assertTrue(why!!.contains("zuerst verschieben") && why.contains("Postkasten"))
@@ -121,12 +123,12 @@ class IslandMasksTest {
             l.none { it in IslandMasks.cells("building:POST:0", 0, listOf(10, 11)) } && l.any { it in IslandMasks.cells("building:POST:1", 0, listOf(10, 11)) } &&
                 IslandMasks.landProblem("decor:lantern", 0, p, false) == null
         }
-        val near = ApiClient.IslandConstruction(land = 0, starters = setOf("POST"), positions = mapOf("POST" to listOf(10, 11)),
+        val near = ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = 0, starters = setOf("POST"), positions = mapOf("POST" to listOf(10, 11)),
             decor = listOf(ApiClient.IslandDecor(100, "lantern", lantern)))
         assertTrue(IslandLayout.overlaps(near).isEmpty())
         assertNotNull(IslandLayout.upgradeProblem(near, IsleBuilding.POST))
         // fully built: nothing to say
-        assertNull(IslandLayout.upgradeProblem(ApiClient.IslandConstruction(land = 5, buildings = mapOf("POST" to 3)), IsleBuilding.POST))
+        assertNull(IslandLayout.upgradeProblem(ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = 5, buildings = mapOf("POST" to 3)), IsleBuilding.POST))
     }
 
     @Test fun aVersion4LayoutWithOverlapsIsListedNotMovedAndOffersOnlyRealSpots() {
@@ -149,7 +151,7 @@ class IslandMasksTest {
 
     @Test fun aDraggedPieceSnapsOnlyToSpotsWhereItsPictureFitsTheLand() {
         for (land in 0..5) for (b in IsleBuilding.entries) for (stage in listOf(0, 3)) {
-            val c = if (stage == 0) ApiClient.IslandConstruction(land = land, starters = setOf(b.name)) else ApiClient.IslandConstruction(land = land, buildings = mapOf(b.name to stage))
+            val c = if (stage == 0) ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = land, starters = setOf(b.name)) else ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = land, buildings = mapOf(b.name to stage))
             val t = IslandTarget.Building(b)
             val spots = IslandLayout.fitSpots(c, t)
             assertTrue("$b $stage $land", spots.isNotEmpty())
@@ -164,13 +166,13 @@ class IslandMasksTest {
         val mask = IslandMasks.cells("building:HARBOUR:3", land, listOf(10, 15))
         assertTrue(mask.map { it[0] }.toSet().size >= 3 && mask.map { it[1] }.toSet().size >= 3)
         val behind = mask.filter { it != listOf(10, 15) && it[1] < 15 }.sortedWith(compareBy({ it[1] }, { it[0] })).first()
-        val c = ApiClient.IslandConstruction(land = land, buildings = mapOf("HARBOUR" to 3), positions = mapOf("HARBOUR" to listOf(8, 15)),
+        val c = ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = land, buildings = mapOf("HARBOUR" to 3), positions = mapOf("HARBOUR" to listOf(8, 15)),
             decor = listOf(ApiClient.IslandDecor(100, "lantern", behind)))
         assertFalse(listOf(10, 15) in IslandMasks.cells("decor:lantern", land, behind))
         assertFalse(listOf(10, 15) in IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.HARBOUR)))
         assertEquals("Belegt – rot markierte Fläche", IslandLayout.problem(c, IslandTarget.Building(IsleBuilding.HARBOUR), listOf(10, 15)))
         // its own old area never blocks it: one coast spot further on overlaps the old pier and is offered
-        val alone = ApiClient.IslandConstruction(land = land, buildings = mapOf("HARBOUR" to 3), positions = mapOf("HARBOUR" to listOf(10, 15)))
+        val alone = ApiClient.IslandConstruction(gridVersion = PlacementRule.MASKS, land = land, buildings = mapOf("HARBOUR" to 3), positions = mapOf("HARBOUR" to listOf(10, 15)))
         assertTrue(IslandMasks.cells("building:HARBOUR:3", land, listOf(11, 15)).any { it in mask })
         assertTrue(listOf(11, 15) in IslandLayout.targets(alone, IslandTarget.Building(IsleBuilding.HARBOUR)))
     }

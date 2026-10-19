@@ -27,10 +27,11 @@ def test_server_info_and_role_header(tmp_path, monkeypatch):
             "role": "test",
             "version": "4.0.0",
             "warning": "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN",
-            "features": ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4", "build_grid_v5"],
+            "features": ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4", "build_grid_v5", "build_grid_v6"],
             # 7.9.11: the placement rule the server really validates, public and without private data.
             # 7.9.12: version 5, the graphic masks (geometry/island_masks.json).
-            "grid_version": 5,
+            # 7.9.13: version 6, ground rectangles and terrain zones (geometry/island_ground.json).
+            "grid_version": 6,
         }
         assert client.get("/health").headers["X-Layermaxxing-Role"] == "test"
 

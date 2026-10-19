@@ -164,7 +164,7 @@ fun LayerHome(
     var sparkSent by remember { mutableStateOf<List<SparkSent>>(emptyList()) }
     var sparksOpen by remember { mutableStateOf(false) }
     var sparkCompose by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf<ApiClient.Status?>(null) }
+    var status by remember(token) { mutableStateOf<ApiClient.Status?>(null) }
     var users by remember { mutableStateOf<List<ApiClient.UserSummary>>(emptyList()) }
     var friends by remember { mutableStateOf<List<ApiClient.UserSummary>>(emptyList()) }
     var blocked by remember { mutableStateOf<List<ApiClient.UserSummary>>(emptyList()) }
@@ -224,10 +224,17 @@ fun LayerHome(
     }
 
     suspend fun refresh() {
+        // 7.9.13: the own status (and with it the user id) no longer waits on, or dies with, the
+        // other 17 requests: one failing endpoint kept the island on "wird geladen…" for ever.
+        val own = runCatching { api.status(token) }.onSuccess { s -> status = s; store.rememberUserId(s.userId) }
+        own.exceptionOrNull()?.let {
+            if (ApiErrors.isOffline(it.message)) offline = true
+            else if (status == null) error = ApiErrors.friendly(it.message)
+        }
         runCatching {
             coroutineScope {
                 val jobs = listOf(
-                    async { status = api.status(token) }, async { users = api.users(token) },
+                    async { users = api.users(token) },
                     async { friends = api.friends(token) }, async { blocked = api.blocked(token) },
                     async { incoming = api.incomingRequests(token) }, async { outgoing = api.outgoingRequests(token) },
                     async { groups = api.groups(token) }, async { topics = api.topics(token) }, async { messages = api.messages(token) },
@@ -241,7 +248,7 @@ fun LayerHome(
                 )
                 jobs.awaitAll()
             }
-            offline = false
+            if (own.isSuccess) offline = false
         }.onFailure {
             if (ApiErrors.isOffline(it.message)) offline = true
             else if (status == null) error = ApiErrors.friendly(it.message)
@@ -276,7 +283,7 @@ fun LayerHome(
         appMode = store.appMode; tab = if (store.startsInVillage) MainTab.CASTLES else appMode.startTab
         creativeSwitch = store.creativeMode
         fogVisible = false; lockedTapTracker.reset(); lockedLetterSounds.stopAll()
-        busy = true; error = null; offline = false
+        busy = true; error = null; offline = false; status = null
         // Offline? retry sooner, so the app comes back by itself.
         while (true) { refresh(); delay(if (offline) 8_000 else 30_000) }
     }
@@ -422,7 +429,9 @@ fun LayerHome(
                     },
                     onQuestDone = { quest, done -> act { api.setQuestCompleted(token, quest.id, done) } },
                     onQuestDelete = { quest -> act { api.deleteQuest(token, quest.id) } },
-                    ownId = status?.userId,
+                    // A known account starts its island at once; a fresh status of another user replaces it.
+                    ownId = status?.userId ?: store.knownUserId(),
+                    islandScope = store.islandScope(),
                     incoming = incoming, outgoing = outgoing,
                     onRespondFriend = { id, accept -> act { api.respondFriend(token, id, accept) } },
                     ownColor = status?.displayColor ?: "#17A2A6",
