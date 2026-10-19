@@ -26,7 +26,7 @@ VersionCode73, Paket `at.gregor.layermaxxing.gerfried`. Produktcode und Tests mi
 - Frischer unabhängiger readonlyOpus-Bildreview: **READY**, die vier bekannten Überdeckungs-/Abschneidefehler nicht mehr sichtbar. PNGs sind tatsächliche Robolectric-JVM-Renderings mit synthetischen Fixtures, kein Telefon-/Live-Nutzerdatentest.
 - APKversion73/7.9.13-kueste und erwarteter Zertifikat-SHA256 `dc86b5644a707b963ec94cc25d233f249cc8654716a6be666e88758ce9b9a0c7` verifiziert.
 - Die tatsächlich eingebetteten `island_ground.json` und `island_masks.json` sind bytegleich den Serverdateien.
-- Finale lokale APK SHA256 `f5a4094f4d4209e2349cf63681a54b1b006bed5d50645e5f4c236f24c978430a`.
+- Finale lokale APK SHA256 `3b7c5fb38615aaf76605edba12687a96b9bcdfe7d89d0d10cb38abf8a77c9ec3`.
 
 ## Grenzen / Betrieb
 

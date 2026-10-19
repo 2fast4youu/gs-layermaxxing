@@ -21,7 +21,7 @@ Dies ist Gerfrieds parallel installierbare Android-Test-App mit eigenem FastAPI-
 
 - Branch bleibt `gerfried-erweiterung`; nicht auf `main` und nicht direkt auf `gregor-erweiterung` arbeiten. Regelmäßig `gregor-erweiterung` in den Branch mergen (Konfliktschwerpunkte: `server/app/main.py`, `LayerHome.kt`, `CastlesScreen.kt`, `VillageHud.kt`).
 - Test-App bleibt parallel installierbar: `applicationId at.gregor.layermaxxing.gerfried`, Label `GS Layermaxxing Gerfried`.
-- Gerfried-Testserver: `https://layermaxxing.derkellner.duckdns.org`.
+- Gerfried-Testserver: `https://headless.tail586ff8.ts.net:10000/` (öffentlicher Tailscale Funnel; 443/8443 bleiben privat).
 - Produktions-URL darf ohne explizite Konfiguration `https://example.invalid/` bleiben; niemals eine echte Produktionsadresse raten.
 - Keine Secrets, Tokens, Datenbanken, APKs oder lokale Konfiguration committen.
 - Bestehende Tests nicht löschen, abschwächen oder pauschal unterdrücken.

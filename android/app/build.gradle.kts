@@ -18,7 +18,7 @@ val gregorApiBaseUrl = normalizedUrl(
 val gerfriedApiBaseUrl = normalizedUrl(
     localProperties.getProperty("layermaxxing.gerfriedApiBaseUrl")
         ?: System.getenv("LAYERMAXXING_GERFRIED_URL")
-        ?: "https://layermaxxing.derkellner.duckdns.org/"
+        ?: "https://headless.tail586ff8.ts.net:10000/"
 )
 
 val gregorTestApiBaseUrl = normalizedUrl(
