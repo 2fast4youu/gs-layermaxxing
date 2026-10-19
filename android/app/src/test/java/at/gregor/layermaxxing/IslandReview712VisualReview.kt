@@ -40,8 +40,8 @@ class IslandReview712VisualReview {
     }
     private fun tick(ms: Long = 900) { rule.mainClock.advanceTimeBy(ms); rule.waitForIdle() }
 
-    private fun construction(harbour: List<Int>?, land: Int = 5, level: Int = 2, spots: Map<String, List<Int>> = mapOf("HOUSE" to listOf(8, 6))) =
-        ApiClient.IslandConstruction(land = land, mode = "creative", available = 500, ageDays = 30,
+    private fun construction(harbour: List<Int>?, land: Int = 5, level: Int = 2, spots: Map<String, List<Int>> = mapOf("HOUSE" to listOf(8, 6)), version: Int = PlacementRule.CURRENT) =
+        ApiClient.IslandConstruction(land = land, mode = "creative", available = 500, ageDays = 30, gridVersion = version,
             buildings = spots.keys.associateWith { level } + (if (harbour != null) mapOf("HARBOUR" to level) else emptyMap()),
             positions = spots + (harbour?.let { mapOf("HARBOUR" to it) } ?: emptyMap()))
 
@@ -71,15 +71,30 @@ class IslandReview712VisualReview {
 
     @Test fun mapRoutesBetweenTheRealHarbours() {
         assumeTrue(out != null)
-        rule.setContent { World(construction(listOf(8, 15)), "map") }
+        // 7.9.13: the pier on the real v6 stage-2 socket ([10, 18], south coast); the historical (8, 15) is no v6
+        // socket and rightly a repair case (IslandMapRouteUiTest.theHistoricalSpotIsARepairCaseUnderV6AndTheRealSocketIsNot)
+        rule.setContent { World(construction(IslandGround.harbourSpots(2, 5).single()), "map") }
         tick(1500); save("karte-routen-hafen-sued")
     }
 
     @Test fun mapRoutesWithAMovedHarbour() {
         assumeTrue(out != null)
         // an old north-coast harbour (version-4 data): routes go around the island to it
-        rule.setContent { World(construction(listOf(10, 4)), "map") }
+        rule.setContent { World(construction(listOf(10, 4), version = PlacementRule.COMPACT), "map") }
         tick(1500); save("karte-routen-hafen-nord-altdaten")
+    }
+
+    /**
+     * 7.9.13: until now this rendered the SAME stage-2 socket as karte-routen-hafen-sued (harbourSpots(2, 5) has exactly
+     * one spot): a byte-identical duplicate. Now a real other variant: HARBOUR stage 0 (Strandtreff, a rowboat on the
+     * beach) under the v6 ground rule, its boats moor at the water line in front of it.
+     */
+    @Test fun mapRoutesFromAV6Socket() {
+        assumeTrue(out != null)
+        val beach = construction(IslandGround.harbourSpots(0, 5).first()).let { c ->
+            c.copy(gridVersion = PlacementRule.GROUND, buildings = c.buildings - "HARBOUR", starters = setOf("HARBOUR")) }
+        rule.setContent { World(beach, "map") }
+        tick(1500); save("karte-routen-v6-strandtreff")
     }
 
     @Test fun closeNeighboursUnderTheMasks() {

@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from test_v9_quests import auth, befriend, load_app, register
 from test_island_evolution import earn, state
@@ -93,8 +94,8 @@ def test_special_decor_is_expensive_free_placed_and_limited_to_three(tmp_path):
         assert sum(1 for d in st["construction"]["decor"] if d["item"].startswith("place_")) == 3
         fourth = post(c, a, st, mode="creative", action="decor_place", item="place_desk", position=[10, 15])
         assert fourth.status_code == 422 and "3" in fourth.json()["detail"]
-        # Ordinary decoration is not limited by the special rule.
-        assert post(c, a, st, mode="creative", action="decor_place", item="bench", position=[10, 15]).status_code == 200
+        # Ordinary decoration is not limited by the special rule. (7.9.13: [10, 15] is the beach now, version 6 zones.)
+        assert post(c, a, st, mode="creative", action="decor_place", item="bench", position=[10, 13]).status_code == 200
         assert state(c, a)["construction"]["spent"] == 120
 
 
@@ -129,8 +130,12 @@ def test_old_life_places_migrate_losslessly_and_more_than_three_stay(tmp_path):
         assert post(c, a, st, mode="creative", action="decor_place", item="place_city", position=[10, 9]).status_code == 200
 
 
-def test_old_coast_positions_move_onto_the_grid_without_losing_anything(tmp_path):
+@pytest.mark.parametrize("version", [5, 6])
+def test_old_coast_positions_move_onto_the_grid_without_losing_anything(tmp_path, version):
     m = load_app(tmp_path)
+    # 7.9.13: version 5 (history) moves the harbour from [10, 17] onto the grid; version 6 keeps it exactly there: the
+    # harbour's pier head belongs in the water in front of the beach, so a harbour outside the meadow is not lost land.
+    m.GRID_VERSION = version
     with TestClient(m.app) as c:
         a = register(c, "A")
         old = {"buildings": {"POST": 2, "HARBOUR": 1, "HOUSE": 1}, "land": 5, "spent": 85, "revision": 7,
@@ -141,8 +146,11 @@ def test_old_coast_positions_move_onto_the_grid_without_losing_anything(tmp_path
         cons = state(c, a)["construction"]
         assert cons["buildings"] == old["buildings"] and cons["spent"] == 85 and cons["revision"] == 7
         assert cons["positions"].get("HOUSE", [10, 6]) == [10, 6]  # the house stood on land: unchanged
-        for p in list(cons["positions"].values()) + [d["position"] for d in cons["decor"]]:
-            assert m.grid_buildable(p[0], p[1], 5), p
+        for k, p in list(cons["positions"].items()) + [(d["id"], d["position"]) for d in cons["decor"]]:
+            if version >= 6 and k == "HARBOUR":
+                assert p == [10, 17]  # kept as saved, never reinterpreted
+            else:
+                assert m.grid_buildable(p[0], p[1], 5), p
         assert [d["id"] for d in cons["decor"]] == [100, 101] and cons["decor"][1]["position"] == [12, 9]
         # Deterministic: reading twice gives the same layout.
         assert state(c, a)["construction"] == cons

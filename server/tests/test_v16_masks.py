@@ -24,6 +24,14 @@ ITEMS = ("flowers", "bench", "lantern", "flag", "palm", "campfire", "hammock", "
 SPECIAL = ("place_home", "place_bude", "place_uni", "place_hut", "place_club", "place_station", "place_city", "place_desk")
 
 
+def load_v5(tmp_path):
+    """7.9.13: version 6 (ground rectangles) is current; these are the version-5 reference cases, kept as history and
+    run against the unchanged version-5 code path (like test_v14_placement pins version 4)."""
+    m = load_app(tmp_path)
+    m.GRID_VERSION = 5
+    return m
+
+
 def post(c, a, st, **body):
     return c.post("/api/island/construction", headers=auth(a), json={"expected_revision": st["construction"]["revision"], **body})
 
@@ -118,7 +126,7 @@ def populated(land):
 # ------------------------------------------------------------------ the fixture
 
 def test_the_server_publishes_version_5_and_both_fixtures_agree(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     assert m.GRID_VERSION == GRID["version"] == MASKS["version"] == 5
     assert GRID["masks"] == "geometry/island_masks.json"
     with TestClient(m.app) as c:
@@ -131,7 +139,7 @@ def test_the_server_publishes_version_5_and_both_fixtures_agree(tmp_path):
 
 
 def test_every_building_stage_land_and_item_has_a_mask_from_its_real_sprite(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     keys = {"building:%s:%d" % (b, s) for b in BUILDINGS for s in range(4)} | {"decor:" + i for i in ITEMS + SPECIAL} | \
         {"decor:?", "decor:?special"}
     assert keys <= set(MASKS["pieces"])
@@ -170,7 +178,7 @@ def test_masks_are_never_one_cell_for_a_wide_picture(tmp_path):
 # ------------------------------------------------------------------ the rule = the reference
 
 def test_target_cells_are_exactly_what_the_rule_accepts(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     # (land 0 holds all six stage-0 pieces, test_v13_start; this crowded mix needs land 1+)
     for land in (1, 3, 5):
         st = populated(land)
@@ -197,7 +205,7 @@ def test_target_cells_are_exactly_what_the_rule_accepts(tmp_path):
 
 
 def test_the_api_accepts_every_target_and_refuses_every_other_cell(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     with TestClient(m.app) as c:
         for land in (1, 5):
             a = register(c, "L%d" % land)
@@ -223,7 +231,7 @@ def test_the_api_accepts_every_target_and_refuses_every_other_cell(tmp_path):
 def test_densest_allowed_neighbours_never_share_a_cell_and_one_step_closer_is_refused(tmp_path):
     """For every pair of building stages: the closest accepted neighbour has disjoint masks; any offset whose masks
     share a cell is refused. (The pixel check of the same neighbours on the decoded sprites: IslandMasksPixelTest.)"""
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     for land in (0, 3, 5):
         for b1 in ("HOUSE", "POST"):
             for s1 in range(4):
@@ -246,7 +254,7 @@ def test_densest_allowed_neighbours_never_share_a_cell_and_one_step_closer_is_re
 def test_a_close_neighbour_version_4_accepted_is_refused_now(tmp_path):
     """Gegenprobe: 7.9.11 (version 4) put the finished house and the post office one cell apart on the big land; their
     pictures stand inside each other, version 5 refuses exactly that. The same cells stay fine under version 4."""
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     with TestClient(m.app) as c:
         a = register(c, "A")
         st = {"buildings": {"HOUSE": 3, "POST": 2}, "starters": [], "land": 5, "spent": 0, "revision": 1, "places_migrated": True,
@@ -267,7 +275,7 @@ def test_a_close_neighbour_version_4_accepted_is_refused_now(tmp_path):
 # ------------------------------------------------------------------ the harbour
 
 def test_the_harbour_needs_its_whole_pier_on_a_fitting_coast(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     for land in range(6):
         for s in range(4):
             key = "building:HARBOUR:%d" % s
@@ -283,7 +291,7 @@ def test_the_harbour_needs_its_whole_pier_on_a_fitting_coast(tmp_path):
 
 
 def test_a_three_by_three_harbour_does_not_fit_where_only_its_anchor_is_free(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     land = 5
     key = "building:HARBOUR:3"
     msk = mask(key, land, [10, 15])
@@ -303,7 +311,7 @@ def test_a_three_by_three_harbour_does_not_fit_where_only_its_anchor_is_free(tmp
 # ------------------------------------------------------------------ upgrade and legacy layouts
 
 def test_an_upgrade_whose_bigger_picture_does_not_fit_is_refused_before_paying(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     with TestClient(m.app) as c:
         a, b = register(c, "A"), register(c, "B")
         befriend(c, a, b)
@@ -341,7 +349,7 @@ def test_an_upgrade_whose_bigger_picture_does_not_fit_is_refused_before_paying(t
 
 
 def test_a_version_4_island_with_overlaps_is_kept_exactly_and_can_be_repaired(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     with TestClient(m.app) as c:
         a = register(c, "A")
         # a layout version 4 accepted (one cell each): on screen the house, the post office and the bench overlap
@@ -372,7 +380,7 @@ def test_a_version_4_island_with_overlaps_is_kept_exactly_and_can_be_repaired(tm
 
 
 def test_shrinking_never_lets_two_pictures_overlap(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     with TestClient(m.app) as c:
         a = register(c, "A")
         st = {"buildings": {"HOUSE": 1, "POST": 1}, "starters": [], "land": 5, "spent": 0, "revision": 1, "places_migrated": True,
@@ -393,7 +401,7 @@ def test_shrinking_never_lets_two_pictures_overlap(tmp_path):
 
 
 def test_unknown_decoration_is_counted_with_the_signpost_it_is_drawn_as(tmp_path):
-    m = load_app(tmp_path)
+    m = load_v5(tmp_path)
     st = populated(5)
     assert m.decor_mask_key("gnome_legacy") == "decor:?" and m.decor_mask_key("place_future") == "decor:?special"
     spot = next(d for d in st["decor"] if d["id"] == 102)["position"]

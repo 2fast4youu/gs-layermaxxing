@@ -1,5 +1,6 @@
 package at.gregor.layermaxxing
 
+
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -46,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -156,12 +159,15 @@ internal fun PlaceStage(
     /** 7.9.9: the building's current stage (0–3): title, head picture, icon and line follow [IslandStages]. */
     level: Int = 3,
     action: Pair<String, () -> Unit>? = null,
+    /** 7.9.13: the stage story's painted things with their real handlers (StageStory.bind), beside the golden action. */
+    story: List<Pair<StageStory.Item, StoryHook>> = emptyList(),
     content: @Composable androidx.compose.foundation.layout.BoxScope.(StageGeometry) -> Unit,
 ) {
     val st = place.style()
     val scene = StageScenes.of(place, level)
-    Box(Modifier.fillMaxSize().background(st.bottom)) {
-        FunctionStage(scene) { g -> content(g) }
+    val chapter = StageStory.of(place, level)
+    Box(Modifier.fillMaxSize().background(st.bottom).semantics { stateDescription = "Geschichte: ${chapter.core}" }) {
+        FunctionStage(scene) { g -> if (story.isNotEmpty()) g.reserve = 104.dp; content(g) }
         // Soft top vignette so the sign always reads.
         Box(Modifier.fillMaxWidth().height(110.dp).background(Brush.verticalGradient(listOf(Color(0x66000000), Color.Transparent))))
         Row(
@@ -206,7 +212,17 @@ internal fun PlaceStage(
                     modifier = Modifier.semantics { contentDescription = "Stufe: ${stage.subtitle}" })
             }
         }
-        action?.let { (label, onClick) -> GoldButton(label, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 18.dp), onClick) }
+        if (story.isEmpty()) action?.let { (label, onClick) -> GoldButton(label, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 18.dp), onClick) }
+        else Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(start = 8.dp, end = 8.dp, bottom = 16.dp)
+                .semantics { contentDescription = "Gegenstände: ${chapter.core}" },
+            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // left thing · golden action (it may wrap, never covered) · right thing; a missing side keeps its room
+            story.getOrNull(0)?.let { (item, hook) -> StoryThing(item, hook) } ?: Spacer(Modifier.size(56.dp))
+            action?.let { (label, onClick) -> GoldButton(label, Modifier.weight(1f, fill = false).padding(horizontal = 6.dp), onClick, compact = true) }
+            story.getOrNull(1)?.let { (item, hook) -> StoryThing(item, hook) } ?: Spacer(Modifier.size(56.dp))
+        }
     }
 }
 
@@ -220,17 +236,17 @@ internal fun IsleBuilding.background(): Int = when (this) {
 }
 
 @Composable
-internal fun GoldButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun GoldButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit, compact: Boolean = false) {
     Box(
         modifier.shadow(10.dp, RoundedCornerShape(30.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFFE2CB93), Color(0xFFC9A55C), Color(0xFFA9843F))), RoundedCornerShape(30.dp))
             .border(2.dp, Color(0xFF7E6236), RoundedCornerShape(30.dp))
             .clip(RoundedCornerShape(30.dp)).clickable(onClick = onClick)
-            .padding(horizontal = 26.dp, vertical = 13.dp)
+            .padding(horizontal = if (compact) 14.dp else 26.dp, vertical = 13.dp)
             .semantics { role = Role.Button },
     ) {
         Text(
-            label, color = Color(0xFF5A3200), fontFamily = Display, fontSize = 18.sp,
+            label, color = Color(0xFF5A3200), fontFamily = Display, fontSize = if (compact) 16.sp else 18.sp, textAlign = TextAlign.Center,
             style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0x88FFFFFF), Offset(0f, 2f), 0f)),
         )
     }
@@ -324,7 +340,15 @@ internal fun PostOffice(
     var choosing by rememberSaveable { mutableStateOf(false) }
     var page by rememberSaveable(fach) { mutableStateOf(0) }
     val scene = StageScenes.of(IsleBuilding.POST, level)
-    PlaceStage(IsleBuilding.POST, onClose, level, action = "Brief schreiben" to { if (fach != null) onWrite(fach!!) else choosing = true }) { g ->
+    // 7.9.13 story: the pin / flap / cubby opens the oldest unread letter that is really here; the fog / seal the oldest
+    // locked one (its fog, sound and evidence as before). Counts are the real ones; nothing there = said, not invented.
+    val unread = letters.filter { it.groupId == null && it.incoming && Conversations.letterState(it, opened[it.id] != null) == LetterState.READY }.sortedBy { it.createdAt }
+    val locked = letters.filter { it.groupId == null && Conversations.letterState(it, opened[it.id] != null).locked }.sortedBy { it.createdAt }
+    val story = StageStory.bind(IsleBuilding.POST, level, mapOf(
+        StageStory.Act.UNREAD to StoryHook(unread.size, unread.firstOrNull()?.let { m -> { fach = m.peerId; onOpen(m) } }, "Keine ungelesenen Briefe"),
+        StageStory.Act.LOCKED to StoryHook(locked.size, locked.firstOrNull()?.let { m -> { onLocked(m) } }, "Kein gesperrter Brief unterwegs"),
+    ))
+    PlaceStage(IsleBuilding.POST, onClose, level, action = "Brief schreiben" to { if (fach != null) onWrite(fach!!) else choosing = true }, story = story) { g ->
         val selected = fach?.let { id -> pals.firstOrNull { it.id == id } }
         if (selected == null) {
             val slots = g.slots
@@ -457,18 +481,29 @@ internal fun HarbourBoard(
     onAllTopics: () -> Unit,
     onClose: () -> Unit,
     level: Int = 3,
+    /** 7.9.13: letters that really arrived (unlocked, unread) and the way to them (the post); null = not offered here. */
+    arrivals: Int = 0,
+    onArrivals: (() -> Unit)? = null,
 ) {
     var showDone by rememberSaveable { mutableStateOf(false) }
     var page by rememberSaveable(showDone) { mutableStateOf(0) }
     val scene = StageScenes.of(IsleBuilding.HARBOUR, level)
-    PlaceStage(IsleBuilding.HARBOUR, onClose, level, action = "Quest anpinnen" to onNewQuest) { g ->
+    val openTopics = topics.count { it.completedAt == null }
+    val openQuests = quests.count { it.completedAt == null }
+    val story = StageStory.bind(IsleBuilding.HARBOUR, level, buildMap {
+        put(StageStory.Act.TOPICS, StoryHook(openTopics, onAllTopics))
+        put(StageStory.Act.OPEN_QUESTS, StoryHook(openQuests, if (openQuests > 0) ({ showDone = false; page = 0 }) else null, "Keine offene Quest – pinne eine an"))
+        if (onArrivals != null) put(StageStory.Act.ARRIVALS, StoryHook(arrivals, if (arrivals > 0) onArrivals else null, "Gerade ist kein Brief angekommen"))
+    })
+    PlaceStage(IsleBuilding.HARBOUR, onClose, level, action = "Quest anpinnen" to onNewQuest, story = story) { g ->
         val shown = quests.filter { (it.completedAt != null) == showDone }
         Row(Modifier.statusBarsPadding().padding(top = 104.dp, start = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             BoardTab("Offen ${quests.count { it.completedAt == null }}", !showDone) { showDone = false }
             BoardTab("Erledigt ${quests.count { it.completedAt != null }}", showDone) { showDone = true }
         }
         val slots = g.slots
-        val size = g.objectSize(slots, max = 124.dp, min = 104.dp, aspect = 1.05f)
+        // 7.9.13: never smaller than title + × row, partner row and the 48 dp "Abhaken" need at font 1.5
+        val size = g.objectSize(slots, max = 156.dp, min = 144.dp, aspect = 1.05f)
         if (shown.isEmpty()) SceneSlip(if (showDone) "Noch nichts abgehakt" else "Noch kein Auftrag", "Pinne eine Quest an.", g.box(slots.first(), 180.dp, 80.dp))
         val pages = shown.chunked(slots.size)
         if (pages.size > 1) g.reserve = 132.dp
@@ -506,27 +541,33 @@ private fun BoardTab(text: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun QuestNote(q: ApiClient.Quest, onDone: (ApiClient.Quest, Boolean) -> Unit, onDelete: ((ApiClient.Quest) -> Unit)?, pinned: Boolean = true, tilt: Float = 0f) {
     val done = q.completedAt != null
-    Box(Modifier.fillMaxSize().rotate(tilt)) {
+    Box(Modifier.fillMaxSize().rotate(tilt).testTag("quest-note")) {
         Sprite(R.drawable.p_note, Modifier.fillMaxSize().padding(top = 6.dp))
-        Column(Modifier.fillMaxSize().padding(start = 12.dp, end = 10.dp, top = 18.dp, bottom = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AppIcon(AppIcons.questIcon(q.icon), AppIcons.questLabels[q.icon], tint = Color(0xFF5A3A12), size = 18.dp)
-                Spacer(Modifier.weight(1f))
-                Sprite(R.drawable.p_star, Modifier.size(14.dp))
-                Text("${q.points}", fontFamily = Display, color = Color(0xFF9A6B00), fontSize = 12.sp)
+        // 7.9.13 (renders Anleger / Hafen, 360 dp, font 1.5): three rows in order, nothing on top of another: title with
+        // the × beside it (one 48 dp row), quest icon · partner · points, then "Abhaken" alone (48 dp). Title and partner
+        // end with "…" when long, never under a button.
+        Column(Modifier.fillMaxSize().padding(start = 10.dp, end = 6.dp, top = 14.dp, bottom = 6.dp)) {
+            Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(q.title, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 13.sp, lineHeight = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).testTag("quest-title"))
+                if (onDelete != null) Box(Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Quest löschen") { onDelete(q) }.testTag("quest-delete"), Alignment.Center) {
+                    AppIcon(R.drawable.ico_close, "Quest löschen", tint = Color(0xFF8A6A3A), size = 14.dp)
+                }
             }
-            Text(q.title, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 13.sp, lineHeight = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(if (q.targetType == "group") q.targetName else "mit ${q.targetName}", fontFamily = Body, fontSize = 10.sp, color = Color(0xFF8A6A3A), maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AppIcon(AppIcons.questIcon(q.icon), AppIcons.questLabels[q.icon], tint = Color(0xFF5A3A12), size = 16.dp)
+                Spacer(Modifier.width(4.dp))
+                Text(if (q.targetType == "group") q.targetName else "mit ${q.targetName}", fontFamily = Body, fontSize = 10.sp, lineHeight = 12.sp, color = Color(0xFF8A6A3A), maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).testTag("quest-partner"))
+                Sprite(R.drawable.p_star, Modifier.size(12.dp))
+                Text("${q.points}", fontFamily = Display, color = Color(0xFF9A6B00), fontSize = 11.sp, lineHeight = 13.sp, maxLines = 1)
+            }
             Spacer(Modifier.weight(1f))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (done) "Erledigt" else "Abhaken", fontFamily = Display, fontSize = 11.sp, color = Color.White, maxLines = 1,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background(if (done) Color(0xFF5E7F5A) else Color(0xFF3F7C78))
-                        .clickable { onDone(q, !done) }.padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-                Spacer(Modifier.weight(1f))
-                if (onDelete != null) AppIcon(R.drawable.ico_close, "Quest löschen", modifier = Modifier.clip(CircleShape).clickable { onDelete(q) }.padding(4.dp), tint = Color(0xFF8A6A3A), size = 13.dp)
-            }
+            Box(
+                Modifier.testTag("quest-done").heightIn(min = 48.dp).clip(RoundedCornerShape(50)).clickable { onDone(q, !done) }
+                    .background(if (done) Color(0xFF5E7F5A) else Color(0xFF3F7C78)),
+                Alignment.Center,
+            ) { Text(if (done) "Erledigt" else "Abhaken", fontFamily = Display, fontSize = 11.sp, color = Color.White, maxLines = 1, modifier = Modifier.padding(horizontal = 12.dp)) }
         }
         // pinned to a board / nailed to a post; tied to the beach pole with a cord
         if (pinned) Sprite(R.drawable.p_pin, Modifier.align(Alignment.TopCenter).size(20.dp))
@@ -564,7 +605,23 @@ internal fun LighthouseView(
     val scene = StageScenes.of(IsleBuilding.LIGHTHOUSE, level)
     var page by rememberSaveable { mutableStateOf(0) }
     var bottlePage by rememberSaveable { mutableStateOf(0) }
-    PlaceStage(IsleBuilding.LIGHTHOUSE, onClose, level, action = "Freunde finden" to onFind) { g ->
+    // 7.9.13 story: the spyglass searches people (the real search), the bottle / sail / fire basket turns to the next
+    // real request to me, the lantern turns the beam to the next friends. Only real requests and friends; no presence.
+    val seenCount = pals.size + outgoing.size
+    val perPage = scene.slots.size.coerceAtLeast(1)
+    // the pages the beam really shows (fewer slots per page when the request card covers one), set by the stage below
+    var livePages by remember { mutableStateOf((seenCount + perPage - 1) / perPage) }
+    val beamPages = livePages
+    val requestPages = incoming.size
+    var bottleH by remember { mutableStateOf(0.dp) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val story = StageStory.bind(IsleBuilding.LIGHTHOUSE, level, mapOf(
+        StageStory.Act.FIND to StoryHook(null, onFind),
+        StageStory.Act.REQUESTS to StoryHook(incoming.size, if (incoming.isNotEmpty()) ({ bottlePage = (bottlePage + 1) % requestPages.coerceAtLeast(1) }) else null, "Keine offene Anfrage an dich"),
+        StageStory.Act.FRIENDS to StoryHook(pals.size, if (beamPages > 1) ({ page = (page + 1) % beamPages }) else null,
+            if (pals.isEmpty()) "Noch kein Freund im Strahl" else "Alle Freunde sind im Lichtkegel"),
+    ))
+    PlaceStage(IsleBuilding.LIGHTHOUSE, onClose, level, action = "Freunde finden" to onFind, story = story) { g ->
         if (level >= 2) Canvas(Modifier.fillMaxSize()) {
             // the beam: from the beacon's lamp on the rocks, from below the gallery in the tower
             val origin = g.piece?.let { Offset(it.x(.5f).toPx(), it.y(.12f).toPx()) } ?: Offset(size.width * .5f, size.height * 1.02f)
@@ -582,10 +639,30 @@ internal fun LighthouseView(
         val slots = g.slots
         val size = g.objectSize(slots, max = 96.dp, aspect = 1.2f)
         if (seen.isEmpty()) SceneSlip(if (level < 2) "Noch winkt niemand zurück" else "Noch leuchtet niemand zurück", "Finde Freunde – sie tauchen hier auf.", g.box(slots.first(), 200.dp, 80.dp))
-        val pages = seen.chunked(slots.size)
-        if (pages.size > 1) g.reserve = 132.dp
+        // 7.9.13: no friend lies under the request card (measured: its text wraps at a large font); a slot it covers stays
+        // empty and its friend moves to the next page of the beam, nobody is dropped
+        val cardBottom = g.screen.h - 136.dp; val cardTop = cardBottom - bottleH - 4.dp
+        val oh = size * 1.2f
+        fun topOf(s: androidx.compose.ui.unit.DpOffset) = (s.y - oh / 2).coerceAtMost(g.screen.h - g.reserve - oh).coerceAtLeast(104.dp)
+        fun covered(s: androidx.compose.ui.unit.DpOffset) = topOf(s).let { t -> s.x - size / 2 < 264.dp && t < cardBottom && t + oh > cardTop }
+        fun apart(a: androidx.compose.ui.unit.DpOffset, b: androidx.compose.ui.unit.DpOffset) =
+            kotlin.math.abs((a.x - b.x).value) >= size.value || kotlin.math.abs((topOf(a) - topOf(b)).value) >= oh.value
+        // a covered slot first moves up right above the card if that spot is free; only otherwise it stays empty
+        fun freeSlots(): List<androidx.compose.ui.unit.DpOffset> {
+            if (incoming.isEmpty() || bottleH == 0.dp) return slots
+            val kept = slots.filter { !covered(it) }.toMutableList()
+            slots.filter { covered(it) }.forEach { s ->
+                val up = androidx.compose.ui.unit.DpOffset(s.x, cardTop - oh / 2 - 2.dp)
+                if (cardTop - oh - 2.dp >= 104.dp && !covered(up) && kept.all { apart(it, up) }) kept += up
+            }
+            return kept.ifEmpty { slots }
+        }
+        var free = freeSlots()
+        if (seen.size > free.size) { g.reserve = 132.dp; free = freeSlots() }
+        val pages = seen.chunked(free.size)
+        androidx.compose.runtime.SideEffect { livePages = pages.size.coerceAtLeast(1) }
         pages.getOrNull(page.coerceAtMost(pages.lastIndex.coerceAtLeast(0)))?.forEachIndexed { i, (f, out) ->
-            val m = g.box(slots[i], size, size * 1.2f)
+            val m = g.box(free[i], size, size * 1.2f)
             if (f != null) Lookout(f.avatarEmoji, f.name, profileColor(f.displayColor), levels[f.id] ?: 1, scene.holder, bob, waiting = false,
                 m.semantics { set(SceneSlotKey, "friend:${f.id}") }.clip(RoundedCornerShape(14.dp)).clickable(onClickLabel = "${f.name} öffnen") { onFriend(f.id) })
             else if (out != null) Lookout("✉", out.recipientName, Color(0xFF9FB4C8), 0, scene.holder, bob, waiting = true,
@@ -593,10 +670,12 @@ internal fun LighthouseView(
         }
         ScenePager(page, pages.size, if (level < 2) "In Sichtweite" else "Im Lichtkegel") { page = it }
         // requests to me: bottles washed ashore at the beach (at the gallery's railing in the tower)
-        val bottles = incoming.chunked(2)
+        // 7.9.13: one request per page (two wrapped cards would push the friends out of the picture), "weiter ›" pages
+        val bottles = incoming.chunked(1)
         val shownBottles = bottles.getOrNull(bottlePage.coerceAtMost(bottles.lastIndex.coerceAtLeast(0))).orEmpty()
         if (shownBottles.isNotEmpty()) Column(
-            Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 10.dp, bottom = 136.dp).width(250.dp),
+            Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 10.dp, bottom = 136.dp).width(250.dp)
+                .onSizeChanged { bottleH = with(density) { it.height.toDp() } },
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (bottles.size > 1) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -636,22 +715,29 @@ private fun Lookout(emoji: String, name: String, color: Color, stars: Int, holde
 
 @Composable
 private fun Bottle(name: String, bob: Float, onYes: () -> Unit, onNo: () -> Unit) {
-    Row(
+    // 7.9.13: request text above, the two answers in their own row: in one row (250 dp, font 1.5) the text was cut.
+    Column(
         Modifier.fillMaxWidth().offset(y = (bob * 2).dp).shadow(5.dp, RoundedCornerShape(20.dp))
             .background(Brush.verticalGradient(listOf(Color(0xF2FFFBF1), Color(0xF2F6E7C8))), RoundedCornerShape(20.dp))
-            .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(20.dp)).padding(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(20.dp)).padding(6.dp).testTag("bottle-card"),
     ) {
-        Sprite(R.drawable.p_bottle, Modifier.size(40.dp).rotate(-35f + bob * 6))
-        Column(Modifier.weight(1f)) {
-            Text(name, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("möchte dein Freund werden", fontFamily = Body, color = Color(0xFF8A6A3A), fontSize = 11.sp, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Sprite(R.drawable.p_bottle, Modifier.size(40.dp).rotate(-35f + bob * 6))
+            Column(Modifier.weight(1f)) {
+                Text(name, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("bottle-name"))
+                Text("Freundschaftsanfrage", fontFamily = Body, color = Color(0xFF8A6A3A), fontSize = 11.sp, lineHeight = 13.sp, maxLines = 2,
+                    modifier = Modifier.testTag("bottle-ask"))
+            }
         }
-        Text("Nein", fontFamily = Body, fontWeight = FontWeight.Bold, color = Color(0xFF8A6A3A), modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onNo).heightIn(min = 40.dp).padding(horizontal = 6.dp, vertical = 10.dp))
-        Text(
-            "Annehmen", fontFamily = Display, color = Color.White, fontSize = 13.sp,
-            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF3F7C78)).clickable(onClick = onYes).heightIn(min = 40.dp).padding(horizontal = 10.dp, vertical = 10.dp),
-        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+            Text("Nein", fontFamily = Body, fontWeight = FontWeight.Bold, color = Color(0xFF8A6A3A), maxLines = 1,
+                modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onNo).heightIn(min = 48.dp).testTag("bottle-no").padding(horizontal = 10.dp, vertical = 10.dp))
+            Text(
+                "Annehmen", fontFamily = Display, color = Color.White, fontSize = 13.sp, maxLines = 1,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF3F7C78)).clickable(onClick = onYes).heightIn(min = 48.dp).testTag("bottle-yes").padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        }
     }
 }
 
@@ -665,12 +751,23 @@ private fun Bottle(name: String, bob: Float, onYes: () -> Unit, onNo: () -> Unit
 @Composable
 internal fun LibraryBook(onClose: () -> Unit, glossary: @Composable () -> Unit, level: Int = 3) {
     val scene = StageScenes.of(IsleBuilding.LIBRARY, level)
-    PlaceStage(IsleBuilding.LIBRARY, onClose, level) { g ->
+    // 7.9.13 story: magnifier, books on the board and the quill work the glossary on the book's pages (search, next
+    // category, add a word); they lie beside the book, never on its text (7.9.12 drew the quill over the add row).
+    val commands = androidx.compose.runtime.remember { GlossaryCommands() }
+    val story = StageStory.bind(IsleBuilding.LIBRARY, level, mapOf(
+        StageStory.Act.SEARCH to StoryHook(null, { commands.search++ }),
+        StageStory.Act.CATEGORIES to StoryHook(null, { commands.category++ }),
+        StageStory.Act.ADD_WORD to StoryHook(null, if (commands.canAdd) ({ commands.add++ }) else null, "Nur lesen: dieser Server kennt das gemeinsame Wörterbuch nicht"),
+    )).map { (item, hook) -> if (item.act == StageStory.Act.CATEGORIES) item.copy(label = item.label + " (jetzt: ${commands.shown ?: "Alle"})") to hook else item to hook }
+    PlaceStage(IsleBuilding.LIBRARY, onClose, level, story = story) { g ->
         val r = scene.book!!
         val pages = Brush.horizontalGradient(listOf(Color(0xFFE6D6B4), Color(0xFFFFF9EC), Color(0xFFFFF9EC), Color(0xFFF3E6CA)))
-        val box = Modifier.offset(x = g.screen.x(r.left), y = g.screen.y(r.top)).size(g.screen.w * (r.right - r.left), g.screen.h * (r.bottom - r.top))
+        // the book ends above the row of things (56 dp + its margin), so they never lie on its pages
+        val top = g.screen.y(r.top)
+        val bottom = minOf(g.screen.y(r.bottom), g.screen.h - 92.dp)
+        val box = Modifier.offset(x = g.screen.x(r.left), y = top).size(g.screen.w * (r.right - r.left), (bottom - top).coerceAtLeast(120.dp))
             .semantics { set(SceneSlotKey, "book:${scene.holder}") }
-        Box(box) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalGlossaryCommands provides commands) { Box(box) {
             // the book's page edges (thickness) under the open pages, so it lies there as a book
             Box(Modifier.align(Alignment.BottomCenter).offset(y = 7.dp).fillMaxWidth(.98f).height(14.dp).shadow(6.dp, RoundedCornerShape(3.dp))
                 .background(Brush.verticalGradient(listOf(Color(0xFFF3E6CA), Color(0xFFD9C29A), Color(0xFFEFE0BF), Color(0xFFC9AE80))), RoundedCornerShape(3.dp)))
@@ -694,8 +791,7 @@ internal fun LibraryBook(onClose: () -> Unit, glossary: @Composable () -> Unit, 
             }
             // the spine in the middle of the open book
             Box(Modifier.align(Alignment.TopCenter).width(2.dp).fillMaxHeight(.04f).background(Color(0x553B2410)))
-            if (scene.holder != StageScenes.Holder.PARCHMENT) Sprite(R.drawable.p_quill, Modifier.align(Alignment.BottomStart).offset(x = (-6).dp, y = 4.dp).size(54.dp))
-        }
+        } }
     }
 }
 
@@ -743,10 +839,24 @@ internal fun CommunityHall(
     onManage: () -> Unit,
     onClose: () -> Unit,
     level: Int = 3,
+    /** 7.9.13: the group plans on the harbour's board; null = not offered here. */
+    onPlans: (() -> Unit)? = null,
 ) {
     val scene = StageScenes.of(IsleBuilding.CAMPFIRE, level)
     var page by rememberSaveable { mutableStateOf(0) }
-    PlaceStage(IsleBuilding.CAMPFIRE, onClose, level, action = "Gruppen verwalten" to onManage) { g ->
+    // 7.9.13 story: the fire / candle / table = a plan (quest) for the group sitting there now; the notice / pennants =
+    // the real open (and, in the festival hall, finished) group plans, opened on the harbour's board.
+    val groupQuests = quests.filter { it.targetType == "group" && groups.any { g -> g.id == it.targetId } }
+    val openPlans = groupQuests.count { it.completedAt == null }
+    val donePlans = groupQuests.count { it.completedAt != null }
+    val oneAtATime = scene.holder == StageScenes.Holder.FIRE_RING || scene.holder == StageScenes.Holder.CRATE_TABLE
+    val here = if (oneAtATime) groups.getOrNull(page.coerceIn(0, (groups.size - 1).coerceAtLeast(0))) else groups.firstOrNull()
+    val story = StageStory.bind(IsleBuilding.CAMPFIRE, level, buildMap {
+        put(StageStory.Act.GROUP_QUEST, StoryHook(null, here?.let { gr -> { onGroupQuest(gr.id) } }, "Noch keine Gruppe – lege eine an"))
+        if (onPlans != null) put(StageStory.Act.GROUP_PLANS, StoryHook(if (level == 3) openPlans + donePlans else openPlans,
+            if (groupQuests.isNotEmpty()) onPlans else null, "Noch kein Gruppenplan"))
+    })
+    PlaceStage(IsleBuilding.CAMPFIRE, onClose, level, action = "Gruppen verwalten" to onManage, story = story) { g ->
         fun open(gr: ApiClient.Group) = quests.count { it.targetType == "group" && it.targetId == gr.id && it.completedAt == null }
         if (scene.holder == StageScenes.Holder.ROUND_TABLE) Canvas(Modifier.fillMaxSize()) {
             // the festival hall: bunting garlands across the hall
@@ -880,7 +990,13 @@ internal fun MyHouse(
         Triple(R.drawable.p_env, "$letters", "Briefe"),
         Triple(R.drawable.p_star, "$qp", "Punkte"),
     )
-    PlaceStage(IsleBuilding.HOUSE, onClose, level, action = "Profil & Einstellungen" to onSettings) { g ->
+    // 7.9.13 story: the name board (door sign, flag in the profile colour) opens the real profile, the crates / workbench
+    // "Insel bearbeiten"; the keepsakes are the real counts.
+    val story = StageStory.bind(IsleBuilding.HOUSE, level, mapOf(
+        StageStory.Act.PROFILE to StoryHook(null, onSettings, accent = if (level == 3) profileColor(color) else null),
+        StageStory.Act.EDIT to StoryHook(null, onEdit),
+    ))
+    PlaceStage(IsleBuilding.HOUSE, onClose, level, action = "Profil & Einstellungen" to onSettings, story = story) { g ->
         val me = g.centre!!
         // me: in the hammock (no frame), a picture on the hut wall / beside the door / on the living-room wall
         val framed = scene.holder != StageScenes.Holder.KEEPSAKES
@@ -903,19 +1019,9 @@ internal fun MyHouse(
                     modifier = Modifier.background(Color(0xCCFFF6E5), RoundedCornerShape(50)).padding(horizontal = 6.dp))
             }
         }
-        GoldButtonSmall("Insel bearbeiten", Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 104.dp, end = 12.dp).width(150.dp), onEdit)
     }
 }
 
-@Composable
-private fun GoldButtonSmall(label: String, modifier: Modifier, onClick: () -> Unit) {
-    Box(
-        modifier.shadow(6.dp, RoundedCornerShape(24.dp)).background(Color(0xFFFFFBF1), RoundedCornerShape(24.dp))
-            .border(2.dp, Color(0xFF3F7C78), RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick).heightIn(min = 44.dp).padding(vertical = 10.dp),
-        Alignment.Center,
-    ) { Text(label, fontFamily = Display, fontSize = 15.sp, color = Color(0xFF2F5D5A)) }
-}
 
 // ---------------------------------------------------------------- shared bits
 

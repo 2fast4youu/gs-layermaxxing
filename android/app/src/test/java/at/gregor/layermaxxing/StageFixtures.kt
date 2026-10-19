@@ -38,15 +38,19 @@ internal object StageFixtures {
         ApiClient.GlossaryTerm(4, "Layermaxxing", "Gregor", listOf(ApiClient.GlossaryExplanation(4, "Ebenen stapeln, bis es passt.", "Gregor", 0, 0, false)), false),
     )
 
+    /** Arrived letters as the island counts them (incoming, unlocked, unread): none in these fixtures. */
+    val arrivals = letters.count { it.incoming && it.unlocked && it.readAt == null }
+
     /** The production view of [b] at [level], with every action wired (to nothing) and the fixture data. */
     @Composable
     fun Place(b: IsleBuilding, level: Int) = VillageTheme(true) {
         when (b) {
             IsleBuilding.POST -> PostOffice(friends, letters, emptyMap(), onOpen = {}, onLocked = {}, onWrite = {}, onClose = {}, level = level)
-            IsleBuilding.HARBOUR -> HarbourBoard(quests, topics, onQuestDone = { _, _ -> }, onQuestDelete = {}, onNewQuest = {}, onAllTopics = {}, onClose = {}, level = level)
+            IsleBuilding.HARBOUR -> HarbourBoard(quests, topics, onQuestDone = { _, _ -> }, onQuestDelete = {}, onNewQuest = {}, onAllTopics = {}, onClose = {}, level = level,
+                arrivals = arrivals, onArrivals = {})
             IsleBuilding.LIGHTHOUSE -> LighthouseView(friends, friends.associate { it.id to 2 }, incoming, outgoing, onRespond = { _, _ -> }, onFriend = {}, onFind = {}, onClose = {}, level = level)
             IsleBuilding.LIBRARY -> LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossary, addTerm = { _, _, _ -> }) }, level = level)
-            IsleBuilding.CAMPFIRE -> CommunityHall(groups, quests, onGroupQuest = {}, onManage = {}, onClose = {}, level = level)
+            IsleBuilding.CAMPFIRE -> CommunityHall(groups, quests, onGroupQuest = {}, onManage = {}, onClose = {}, level = level, onPlans = {})
             IsleBuilding.HOUSE -> MyHouse("Gregor", "🦉", "#17A2A6", friends.size, 1, letters.size, 140, onSettings = {}, onEdit = {}, onClose = {}, level = level)
         }
     }

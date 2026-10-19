@@ -1,5 +1,7 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.ui.platform.testTag
+
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -79,6 +81,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -221,6 +224,8 @@ internal fun IslandWorld(
     /** The app's own bottom navigation, drawn unchanged below the island's second row. */
     mainNavigation: (@Composable () -> Unit)? = null,
     onSettings: () -> Unit = { onPlace(IsleBuilding.HOUSE) },
+    /** 7.9.13: server + account of [ownId]; with it the last real island is kept for navigation and rotation. */
+    islandScope: String? = null,
 ) {
     val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
@@ -231,7 +236,11 @@ internal fun IslandWorld(
     var view by rememberSaveable { mutableStateOf(startView) }
     // A building's own place, drawn natively on top of the island (null = none open).
     var place by rememberSaveable { mutableStateOf(startPlace) }
-    var home by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
+    val owner = ownId?.let { id -> islandScope?.let { IslandOwner(it, id) } }
+    // 7.9.13: the last island the server really sent for exactly this server/account/user shows at once.
+    var home by remember { mutableStateOf(IslandCache.get(owner)) }
+    var load by remember { mutableStateOf(IslandLoad(loading = ownId != null)) }
+    val retry = remember { kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED) }
     var visited by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }
     var upgradePick by remember { mutableStateOf<IsleBuilding?>(null) }
     var functionMenu by remember { mutableStateOf(false) }
@@ -252,9 +261,11 @@ internal fun IslandWorld(
     // construction block) was discarded forever and the island went dead (CreativeIslandRegressionTest).
     fun currentResponse(response: ApiClient.HomeIsland) = response.userId == currentOwner
     val island = home?.let { it.copy(construction = it.construction.copy(mode = mode)) }
-    LaunchedEffect(ownId) {
-        if (home?.userId != ownId) {
-            home = null
+    LaunchedEffect(owner, ownId) {
+        if (home?.userId != ownId || home !== IslandCache.get(owner)) {
+            // Another owner (or the same user id on another server): never the previous island, only its own cached one.
+            home = IslandCache.get(owner)
+            load = IslandLoad(loading = ownId != null)
             placement = null; selection = null; buildBar = false; functionMenu = false; upgradePick = null; landPick = false; demolishTarget = null
         }
     }
@@ -262,19 +273,42 @@ internal fun IslandWorld(
     // meanwhile: said once, never retried, never rebuilt.
     fun adopt(fresh: ApiClient.HomeIsland) {
         home = fresh
+        IslandCache.put(owner, fresh)
         val d = placement
         if (d != null && IslandLayout.gone(fresh.construction, d)) { placement = null; shopDraft = false; onError(IslandLayout.GONE) }
     }
-    LaunchedEffect(ownId, islands?.score, creativeActive) {
-        ownId?.let { id ->
-            while (true) {
-                if (!constructionBusy) runCatching { loadIsland(id) }
+    // 7.9.13: one loader at a time, each attempt bounded; a failure keeps what is shown, retries soon
+    // (2/5/10/20 s, then the calm 60 s refresh) and says so once in the header, never as a toast flood.
+    LaunchedEffect(owner, ownId, islands?.score, creativeActive) {
+        val id = ownId ?: return@LaunchedEffect
+        while (true) {
+            var wait = IslandSync.REFRESH_MS
+            if (constructionBusy) wait = IslandSync.RETRY_MS.first()
+            else {
+                load = load.copy(loading = true)
+                IslandSync.attempt { loadIsland(id) }
                     .onSuccess { loaded ->
-                        if (!constructionBusy && loaded != null && currentResponse(loaded) && (home == null || loaded.construction.revision >= home!!.construction.revision)) adopt(loaded)
-                    }.onFailure { onError(ApiErrors.friendly(it.message)) }
-                kotlinx.coroutines.delay(60_000)
+                        if (!currentResponse(loaded) || currentOwner != id) return@onSuccess
+                        if (!constructionBusy && (home == null || loaded.construction.revision >= home!!.construction.revision)) adopt(loaded)
+                        load = IslandLoad(confirmed = true)
+                    }.onFailure { e ->
+                        load = load.copy(loading = false, error = IslandSync.message(e), failures = load.failures + 1)
+                        wait = IslandSync.retryDelay(load.failures)
+                    }
             }
+            // A tap on "Erneut versuchen" or the app coming back to the front ends the pause early.
+            kotlinx.coroutines.withTimeoutOrNull(wait) { retry.receive() }
         }
+    }
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    val latestLoad by androidx.compose.runtime.rememberUpdatedState(load)
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        // Back in front after a failure: try again at once instead of waiting out the pause.
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && latestLoad.error != null) retry.trySend(Unit)
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
     }
     val visitId = view.removePrefix("visit:").toLongOrNull()
     LaunchedEffect(visitId) { visited = null; visitId?.let { id -> visited = runCatching { loadIsland(id) }.getOrNull() } }
@@ -290,6 +324,7 @@ internal fun IslandWorld(
     fun construct(request: ApiClient.IslandRequest, after: () -> Unit = {}) {
         val original = island ?: return
         if (constructionBusy) return
+        if (!load.confirmed) { onError(IslandSync.NOT_CONFIRMED); return }
         if (!original.construction.supported) { onError("Dieser Server kann Inselbauten noch nicht speichern."); return }
         // 7.9.11: a placement is only written under a rule the app knows (never guessed as the newest).
         if (request.position != null) PlacementRule.problem(original.construction.gridVersion)?.let { onError(it); return }
@@ -297,7 +332,7 @@ internal fun IslandWorld(
         scope.launch {
             try {
                 val response = changeConstruction(original.construction, request)
-                if (response != null && currentResponse(response)) { home = response; after() }
+                if (response != null && currentResponse(response)) { home = response; IslandCache.put(owner, response); after() }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 if (currentResponse(original)) {
@@ -305,7 +340,7 @@ internal fun IslandWorld(
                     // Invalid or stale writes never save: reload (the targets are recomputed from the fresh island),
                     // keep the local draft for a new choice, unless its piece is gone now (adopt ends it and says so).
                     val before = placement
-                    ownId?.let { id -> runCatching { loadIsland(id) }.getOrNull()?.let { fresh -> if (currentResponse(fresh)) adopt(fresh) } }
+                    ownId?.let { id -> IslandSync.attempt { loadIsland(id) }.getOrNull()?.let { fresh -> if (currentResponse(fresh)) adopt(fresh) } }
                     // 409 = the island changed meanwhile (another device): said honestly, never retried on its own.
                     if (before == null || placement != null) onError(if (code == 409) ISLAND_CONFLICT else ApiErrors.friendly(e.message))
                     // 422 on a spot the app showed as free: never offer that spot as green again for this draft.
@@ -321,13 +356,23 @@ internal fun IslandWorld(
     fun screenCentreCell(land: Int): List<Int>? = cameraRef?.viewCenter()?.let { IslandGrid.unproject(it.x, it.y, land) }
     fun startBuilding(b: IsleBuilding, lifted: Boolean, fromShop: Boolean = false) {
         val h = island ?: return
+        if (!load.confirmed) { onError(IslandSync.NOT_CONFIRMED); return }
         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         selection = null; buildBar = false; upgradePick = null; landPick = false; shopDraft = fromShop
         // A new piece starts in the middle of what the player sees, but never in the water; the harbour on the coast.
         placement = IslandDraft(IslandTarget.Building(b), IslandLayout.startCell(h.construction, b, screenCentreCell(h.construction.land)), lifted)
     }
+    /** 7.9.13: the next stage does not fit where it stands: hold that stage and choose its spot; ✓ = one atomic upgrade. */
+    fun startUpgradePlacement(b: IsleBuilding) {
+        val h = island ?: return
+        if (!load.confirmed) { onError(IslandSync.NOT_CONFIRMED); return }
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+        selection = null; buildBar = false; upgradePick = null; landPick = false; shopDraft = false
+        placement = IslandDraft(IslandTarget.Building(b), IslandLayout.upgradeStart(h.construction, b), lifted = true, upgrade = true)
+    }
     fun startDecor(item: String, existing: ApiClient.IslandDecor?, fromShop: Boolean = false) {
         val h = island ?: return
+        if (!load.confirmed) { onError(IslandSync.NOT_CONFIRMED); return }
         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         selection = null; buildBar = false; shopDraft = fromShop
         val start = existing?.position ?: IslandGrid.clampToLand(screenCentreCell(h.construction.land) ?: listOf(10, 12), h.construction.land)
@@ -341,7 +386,7 @@ internal fun IslandWorld(
         if (IslandLayout.gone(h.construction, d)) { placement = null; shopDraft = false; onError(IslandLayout.GONE); return }
         val request = when (val t = d.target) {
             // 7.9.9: a new function is built for free at stage 0 ("build"); a standing one only moves.
-            is IslandTarget.Building -> ApiClient.IslandRequest(if (h.construction.standing(t.building)) "move" else "build", t.building.name, position = d.position)
+            is IslandTarget.Building -> ApiClient.IslandRequest(if (d.upgrade) "upgrade" else if (h.construction.standing(t.building)) "move" else "build", t.building.name, position = d.position)
             is IslandTarget.Decor -> if (t.id == null) ApiClient.IslandRequest("decor_place", item = t.item, position = d.position)
                 else ApiClient.IslandRequest("decor_move", decorId = t.id, position = d.position)
         }
@@ -391,25 +436,32 @@ internal fun IslandWorld(
                         val headerAlpha by androidx.compose.animation.core.animateFloatAsState(if (placement != null) 0f else 1f,
                             tween(200, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "header")
                         Box(contentAlignment = Alignment.Center) {
+                            Column(Modifier.graphicsLayer { alpha = headerAlpha }, horizontalAlignment = Alignment.CenterHorizontally) {
+                            val loadLine = IslandSync.status(island != null, ownId != null, load)
                             MyIslandHeader(
                                 "Meine Insel",
                                 island?.construction?.let { c ->
-                                    // 7.9.12: a layout saved under an older rule may have pictures standing inside each other:
+                                    // 7.9.12: a layout saved under an older rule may have pieces standing inside each other:
                                     // kept as it is (never moved on its own), said here so the owner can move them apart.
+                                    // 7.9.13 (rule 6): only real ground collisions count; a roof over a neighbour is wanted.
                                     val overlaps = remember(c) { IslandLayout.overlaps(c).size }
                                     "Landstufe ${c.land} · ${c.available} Punkte zum Bauen" +
-                                        if (overlaps > 0) " · $overlaps× stehen Teile ineinander – lang drücken und verschieben" else ""
-                                } ?: "Insel wird geladen…",
+                                        (if (overlaps > 0) " · $overlaps× ${if (IslandLayout.ground(c)) "teilen sich Teile Boden" else "stehen Teile ineinander"} – lang drücken und verschieben" else "") +
+                                        (if (island != null && loadLine != null) " · $loadLine" else "")
+                                } ?: loadLine.orEmpty(),
                                 creativeActive,
-                                Modifier.graphicsLayer { alpha = headerAlpha },
                             )
+                            // 7.9.13: a failed load says so once here and offers a retry; the island stays as it is.
+                            if (load.error != null && ownId != null) IslandRetryChip(island != null, load.error!!) { retry.trySend(Unit) }
+                            }
                             // While the spot is impossible the hint says why and stays (e.g. "Hafen nur an der Küste").
-                            val reason = placement?.let { d -> island?.let { IslandLayout.reason(it, d) } }
+                            val reason = placement?.let { d -> island?.let { IslandLayout.reason(IslandLayout.editing(it, d), d) } }
                             val harbour = (placement?.target as? IslandTarget.Building)?.building == IsleBuilding.HARBOUR
                             androidx.compose.animation.AnimatedVisibility(placement != null && (placementHint || reason != null),
                                 enter = androidx.compose.animation.fadeIn(tween(200)) + androidx.compose.animation.slideInVertically(tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { -it / 2 },
                                 exit = androidx.compose.animation.fadeOut(tween(260))) {
-                                PlacementHint(reason ?: if (harbour) "Hafen an die Küste · blaue Randfelder" else "Ziehen oder tippen · Grün = frei, Rot = belegt",
+                                PlacementHint(reason ?: if (harbour) (if (island?.construction?.let(IslandLayout::ground) == true) "Hafen in die Bucht · Strand und Wasserkante" else "Hafen an die Küste · blaue Randfelder")
+                                    else "Ziehen oder tippen · Grün = frei, Rot = belegt",
                                     warning = reason != null)
                             }
                         }
@@ -450,15 +502,16 @@ internal fun IslandWorld(
                             else onError("Dieser Server kann Deko noch nicht frei platzieren.")
                         },
                         onDecorLongPress = { d -> startDecor(d.item, d) },
-                        life = island?.let { IslandLayout.preview(it, placement) },
-                        placementValid = placement?.let { d -> island?.let { IslandLayout.valid(it, d) } } ?: true,
+                        // 7.9.13: an upgrade draft sees (and draws) the held building at its next stage
+                        life = island?.let { IslandLayout.preview(IslandLayout.editing(it, placement), placement) },
+                        placementValid = placement?.let { d -> island?.let { IslandLayout.valid(IslandLayout.editing(it, d), d) } } ?: true,
                         // 7.9.10: every other piece is outlined in quiet red while one is held; never at rest.
-                        obstacles = remember(island?.construction, placement?.target) {
-                            placement?.target?.let { t -> island?.let { IslandLayout.obstacles(it.construction, t) } }.orEmpty()
+                        obstacles = remember(island?.construction, placement?.target, placement?.upgrade) {
+                            placement?.let { d -> island?.let { IslandLayout.obstacles(IslandLayout.editing(it, d).construction, d.target) } }.orEmpty()
                         },
                         // 7.9.11: only the cells where the held piece may really stand are drawn (same rule as ✓).
-                        placementTargets = remember(island?.construction, placement?.target, placement?.rejected) {
-                            placement?.let { d -> island?.let { IslandLayout.targets(it.construction, d) } }.orEmpty()
+                        placementTargets = remember(island?.construction, placement?.target, placement?.rejected, placement?.upgrade) {
+                            placement?.let { d -> island?.let { IslandLayout.targets(IslandLayout.editing(it, d).construction, d) } }.orEmpty()
                         },
                         showFigure = placement == null,
                         placement = placement, onPosition = { p -> if (!constructionBusy) placement = placement?.copy(position = p) },
@@ -641,6 +694,7 @@ internal fun IslandWorld(
                 IsleBuilding.HARBOUR -> HarbourBoard(
                     quests = quests, topics = topics, onQuestDone = onQuestDone, onQuestDelete = onQuestDelete,
                     onNewQuest = { newQuestFor = null to null }, onAllTopics = onAllTopics, onClose = close, level = stageOf(IsleBuilding.HARBOUR),
+                    arrivals = homeBadges[IsleBuilding.POST] ?: 0, onArrivals = { place = IsleBuilding.POST.name },
                 )
                 IsleBuilding.LIGHTHOUSE -> LighthouseView(
                     pals = pals, levels = infoById.mapValues { it.value.level }, incoming = incoming, outgoing = outgoing,
@@ -650,6 +704,7 @@ internal fun IslandWorld(
                 IsleBuilding.CAMPFIRE -> CommunityHall(
                     groups = groups, quests = quests, onGroupQuest = { newQuestFor = null to it },
                     onManage = { onPlace(IsleBuilding.CAMPFIRE) }, onClose = close, level = stageOf(IsleBuilding.CAMPFIRE),
+                    onPlans = { place = IsleBuilding.HARBOUR.name },
                 )
                 IsleBuilding.HOUSE -> MyHouse(
                     name = ownName, emoji = ownEmoji, color = ownColor, friends = pals.size,
@@ -705,8 +760,9 @@ internal fun IslandWorld(
             IslandUpgradeContent(building, h, constructionBusy,
                 onAction = { action ->
                     if (action == "upgrade" && building != null && !h.construction.standing(building)) startBuilding(building, false)
-                    // 7.9.12: the bigger stage does not fit where it stands: the owner moves it first (never on its own)
-                    else if (action == "move" && building != null) startBuilding(building, true)
+                    // 7.9.12: the bigger stage does not fit where it stands: never moved on its own. 7.9.13: the owner holds
+                    // the next stage and picks its spot (e.g. the pier at the water), written as one upgrade.
+                    else if (action == "move" && building != null) startUpgradePlacement(building)
                     else construct(ApiClient.IslandRequest(action, building?.name))
                 }, onDismiss = { if (!constructionBusy) { upgradePick = null; landPick = false } })
         }
@@ -834,13 +890,41 @@ private fun IslandMap(
         val hubPx = with(density) { 180.dp.toPx() }
         val hubTopLeft = Offset(center.x - hubPx / 2, center.y - hubPx * .42f)
         val homeConstruction = homeLife?.construction
-        val homeBerth = HarbourRoute.onMap(hubTopLeft, hubPx, HarbourRoute.berth(homeConstruction))
         val friendBox = ordered.mapIndexed { i, f ->
             val fw = with(density) { Isle.ownerWidth(infoById[f.id]?.island).toPx() }
             Offset(points[i].x - fw / 2, points[i].y - fw * .5f) to fw
         }
-        val friendBerths = ordered.mapIndexed { i, f -> HarbourRoute.onMap(friendBox[i].first, friendBox[i].second, HarbourRoute.berth(infoById[f.id]?.island?.construction)) }
+        // 7.9.13: every island's coast as it is painted (outline + rocks in the water), at its land stage and drawn box;
+        // a boat is its physical hull ([hull]); it lies and sails only where the whole hull has water, [keel] is the
+        // sampling step (badges and plaques are no hull).
+        val hull = with(density) { 12.dp.toPx() }; val keel = with(density) { 4.dp.toPx() }
+        val homeLand = (homeConstruction?.land ?: 0).coerceIn(0, 5)
+        val friendLands = ordered.map { f -> (infoById[f.id]?.island?.construction?.land ?: 0).coerceIn(0, 5) }
+        val coasts = remember(friendBox, friendLands, hubTopLeft, hubPx, homeLand) {
+            friendBox.mapIndexed { i, (tl, fw) -> SeaChart.coastOf(tl, fw, friendLands[i]) } + SeaChart.coastOf(hubTopLeft, hubPx, homeLand)
+        }
+        // the berth from the CURRENT construction; a v6 harbour on a real socket of its stage, or a legacy one at most three grid cells short of the water it moors at the nearest
+        // water. An old harbour standing further inland is honestly marked for repair and its boats use the island's real
+        // landing stage in the cove (SeaChart.moor), never a far coast point passed off as its harbour.
+        val rawHome = HarbourRoute.onMap(hubTopLeft, hubPx, HarbourRoute.berth(homeConstruction))
+        val rawFriends = ordered.mapIndexed { i, f -> HarbourRoute.onMap(friendBox[i].first, friendBox[i].second, HarbourRoute.berth(infoById[f.id]?.island?.construction)) }
+        fun moorOf(raw: Offset, tl: Offset, px: Float, land: Int, c: ApiClient.IslandConstruction?) =
+            SeaChart.moor(raw, HarbourRoute.onMap(tl, px, HarbourRoute.fallbackBerth(land)), coasts, keel, HarbourRoute.LEGACY_REACH_CELLS * IslandGrid.step(land) * px,
+                HarbourRoute.atSocket(c), hull) ?: SeaChart.Mooring(raw, true)
+        val friendConstructions = ordered.map { infoById[it.id]?.island?.construction }
+        val homeMoor = remember(rawHome, coasts, keel, homeConstruction) { moorOf(rawHome, hubTopLeft, hubPx, homeLand, homeConstruction) }
+        val friendMoors = remember(rawFriends, coasts, keel, friendConstructions) {
+            rawFriends.mapIndexed { i, r -> moorOf(r, friendBox[i].first, friendBox[i].second, friendLands[i], friendConstructions[i]) }
+        }
+        val homeBerth = homeMoor.point
+        val friendBerths = friendMoors.map { it.point }
+        val repairs = (if (homeMoor.repair && HarbourRoute.hasHarbour(homeConstruction)) setOf(0L) else emptySet()) +
+            ordered.filterIndexed { i, f -> friendMoors[i].repair && HarbourRoute.hasHarbour(infoById[f.id]?.island?.construction) }.map { it.id }
         AnimatedIslandSea(Modifier.fillMaxSize(), oversized = true)
+        // the map's own coordinates (same layer as islands and boats): name plates are measured in them
+        var mapCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+        val plateBase = remember { androidx.compose.runtime.mutableStateMapOf<Long, androidx.compose.ui.geometry.Rect>() }
+        Spacer(Modifier.fillMaxSize().onGloballyPositioned { mapCoords = it })
         // One lane per boat: each lane is the route shifted sideways in its open-water middle, so boats sail side by
         // side instead of stacking and still end at the berths.
         val laneGap = with(density) { 46.dp.toPx() }
@@ -850,8 +934,6 @@ private fun IslandMap(
             val wPx = with(density) { Isle.ownerWidth(infoById[f.id]?.island).toPx() }
             Offset(points[i].x, points[i].y + wPx * .1f) to wPx * .45f
         } + (Offset(center.x, center.y + hubShorePx * .2f) to hubShorePx * .9f)
-        val obstacles = islands.map { (o, r) -> HarbourRoute.Island(o, r) }
-        val margin = with(density) { 22.dp.toPx() }
         val edge = with(density) { 40.dp.toPx() }
         val mapW = with(density) { w.toPx() }; val mapH = with(density) { h.toPx() }
         // Water ways only, inside the map. null = no water way (islands closing every gap): nothing is drawn for that
@@ -863,10 +945,29 @@ private fun IslandMap(
         val seaBounds = androidx.compose.ui.geometry.Rect(0f, 0f, mapW, mapH)
         // routes and lanes run where a boat's whole box fits: the sea inset by half a hull on every side (not just its centre point)
         val boatSea = androidx.compose.ui.geometry.Rect(hullHalfW, hullHalfH, mapW - hullHalfW, mapH - hullHalfH)
-        val routes = ordered.indices.map { i -> HarbourRoute.route(homeBerth, obstacles.last(), friendBerths[i], obstacles[i], obstacles, margin, boatSea) }
+        // 7.9.13: the water ways depend only on where islands and berths are, never on the boats' progress or the
+        // clock: computed once per geometry, not again on every minute tick or refresh (that stalled the first frames).
+        // They follow the painted coasts and rocks (SeaChart), smoothed only where the smooth curve is checked water.
+        val field = remember(coasts, boatSea, hull) { SeaChart.Field(coasts, boatSea, maxOf(hull * .6f, 4f)) }
+        val routes = remember(homeBerth, friendBerths, field) {
+            ordered.indices.map { i -> SeaChart.route(homeBerth, friendBerths[i], field, hull, keel) }
+        }
+        // a boat's lane is geometry too: checked once per route and shift, never per tick
+        val laneCache = remember(routes, field) { mutableMapOf<Pair<Int, Float>, List<Offset>>() }
         val placed = mutableListOf<Offset>()
+        // 7.9.13: the "Warteliegeplatz" plates (same rect as drawn below) are never exempt, not even at a route's end.
+        val waitPlates = with(density) {
+            ordered.indices.filter { ordered[it].id in repairs }.map { val b = friendBerths[it]
+                ordered[it].id to androidx.compose.ui.geometry.Rect(b.x - 46.dp.toPx(), b.y - 30.dp.toPx(), b.x + 46.dp.toPx(), b.y - 12.dp.toPx()) }
+        }
+        val stagePlates = waitPlates.map { it.second }
+        // 7.9.13: every friend's name plate as measured (unshifted, map px): never exempt either, not even at the boat's own end.
+        val namePlates = ordered.mapNotNull { f -> plateBase[f.id]?.let { f.id to it } }
         fun clashes(p: Offset, ends: Set<Int>): Float {
             var c = 0f
+            val h = hullOf(p)
+            namePlates.forEach { (_, r) -> if (h.overlaps(r)) c += boatR * 20 }
+            stagePlates.forEach { r -> if (p.x > r.left - boatR && p.x < r.right + boatR && p.y > r.top - boatR && p.y < r.bottom + boatR) c += boatR * 20 }
             islands.forEachIndexed { k, (o, r) -> if (k !in ends) { val d = (p - o).getDistance(); if (d < r + boatR) c += r + boatR - d } }
             placed.forEach { o -> if (kotlin.math.abs(p.x - o.x) < boatR * 3f && kotlin.math.abs(p.y - o.y) < boatR * 2.8f) c += boatR * 20 }
             if (p.x < edge * 1.2f || p.x > mapW - edge * 1.2f) c += boatR * 4
@@ -885,48 +986,86 @@ private fun IslandMap(
                 val t = HarbourRoute.boatT(letter.incoming, share)
                 // a boat at its berth belongs to that island: the two end islands never count as clashing
                 val ends = setOf(i, islands.lastIndex)
-                fun voyage(side: Float) = Voyage(friend, letter, HarbourRoute.safeLane(route, side, obstacles.last(), obstacles[i], obstacles, margin * .5f, boatSea), t, share, if (k == mine.lastIndex) extra else 0)
+                fun voyage(side: Float) = Voyage(friend, letter, laneCache.getOrPut(i to side) { SeaChart.lane(route, side, field, hull, keel) }, t, share, if (k == mine.lastIndex) extra else 0)
                 val candidates = IsleMotion.laneCandidates(lanes[k]).map { it * laneGap }.filter { kotlin.math.abs(it) <= laneGap * 2.2f }.ifEmpty { listOf(lanes[k] * laneGap) }
                 val best = candidates.map { voyage(it) }.let { list -> list.firstOrNull { clashes(it.boat, ends) == 0f } ?: list.minBy { clashes(it.boat, ends) } }
                 placed += best.boat
                 best
             }
         }
+        // A plate a boat still covers (no free lane) moves, the boats keep their real course: the nearest free spot by
+        // its island/berth that no hull and no other plate covers and that stays whole on the map. Waiting plates first
+        // (they belong right at the berth), then the name plates around them.
+        val hulls = voyages.map { hullOf(it.boat) }
+        val taken = mutableListOf<androidx.compose.ui.geometry.Rect>()
+        val gap = with(density) { 6.dp.toPx() }; val touch = with(density) { 3.dp.toPx() }
+        fun settle(r: androidx.compose.ui.geometry.Rect, others: List<androidx.compose.ui.geometry.Rect>, up: Boolean): Offset {
+            fun free(s: Offset) = r.translate(s).let { q ->
+                q.left >= 0f && q.top >= 0f && q.right <= mapW && q.bottom <= mapH &&
+                    // plates may touch each other (no real cover), never a hull
+                    hulls.none { it.overlaps(q) } && q.deflate(touch).let { t -> taken.none { it.overlaps(t) } && others.none { it.overlaps(t) } }
+            }
+            val dx = r.width * .5f + hullHalfW + gap; val dy = (hullHalfH * 2 + gap) * if (up) -1 else 1
+            val options = listOf(Offset.Zero, Offset(-dx, 0f), Offset(dx, 0f), Offset(0f, dy), Offset(-dx, dy), Offset(dx, dy), Offset(0f, dy * 2),
+                Offset(-dx, dy * 2), Offset(dx, dy * 2))
+            val s = options.firstOrNull(::free) ?: options.minBy { s -> hulls.count { it.overlaps(r.translate(s)) } }
+            taken += r.translate(s)
+            return s
+        }
+        val waitShift = waitPlates.associate { (id, r) -> id to settle(r, namePlates.map { it.second }, up = true) }
+        val plateShift = namePlates.associate { (id, r) -> id to settle(r, namePlates.filter { it.first != id }.map { it.second }, up = false) }
         val busy = voyages.map { it.friend.id }.toSet()
         val jettyW = with(density) { 7.dp.toPx() }
         Canvas(Modifier.fillMaxSize().semantics {
             set(MapRoutesKey, ordered.mapIndexedNotNull { i, f -> routes[i]?.let { MapRoute(f.id, null, it, null) } } + voyages.map { v -> MapRoute(v.friend.id, v.letter.id, v.path, v.boat, hullOf(v.boat)) })
             set(MapAreaKey, seaBounds)
             set(MapBerthsKey, listOf(0L to homeBerth) + ordered.mapIndexed { i, f -> f.id to friendBerths[i] })
+            set(MapRepairKey, repairs)
+            set(MapCoastsKey, coasts)
         }) {
+            // 7.9.13: a rowboat on the beach: the short walk down to where the boats moor, drawn as a sandy dotted path.
+            fun walk(from: Pair<Float, Float>?, tl: Offset, w: Float, to: Offset) = from?.let {
+                drawLine(Color(0xCCE6D3A3), HarbourRoute.onMap(tl, w, it), to, 2.2f, StrokeCap.Round, PathEffect.dashPathEffect(floatArrayOf(2f, 5f), 0f))
+            }
+            walk(HarbourRoute.beachWalk(homeConstruction), hubTopLeft, hubPx, homeBerth)
+            ordered.forEachIndexed { i, f -> walk(HarbourRoute.beachWalk(infoById[f.id]?.island?.construction), friendBox[i].first, friendBox[i].second, friendBerths[i]) }
             // A visible landing stage wherever an island has no harbour yet (old data): routes never end in nothing.
-            if (!HarbourRoute.hasHarbour(homeConstruction)) {
+            if (!HarbourRoute.hasHarbour(homeConstruction) || 0L in repairs) {
                 val land = (homeConstruction?.land ?: 0).coerceIn(0, 5)
                 drawIslandJetty(homeBerth, HarbourRoute.onMap(hubTopLeft, hubPx, HarbourRoute.fallbackRoot(land)), jettyW)
             }
             ordered.forEachIndexed { i, f ->
                 val c = infoById[f.id]?.island?.construction
-                if (!HarbourRoute.hasHarbour(c)) drawIslandJetty(friendBerths[i], HarbourRoute.onMap(friendBox[i].first, friendBox[i].second,
+                if (!HarbourRoute.hasHarbour(c) || f.id in repairs) drawIslandJetty(friendBerths[i], HarbourRoute.onMap(friendBox[i].first, friendBox[i].second,
                     HarbourRoute.fallbackRoot((c?.land ?: 0).coerceIn(0, 5))), jettyW)
             }
             fun line(points: List<Offset>) = androidx.compose.ui.graphics.Path().apply { moveTo(points[0].x, points[0].y); points.drop(1).forEach { lineTo(it.x, it.y) } }
+            val round = androidx.compose.ui.graphics.StrokeJoin.Round
+            // 7.9.13: calm sea lanes: a quiet dotted line where no boat sails, no progress "highways".
             routes.forEachIndexed { i, r ->
                 if (r == null || ordered[i].id in busy) return@forEachIndexed
-                drawPath(line(r), Color.White.copy(alpha = .45f), style = Stroke(3f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round,
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 16f), 0f)))
+                drawPath(line(r), Color.White.copy(alpha = .30f), style = Stroke(2.5f, cap = StrokeCap.Round, join = round,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 15f), 0f)))
             }
-            // Each lane is a progress bar: sailed water bright and solid, the rest of the way faint and dotted.
+            // Each boat: the water ahead faintly dotted, a short soft wake behind it (the real share decides where it is).
             voyages.forEach { v ->
-                val dots = PathEffect.dashPathEffect(floatArrayOf(4f, 14f), 0f)
-                // sailed: from the sender's berth to the boat (home → boat outgoing, friend → boat incoming)
-                val sailed = if (v.letter.incoming) HarbourRoute.part(v.path, v.t, 1f) else HarbourRoute.part(v.path, 0f, v.t)
-                val open = if (v.letter.incoming) HarbourRoute.part(v.path, 0f, v.t) else HarbourRoute.part(v.path, v.t, 1f)
-                drawPath(line(open), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
+                val dots = PathEffect.dashPathEffect(floatArrayOf(3f, 13f), 0f)
+                val ahead = if (v.letter.incoming) HarbourRoute.part(v.path, 0f, v.t) else HarbourRoute.part(v.path, v.t, 1f)
+                drawPath(line(ahead), Color.White.copy(alpha = .32f), style = Stroke(2.5f, cap = StrokeCap.Round, pathEffect = dots))
                 if (v.share != null) {
-                    drawPath(line(sailed), Color(0x66243A3F), style = Stroke(11f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-                    drawPath(line(sailed), Color(0xFFE6D3A3), style = Stroke(6f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-                } else drawPath(line(sailed), Color.White.copy(alpha = .5f), style = Stroke(4f, cap = StrokeCap.Round, pathEffect = dots))
-                drawCircle(Color(0xFFE6D3A3), 6f, if (v.letter.incoming) v.path.first() else v.path.last())
+                    // the wake: the last stretch behind the boat, fading out (sailed = sender's berth → boat)
+                    val len = HarbourRoute.length(v.path).coerceAtLeast(1f)
+                    val wake = (hull * 5f / len).coerceAtMost(.25f)
+                    val (w0, w1) = if (v.letter.incoming) v.t to (v.t + wake).coerceAtMost(1f) else (v.t - wake).coerceAtLeast(0f) to v.t
+                    for (k in 0 until 4) {
+                        val a = w0 + (w1 - w0) * k / 4f; val b = w0 + (w1 - w0) * (k + 1) / 4f
+                        val nearBoat = if (v.letter.incoming) 1f - k / 4f else (k + 1) / 4f
+                        drawPath(line(HarbourRoute.part(v.path, a, b, 6)), Color.White.copy(alpha = .10f + .32f * nearBoat),
+                            style = Stroke(1.5f + 2.5f * nearBoat, cap = StrokeCap.Round, join = round))
+                    }
+                } else drawPath(line(if (v.letter.incoming) HarbourRoute.part(v.path, v.t, 1f) else HarbourRoute.part(v.path, 0f, v.t)),
+                    Color.White.copy(alpha = .32f), style = Stroke(2.5f, cap = StrokeCap.Round, pathEffect = dots))
+                drawCircle(Color(0xB3E6D3A3), 4f, if (v.letter.incoming) v.path.first() else v.path.last())
             }
         }
         // Home island.
@@ -937,9 +1076,13 @@ private fun IslandMap(
             IslandSprite(
                 level, friend.id, Isle.ownerWidth(info?.island), w * x, h * y,
                 friend.name, FriendLabels.display(labels[friend.id], level), profileColor(friend.displayColor), info?.island,
+                plateShift = plateShift[friend.id] ?: Offset.Zero,
+                onPlate = { c -> mapCoords?.takeIf { it.isAttached && c.isAttached }?.localBoundingBoxOf(c)?.let { r ->
+                    if (plateBase[friend.id] != r) plateBase[friend.id] = r } },
             ) { onFriend(friend.id) }
         }
         val hubW = 180.dp
+        val plateAbove = homeBerth.y > hubTopLeft.y + hubPx * .5f
         Column(
             Modifier.offset(x = w * .5f - hubW / 2, y = h * .5f - hubW * .42f).width(hubW)
                 .worldTap("Meine Insel öffnen", onHome),
@@ -947,13 +1090,29 @@ private fun IslandMap(
         ) {
             // The overview shows the same life buildings as the close-up, just without name tags.
             HubIsland(homeDecor, Modifier.fillMaxWidth(), labels = false, seed = ownSeed, life = homeLife, lifeTags = false)
-            Row(
-                Modifier.offset(y = (-8).dp).background(Color(0xD9243A3F), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                WorldText(ownName, 14.sp, plaque = false)
-                WorldText("  Meine Insel", 10.sp, fill = Color(0xFFE6D3A3), display = false, plaque = false)
-            }
+            if (!plateAbove) HubPlate(ownName, Modifier.offset(y = (-8).dp))
+        }
+        // 7.9.13: boats moor at my berth; a berth on the south coast would put them right over the name plate, so the
+        // plate then sits above the island (the side away from the berth). The island and its coast never move.
+        if (plateAbove) Box(Modifier.offset(x = w * .5f - hubW / 2, y = h * .5f - hubW * .42f - 14.dp).width(hubW), Alignment.Center) { HubPlate(ownName) }
+        // 7.9.13: honest repair need instead of a far coast point (the boats use the cove stage meanwhile); in the open
+        // sea above the menu, never over islands, routes or boats.
+        if (0L in repairs) Text("Dein Hafen steht im Inland – Boote warten in der Bucht. Hafen an die Küste verschieben", color = Color(0xFFFFE3B0), fontSize = 11.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 3,
+            modifier = Modifier.offset(x = w * .5f - 130.dp, y = h - 168.dp).width(260.dp)
+                .background(Color(0xE0432A1B), RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 3.dp)
+                .semantics { contentDescription = "Reparatur nötig: Hafen steht im Inland, Boote warten am Warteliegeplatz in der Bucht, bitte Hafen an die Küste verschieben" })
+        // 7.9.13: where a harbour stands inland, boats only reach the landing stage in the cove: said there, visibly,
+        // so the stage is never passed off as the harbour. Above the berth (on the beach): below it sit the islands' name
+        // plates and the boats.
+        // (My own island: its boats lie right at that berth; the repair note below says it instead.)
+        ordered.mapIndexed { i, f -> f.id to friendBerths[i] }.filter { it.first in repairs }.forEach { (id, b) ->
+            Text("Warteliegeplatz", color = Color(0xFFFFE3B0), fontSize = 10.sp, maxLines = 1,
+                modifier = Modifier.offset { val s = waitShift[id] ?: Offset.Zero
+                    IntOffset((b.x - 46.dp.toPx() + s.x).roundToInt(), (b.y - 30.dp.toPx() + s.y).roundToInt()) }.width(92.dp)
+                    .background(Color(0xD9432A1B), RoundedCornerShape(8.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
+                    .semantics { contentDescription = "Warteliegeplatz in der Bucht – kein Hafen (Insel ${ordered.firstOrNull { it.id == id }?.name ?: ""})" },
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
         // Boats in transit, still and individually tappable.
         voyages.forEach { v ->
@@ -973,15 +1132,31 @@ private fun IslandMap(
             }
             val tapped = Modifier
                 .worldTap("Schiff ansehen") { boatSheet = v.letter }
-                .semantics { contentDescription = "${boat.label} – Brief ${if (v.letter.incoming) "von" else "an"} ${v.friend.name}, ${IsleMotion.seaTime(IsleMotion.arrivalSec(v.letter), nowSec)}" }
+                .semantics {
+                    // the end of this trip: my berth (incoming) or the friend's; a repair island has only a waiting berth
+                    val waiting = (if (v.letter.incoming) 0L else v.friend.id) in repairs
+                    contentDescription = "${boat.label} – Brief ${if (v.letter.incoming) "von" else "an"} ${v.friend.name}, ${IsleMotion.seaTime(IsleMotion.arrivalSec(v.letter), nowSec, waiting)}" +
+                        if (waiting) ", Ziel: Warteliegeplatz in der Bucht, nicht der Hafen" else ""
+                }
             Column(
                 Modifier.offset { IntOffset((p.x - 42.dp.toPx()).roundToInt(), (p.y - 21.dp.toPx()).roundToInt()) }.width(84.dp).then(tapped),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) { hull() }
         }
         boatSheet?.let { letter ->
-            BoatSheet(letter, ordered.firstOrNull { it.id == letter.peerId }?.name ?: "…", nowSec) { boatSheet = null }
+            BoatSheet(letter, ordered.firstOrNull { it.id == letter.peerId }?.name ?: "…", nowSec, (if (letter.incoming) 0L else letter.peerId) in repairs) { boatSheet = null }
         }
+    }
+}
+
+/** The name plate of my island on the map ("<name>  Meine Insel"). */
+@Composable private fun HubPlate(ownName: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier.testTag("HubPlate").background(Color(0xD9243A3F), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        WorldText(ownName, 14.sp, plaque = false)
+        WorldText("  Meine Insel", 10.sp, fill = Color(0xFFE6D3A3), display = false, plaque = false)
     }
 }
 
@@ -1003,6 +1178,10 @@ internal data class MapRoute(val friendId: Long, val letterId: Long?, val path: 
 internal val MapAreaKey = androidx.compose.ui.semantics.SemanticsPropertyKey<androidx.compose.ui.geometry.Rect>("MapArea")
 internal val MapRoutesKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<MapRoute>>("MapRoutes")
 /** 7.9.12: every island's berth on the map (0 = my island). */
+/** 7.9.13: islands (0 = mine) whose harbour stands inland and must be moved to the coast; their boats use the cove stage. */
+internal val MapRepairKey = androidx.compose.ui.semantics.SemanticsPropertyKey<Set<Long>>("MapRepair")
+/** 7.9.13: the painted coasts (outline + rocks) the routes were checked against, for the water tests. */
+internal val MapCoastsKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<SeaChart.Coast>>("MapCoasts")
 internal val MapBerthsKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<Pair<Long, Offset>>>("MapBerths")
 
 internal data class IslandZoom(val initial: Float = 1f, val min: Float = 1f, val max: Float = 2.6f)
@@ -1223,16 +1402,20 @@ private fun CloseIsland(
 }
 
 @Composable
-private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name: String, sub: String, color: Color, life: ApiClient.HomeIsland? = null, onClick: () -> Unit) {
+private fun IslandSprite(level: Int, seed: Long, width: Dp, cx: Dp, cy: Dp, name: String, sub: String, color: Color, life: ApiClient.HomeIsland? = null,
+                         plateShift: Offset = Offset.Zero, onPlate: (androidx.compose.ui.layout.LayoutCoordinates) -> Unit = {}, onClick: () -> Unit) {
     Column(
         Modifier.offset(x = cx - width / 2, y = cy - width * .5f).width(width)
             .worldTap("$name öffnen", onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         HubIsland(life?.decor.orEmpty(), Modifier.fillMaxWidth(), labels = false, seed = seed, life = life, lifeTags = false)
-        // Name painted on the sea right under the island, nickname as a small line beneath.
+        // Name painted on the sea right under the island, nickname as a small line beneath. Measured where it belongs
+        // (before the shift) so moving it away from a boat never feeds back into the measurement.
         Column(
-            Modifier.offset(y = 2.dp).widthIn(max = 152.dp)
+            Modifier.offset(y = 2.dp).onGloballyPositioned(onPlate)
+                .offset { IntOffset(plateShift.x.roundToInt(), plateShift.y.roundToInt()) }
+                .testTag("IslandPlate-$seed").widthIn(max = 152.dp)
                 .background(Color(0xD9243A3F), RoundedCornerShape(9.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1467,14 +1650,14 @@ internal fun LabelDialog(name: String, current: String?, onDismiss: () -> Unit, 
 /** Tap on a boat: what it carries, where it goes and on which real day it docks. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun BoatSheet(letter: ApiClient.Message, friendName: String, nowSec: Long, onDismiss: () -> Unit) {
+internal fun BoatSheet(letter: ApiClient.Message, friendName: String, nowSec: Long, waitingBerth: Boolean = false, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF243A3F), sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        BoatSheetContent(letter, friendName, nowSec)
+        BoatSheetContent(letter, friendName, nowSec, waitingBerth)
     }
 }
 
 @Composable
-internal fun BoatSheetContent(letter: ApiClient.Message, friendName: String, nowSec: Long) {
+internal fun BoatSheetContent(letter: ApiClient.Message, friendName: String, nowSec: Long, waitingBerth: Boolean = false) {
     val boat = LetterBoat.forMode(letter.mode)
     val fmt = remember { java.text.SimpleDateFormat("EEEE, d. MMMM 'um' HH:mm", java.util.Locale.GERMAN) }
     fun date(sec: Long) = fmt.format(java.util.Date(sec * 1000))
@@ -1507,7 +1690,7 @@ internal fun BoatSheetContent(letter: ApiClient.Message, friendName: String, now
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppIcon(IsleMotion.seaIcon(arrival, nowSec), null, tint = Color(0xFFE6D3A3), size = 18.dp, modifier = Modifier.padding(end = 6.dp))
-                WorldText(IsleMotion.seaTime(arrival, nowSec), 15.sp, display = false)
+                WorldText(IsleMotion.seaTime(arrival, nowSec, waitingBerth), 15.sp, display = false)
             }
             Spacer(Modifier.height(12.dp))
             InfoLine("Abgelegt", date(letter.createdAt))
@@ -1575,5 +1758,20 @@ private fun GoldAction(text: String, icon: Int? = null, onClick: () -> Unit) {
             if (icon != null) AppIcon(icon, null, tint = Color(0xFF3B2410), size = 18.dp, modifier = Modifier.padding(end = 8.dp))
             Text(text, color = Color(0xFF3B2410), fontFamily = Kit.Body, fontWeight = FontWeight.Bold, fontSize = 15.sp)
         }
+    }
+}
+
+/** 7.9.13: small retry plate under the island header; with a shown island it stays quiet. */
+@Composable
+internal fun IslandRetryChip(hasIsland: Boolean, error: String, onRetry: () -> Unit) {
+    Row(
+        Modifier.padding(top = 4.dp).clip(RoundedCornerShape(50)).background(Color(0xE6FFF3DC))
+            .clickable(onClickLabel = "Insel erneut laden", onClick = onRetry)
+            .semantics { contentDescription = "Insel erneut laden" }
+            .padding(horizontal = 12.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(if (hasIsland) "Letzter Stand · Erneut versuchen" else "$error · Erneut versuchen",
+            color = Color(0xFF3B2410), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 2)
     }
 }

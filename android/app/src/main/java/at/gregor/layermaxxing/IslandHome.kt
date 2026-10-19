@@ -230,7 +230,8 @@ internal fun HubIsland(
                 IslandGridUnderlay(land, showGrid = placement != null, focus = placement?.position,
                     focusCells = heldCells, valid = placementValid, selection = outline,
                     obstacles = if (placement != null) obstacles else emptyList(),
-                    coastOnly = coastOnly, targets = if (placement != null) placementTargets else emptyList())
+                    coastOnly = coastOnly, targets = if (placement != null) placementTargets else emptyList(),
+                    parcels = IslandLayout.ground(construction))
             }
         },
     ) {

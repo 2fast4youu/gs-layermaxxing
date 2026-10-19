@@ -288,6 +288,11 @@ internal fun IslandGridUnderlay(
     land: Int, showGrid: Boolean, focus: List<Int>?, focusCells: Set<List<Int>>, valid: Boolean,
     selection: Set<List<Int>>?, obstacles: List<IslandLayout.Obstacle> = emptyList(), coastOnly: Boolean = false,
     targets: List<List<Int>> = emptyList(),
+    /**
+     * 7.9.13 (rule 6): the targets are drawn as clean rectangular ground parcels (the lattice tiles, slightly inset with
+     * soft corners), the same tiles the ground rectangles are made of; older rules keep their diamond cells.
+     */
+    parcels: Boolean = false,
 ) {
     val fade by animateFloatAsState(if (showGrid) 1f else 0f, tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "grid-fade")
     val taken = androidx.compose.runtime.remember(obstacles) { obstacles.flatMapTo(HashSet()) { it.cells } }
@@ -320,7 +325,10 @@ internal fun IslandGridUnderlay(
             // Only the real targets of the held piece are drawn as cells.
             drawn.forEach { c ->
                 val near = focus?.let { f -> (1f - (abs(c[0] - f[0]) + abs(c[1] - f[1])) / 10f).coerceIn(0f, 1f) } ?: 0f
-                val path = cellPath(c)
+                val path = if (parcels) Path().apply {
+                    val r = tile(c); val inset = r.width * .08f
+                    addRoundRect(androidx.compose.ui.geometry.RoundRect(r.deflate(inset), androidx.compose.ui.geometry.CornerRadius(r.width * .18f)))
+                } else cellPath(c)
                 drawPath(path, (if (coastOnly) GridInk.Coast.copy(alpha = (.42f + .2f * near) * fade) else GridInk.Free.copy(alpha = (.20f + .22f * near) * fade)))
                 drawPath(path, GridInk.Line.copy(alpha = (.30f + .25f * near) * fade), style = Stroke(thin))
             }

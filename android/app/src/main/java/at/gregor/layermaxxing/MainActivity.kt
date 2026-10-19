@@ -157,7 +157,7 @@ class MainActivity : FragmentActivity() {
                             ),
                         ) { when {
                         token == null -> AuthScreen(api, profile, ::selectProfile, notice = authNotice) { auth ->
-                            store.token = auth.token; store.name = auth.name
+                            store.token = auth.token; store.name = auth.name; store.rememberUserId(auth.userId)
                             store.saveAccount(auth.name, auth.token)
                             accounts = store.savedAccounts()
                             authNotice = null
@@ -166,7 +166,7 @@ class MainActivity : FragmentActivity() {
                         }
                         !biometricPassed -> BiometricGate(this@MainActivity) { biometricPassed = true }
                         addingAccount -> AuthScreen(api, profile, ::selectProfile, onCancel = { addingAccount = false }) { auth ->
-                            store.token = auth.token; store.name = auth.name
+                            store.token = auth.token; store.name = auth.name; store.rememberUserId(auth.userId)
                             store.saveAccount(auth.name, auth.token)
                             accounts = store.savedAccounts()
                             token = auth.token; recoveryCode = auth.recoveryCode

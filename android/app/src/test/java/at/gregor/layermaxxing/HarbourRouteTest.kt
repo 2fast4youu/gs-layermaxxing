@@ -14,7 +14,8 @@ import org.junit.Test
  * moving their ends; boats arrive at the berth at full progress, waiting letters stay in the sender's roadstead.
  */
 class HarbourRouteTest {
-    private fun island(land: Int, harbour: List<Int>?, stage: Int = 2) = ApiClient.IslandConstruction(land = land,
+    /** 7.9.12 berth cases (rule 5, the harbour on the grid's coast), pinned; rule 6 berths: IslandGroundTest. */
+    private fun island(land: Int, harbour: List<Int>?, stage: Int = 2) = ApiClient.IslandConstruction(land = land, gridVersion = PlacementRule.MASKS,
         buildings = if (harbour != null && stage > 0) mapOf("HARBOUR" to stage) else emptyMap(),
         starters = if (harbour != null && stage == 0) setOf("HARBOUR") else emptySet(),
         positions = harbour?.let { mapOf("HARBOUR" to it) } ?: emptyMap())
@@ -50,9 +51,11 @@ class HarbourRouteTest {
                 assertEquals(HarbourRoute.fallbackBerth(c?.land ?: 0), x to y)
                 assertFalse(HarbourRoute.hasHarbour(c))
             }
-            // the stage reaches from the southern shore (land) out into the water
+            // the stage reaches from the southern shore out into the water. 7.9.13: from the painted beach of the cove
+            // (zone B, the same on every land stage) into its open water (zone W)
             val root = HarbourRoute.fallbackRoot(land); val tip = HarbourRoute.fallbackBerth(land)
-            assertTrue(IslandGrid.onLand(root.first, root.second, land))
+            assertEquals('B', IslandGround.zone(IslandGrid.unproject(root.first, root.second, land)))
+            assertEquals('W', IslandGround.zone(IslandGrid.unproject(tip.first, tip.second, land)))
             assertFalse(IslandGrid.onLand(tip.first, tip.second, land))
             assertTrue(tip.second > root.second)
         }
@@ -215,5 +218,40 @@ class HarbourRouteTest {
         r.subList(1, r.size - 1).forEach { assertTrue("$it", sea.contains(it)) }
         assertWater(r, home, lena, all, "lena")
         for (side in listOf(-92f, -46f, 46f, 92f)) HarbourRoute.safeLane(r, side, home, lena, all, 33f, sea).subList(1, r.size - 1).forEach { assertTrue("$side $it", sea.contains(it)) }
+    }
+
+    // 7.9.13 physical hull: two square islands, each berth 6 px off its coast (water for the 4 px keel, NOT for the
+    // 12 px hull). The ship moors at hull water close to the berth and the whole sailed way keeps the hull clear.
+    private val keel = 4f; private val hull = 12f
+    private fun square(x: Float, y: Float, s: Float) = SeaChart.Coast(listOf(Offset(x, y), Offset(x + s, y), Offset(x + s, y + s), Offset(x, y + s)), emptyList())
+    private val coasts = listOf(square(100f, 100f, 200f), square(500f, 100f, 200f))
+    private val field = SeaChart.Field(coasts, androidx.compose.ui.geometry.Rect(0f, 0f, 800f, 500f), 7.2f)
+    private val keelOnlyA = Offset(200f, 306f); private val keelOnlyB = Offset(600f, 306f)
+
+    @Test fun aBerthWithWaterForTheKeelButNotTheHullMoorsAtHullWaterCloseBy() {
+        assertTrue(SeaChart.clearance(keelOnlyA, coasts) in keel..hull)
+        val m = SeaChart.moor(keelOnlyA, null, coasts, keel, 3 * hull, atSocket = true, hull = hull)!!
+        assertFalse(m.repair)
+        assertTrue("${m.point}", SeaChart.clearance(m.point, coasts) >= hull)
+        // the short, visible mooring distance in front of the pier, never a far point at another side of the island
+        assertTrue("${m.point}", (m.point - keelOnlyA).getDistance() <= 2 * hull)
+    }
+
+    @Test fun everyPieceOfARouteAndItsLanesKeepsTheWholeHullInWater() {
+        val a = SeaChart.moor(keelOnlyA, null, coasts, keel, 3 * hull, atSocket = true, hull = hull)!!.point
+        val b = SeaChart.moor(keelOnlyB, null, coasts, keel, 3 * hull, atSocket = true, hull = hull)!!.point
+        val r = SeaChart.route(a, b, field, hull, keel)!!
+        fun check(p: List<Offset>, what: String) = p.zipWithNext().forEachIndexed { k, (x, y) ->
+            assertTrue("$what piece $k $x→$y hull over land", SeaChart.clearSegment(x, y, coasts, hull * .99f, null, keel)) }
+        check(r, "route")
+        for (side in listOf(-46f, 46f)) check(SeaChart.lane(r, side, field, hull, keel), "lane $side")
+    }
+
+    @Test fun aSocketWithoutHullWaterNearbyIsARepairCaseNotAFarHarbour() {
+        // deep inland: hull water only far away (another side) -> the island's real landing stage, marked for repair
+        val inland = Offset(200f, 200f); val cove = Offset(200f, 330f)
+        val m = SeaChart.moor(inland, cove, coasts, keel, 3 * hull, atSocket = true, hull = hull)!!
+        assertTrue(m.repair)
+        assertTrue("${m.point}", SeaChart.clearance(m.point, coasts) >= hull && (m.point - cove).getDistance() <= 2 * hull)
     }
 }

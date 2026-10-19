@@ -61,6 +61,8 @@ internal data class IslandPlan(
     val mirror: Boolean = false,
     /** 0..1: Insel-Ausbau land size from the point score (1 = full painted island). */
     val landScale: Float = 1f,
+    /** 7.9.13: narrow trodden paths between the standing buildings' doors and the beach (box fractions), [IslandTrails]. */
+    val trails: List<List<Offset>> = emptyList(),
 )
 
 internal object IslandPlans {
@@ -157,7 +159,8 @@ internal object IslandPlans {
             IslandPiece(R.drawable.n_tree, .14f, .66f, .07f, sway = true),
             IslandPiece(R.drawable.n_cypress, .88f, .66f, .06f, sway = true),
         ).map { n -> val (x,y) = onLand(n.x,n.y,s); n.copy(x=x,y=y) }
-        return IslandPlan(seed, 1f, placedBuildings(score, construction).values.toList() + nature, emptyList(), landScale = s)
+        val trails = construction?.takeIf { it.supported }?.let { c -> IslandTrails.of(c).map { t -> t.map { (x, y) -> onLand(x / 20f, y / 20f, s).let { (fx, fy) -> Offset(fx, fy) } } } }.orEmpty()
+        return IslandPlan(seed, 1f, placedBuildings(score, construction).values.toList() + nature, emptyList(), landScale = s, trails = trails)
     }
 
     /** What a friendship island holds at each level, placed on the painted clearings. */
@@ -222,19 +225,33 @@ internal fun DynamicIsland(
                 size = androidx.compose.ui.geometry.Size(size.width * .94f * ls, size.height * .92f * ls),
             )
         }
-        // Insel-Ausbau: the land starts as a small bare sand bank and grows with upgrades;
-        // the meadow fades in over the sand as it grows (fully green at the full island).
+        // Insel-Ausbau: the land grows with upgrades. 7.9.13: the painted terrain (meadow, the beach of the southern cove,
+        // rocks, water) is the same on every land stage, because its zones are the build rule (IslandGround): a small
+        // island's meadow is only drier (less saturated), never a bare sand bank that looks like beach everywhere.
         val landLayer = Modifier.fillMaxSize().graphicsLayer {
             val k = ls * (if (plan.mirror) -1f else 1f)
             scaleX = k; scaleY = ls
             transformOrigin = TransformOrigin(IslandPlans.LAND_CX, IslandPlans.LAND_CY)
         }
         val green = IslandPlans.meadow(ls)
-        // Painted bare sand and painted meadow share the app's existing coast/detail style.
-        // Do not replace these with geometric Canvas terrain: it breaks the visual family.
-        if (green < 1f) Image(painterResource(R.drawable.terrain_sand), null, landLayer, contentScale = ContentScale.FillBounds)
-        if (green > 0f) Image(painterResource(R.drawable.terrain_home), null,
-            landLayer.graphicsLayer { alpha = green }, contentScale = ContentScale.FillBounds)
+        // Painted terrain in the app's existing coast/detail style.
+        // Do not replace it with geometric Canvas terrain: it breaks the visual family.
+        val dry = remember(green) {
+            androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(.62f + .38f * green) })
+        }
+        Image(painterResource(R.drawable.terrain_home), null, landLayer, contentScale = ContentScale.FillBounds,
+            colorFilter = if (green < 1f) dry else null)
+        if (plan.trails.isNotEmpty()) Canvas(Modifier.fillMaxSize()) {
+            // Trodden paths: a soft worn edge and a narrow sandy middle, under every sprite and shadow.
+            val wide = size.width * ls / IslandGrid.STEPS * .45f // a little less than half a cell
+            plan.trails.forEach { t ->
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    t.forEachIndexed { n, o -> val px = (if (plan.mirror) 1f - o.x else o.x) * size.width; if (n == 0) moveTo(px, o.y * size.height) else lineTo(px, o.y * size.height) }
+                }
+                drawPath(path, Color(0x24B59A62), style = androidx.compose.ui.graphics.drawscope.Stroke(wide * 1.7f, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                drawPath(path, Color(0x66D8C69A), style = androidx.compose.ui.graphics.drawscope.Stroke(wide * .7f, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            }
+        }
         Canvas(Modifier.fillMaxSize()) {
             // Soft contact shadows ground every part on the grass.
             plan.pieces.forEach { pc ->
@@ -271,5 +288,68 @@ internal fun DynamicIsland(
             )
         }
         overlay()
+    }
+}
+/**
+ * 7.9.13: natural trodden paths, derived from what stands NOW (never from a fixed centre, never from a piece that is not
+ * there): every standing building's door (half a cell in front of its ground) and the beach access above the harbour
+ * are joined by the shortest tree of short links; each link is a gentle curve that keeps off every other piece's ground,
+ * rocks and water (a link that cannot is left out). Paths are pure decoration: they never block a spot and are computed
+ * again from the construction, so they follow every build and move (also the held piece's preview).
+ */
+internal object IslandTrails {
+    /** Polylines in lattice units (x, y = i, j as floats). */
+    fun of(c: ApiClient.IslandConstruction): List<List<Pair<Float, Float>>> {
+        val land = c.land.coerceIn(0, 5)
+        val standing = IsleBuilding.entries.filter { c.standing(it) }
+        fun spot(b: IsleBuilding) = c.positions[b.name] ?: IslandLayout.defaultPosition(b)
+        val grounds = standing.associateWith { b -> IslandLayout.cellsAt(c, IslandTarget.Building(b), spot(b)) }
+        val decor = c.decor.flatMap { d -> IslandLayout.cellsAt(c, IslandTarget.Decor(d.item, d.id), d.position) }.toSet()
+        // the nodes: doors in front of the ground; for the harbour the beach access at the meadow's edge above it
+        val nodes = standing.map { b ->
+            val p = spot(b)
+            if (b == IsleBuilding.HARBOUR) {
+                val top = (IslandGround.spots(land, false).filter { it[0] == p[0].coerceIn(0, IslandGrid.STEPS) }.maxOfOrNull { it[1] } ?: p[1] - 2)
+                b to (p[0].toFloat() to top + .55f)
+            } else b to (p[0].toFloat() to p[1] + .55f)
+        }
+        if (nodes.size < 2) return emptyList()
+        fun d(a: Pair<Float, Float>, b: Pair<Float, Float>) = kotlin.math.hypot(a.first - b.first, a.second - b.second)
+        // Prim: the shortest tree over the doors (deterministic: ties by building order)
+        val inTree = mutableListOf(0)
+        val links = mutableListOf<Pair<Int, Int>>()
+        while (inTree.size < nodes.size) {
+            var best: Triple<Int, Int, Float>? = null
+            for (i in inTree) for (j in nodes.indices) if (j !in inTree) {
+                val dd = d(nodes[i].second, nodes[j].second)
+                if (best == null || dd < best.third) best = Triple(i, j, dd)
+            }
+            inTree += best!!.second; links += best.first to best.second
+        }
+        return links.mapNotNull { (i, j) ->
+            val (ba, a) = nodes[i]; val (bb, b) = nodes[j]
+            val blocked = grounds.filterKeys { it != ba && it != bb }.values.flatten().toSet() + decor
+            curve(a, b, blocked, land)
+        }
+    }
+
+    /** A gentle quadratic curve a → b that stays on meadow/beach and off [blocked] cells, or null. */
+    private fun curve(a: Pair<Float, Float>, b: Pair<Float, Float>, blocked: Set<List<Int>>, land: Int): List<Pair<Float, Float>>? {
+        val dx = b.first - a.first; val dy = b.second - a.second
+        val len = kotlin.math.hypot(dx, dy).takeIf { it > .5f } ?: return null
+        val nx = -dy / len; val ny = dx / len
+        for (bend in listOf(.12f, -.12f, .3f, -.3f, .5f, -.5f)) {
+            val cx = (a.first + b.first) / 2 + nx * bend * len; val cy = (a.second + b.second) / 2 + ny * bend * len
+            val pts = (0..24).map { k ->
+                val t = k / 24f; val u = 1 - t
+                (u * u * a.first + 2 * u * t * cx + t * t * b.first) to (u * u * a.second + 2 * u * t * cy + t * t * b.second)
+            }
+            val ok = pts.all { (x, y) ->
+                val cell = listOf(kotlin.math.round(x).toInt(), kotlin.math.round(y).toInt())
+                cell !in blocked && IslandGround.zone(cell).let { z -> z == 'B' || (z == 'L' && IslandGrid.buildable(cell, land)) }
+            }
+            if (ok) return pts
+        }
+        return null
     }
 }

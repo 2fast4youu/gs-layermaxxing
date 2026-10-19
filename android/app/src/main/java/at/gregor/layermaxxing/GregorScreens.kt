@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.ui.Alignment
@@ -16,8 +17,7 @@ import androidx.compose.ui.unit.dp
 import java.time.Instant
 import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 
@@ -68,6 +68,23 @@ fun ExtensionEntry(title: String, detail: String, onClick: () -> Unit) {
  * text. It loads by itself so a server without the glossary endpoint degrades
  * to the built-in terms instead of breaking the screen.
  */
+/**
+ * 7.9.13: the library's painted things (magnifier, books on the board, quill) work the glossary in the book: each tap
+ * counts up one of these; the glossary on the book's pages focuses its search, turns to the next category or opens
+ * "add a word". Outside the library nobody provides it (null): the glossary behaves as before.
+ */
+internal class GlossaryCommands {
+    var search by androidx.compose.runtime.mutableIntStateOf(0)
+    var add by androidx.compose.runtime.mutableIntStateOf(0)
+    var category by androidx.compose.runtime.mutableIntStateOf(0)
+    /** The category the book shows now (null = Alle), for the books' label. */
+    var shown by mutableStateOf<String?>(null)
+    /** False on a server without the shared glossary (read only): the quill then says why instead of opening. */
+    var canAdd by mutableStateOf(true)
+}
+internal val LocalGlossaryCommands = androidx.compose.runtime.staticCompositionLocalOf<GlossaryCommands?> { null }
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GlossaryScreen(
     api: ApiClient? = null, token: String? = null,
@@ -111,6 +128,19 @@ fun GlossaryScreen(
     }
     LaunchedEffect(token) { reload() }
 
+    val commands = LocalGlossaryCommands.current
+    val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    if (commands != null) {
+        LaunchedEffect(commands.add) { if (commands.add > 0 && sharedAvailable) { newTerm = query.trim(); newText = ""; newCategory = filter ?: GlossaryCategories.DEFAULT; adding = true } }
+        LaunchedEffect(commands.search) { if (commands.search > 0) runCatching { searchFocus.requestFocus() } }
+        LaunchedEffect(commands.category) {
+            if (commands.category > 0) {
+                val order = listOf<String?>(null) + GlossaryCategories.all
+                filter = order[(order.indexOf(filter) + 1) % order.size]; expanded = null
+            }
+        }
+        LaunchedEffect(filter, sharedAvailable) { commands.shown = filter; commands.canAdd = sharedAvailable }
+    }
     val rows = Dictionary.rows(shared, query, filter)
     // 7.9.12: the add action has its own row below the list (no floating button over the entries): every entry stays
     // readable down to the last one, on small screens and with large fonts too.
@@ -122,21 +152,23 @@ fun GlossaryScreen(
         ) {
             item {
                 OutlinedTextField(
-                    query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    query, { query = it }, Modifier.fillMaxWidth().focusRequester(searchFocus), singleLine = true,
                     placeholder = { Text("Wort oder Erklärung suchen") }, leadingIcon = { AppIcon(R.drawable.ico_search, null, size = 20.dp) },
                     shape = RoundedCornerShape(24.dp),
                 )
             }
             item {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).semantics { contentDescription = "Wörterbuch Kategorien" },
+                // 7.9.13: the categories wrap onto the next line on narrow book pages (a scrolling row cut "Sprüche" off
+                // on the Bücherstube / Bibliothek pages): every chip whole and visible.
+                FlowRow(
+                    Modifier.fillMaxWidth().semantics { contentDescription = "Wörterbuch Kategorien" },
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     (listOf<String?>(null) + GlossaryCategories.all).forEach { c ->
                         FilterChip(
                             selected = filter == c, onClick = { filter = c; expanded = null },
-                            label = { Text(c ?: "Alle") },
-                            modifier = Modifier.semantics { contentDescription = "Kategorie " + (c ?: "Alle") },
+                            label = { Text(c ?: "Alle", maxLines = 1, softWrap = false) },
+                            modifier = Modifier.testTag("glossary-category").heightIn(min = 48.dp).semantics { contentDescription = "Kategorie " + (c ?: "Alle") },
                         )
                     }
                 }

@@ -26,7 +26,7 @@ APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
-SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4", "build_grid_v5"]
+SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4", "build_grid_v5", "build_grid_v6"]
 # 7.9.9: the four glossary categories (the first one is the default for old clients and old rows).
 GLOSSARY_CATEGORIES = ("Begriffe", "Witze", "Sprüche", "Zitate")
 # One-time creative entitlement for the accounts that already exist on the test
@@ -1721,8 +1721,14 @@ def coast_cells(land):
 #       land stage; its ground part (base) must stand on the land; the harbour stands on a coast cell with open water
 #       in front of it. Stricter than 4 on purpose (7.9.11 sprites stood inside each other): saved layouts are never
 #       moved or deleted for it, a write only may not create a NEW overlap (test_v16_masks).
-# The code of version 4 stays as it was (the historic tests pin GRID_VERSION = 4 and run it unchanged).
-GRID_VERSION = 5
+#   6 = 7.9.13 ground (geometry/island_ground.json, tools/island_ground.py, build_grid_v6): a piece holds ONE rectangle of
+#       cells, the ground plate it stands on, like in Clash of Clans. Roofs, crowns and towers may cover other pieces on
+#       screen (drawn in ground-line order); only grounds may not share a cell. Zones of the painted terrain: a normal
+#       piece's whole ground lies on land (zone L inside the build ellipse), the harbour on the beach (stage 0) or with its
+#       pier root on the beach, the pier head and its berth over open water (stage 1..3). Saved layouts are never moved,
+#       deleted or reinterpreted for it; a write only may not create a NEW ground overlap (test_v17_ground).
+# The code of versions 4 and 5 stays as it was (the historic tests pin GRID_VERSION = 4 / 5 and run it unchanged).
+GRID_VERSION = 6
 FOOTPRINT_RINGS_V3 = {
     "big": (2, 2, 1, 1, 1, 1),
     "starter": (1, 1, 1, 1, 1, 1),
@@ -1738,7 +1744,74 @@ MASKS = json.loads((Path(__file__).resolve().parent / "geometry" / "island_masks
 
 
 def masks_active():
-    return GRID_VERSION >= 5
+    """grid_version 5 exactly (7.9.12 graphic masks), kept as history."""
+    return GRID_VERSION == 5
+
+
+GROUND = json.loads((Path(__file__).resolve().parent / "geometry" / "island_ground.json").read_text())
+
+
+def ground_active():
+    """grid_version 6 (7.9.13): ground rectangles + terrain zones."""
+    return GRID_VERSION >= 6
+
+
+def zone(i, j):
+    """The painted terrain's zone of lattice cell (i, j): L land, B beach, S shore sand, R rock, W water."""
+    return GROUND["zones"][j][i] if 0 <= i <= GRID_STEPS and 0 <= j <= GRID_STEPS else "W"
+
+
+def ground_land(i, j, land):
+    """version 6: may a normal piece's ground lie on cell (i, j)? Meadow inside the land stage's build ellipse."""
+    return zone(i, j) == "L" and grid_buildable(i, j, land)
+
+
+def ground_rect(key, land, position, part="ground"):
+    """version 6: the cells of a piece's ground rectangle (or the harbour's pier head [part] = "sea") at [position]."""
+    r = GROUND["pieces"][key]["lands"][max(0, min(5, land))].get(part)
+    if not r:
+        return set()
+    x, y = position
+    return {(x + i, y + j) for i in range(r[0], r[2] + 1) for j in range(r[1], r[3] + 1)}
+
+
+def ground_cells(key, land, position):
+    """version 6: everything a piece occupies, its ground and (pier) its head over the water."""
+    return ground_rect(key, land, position) | ground_rect(key, land, position, "sea")
+
+
+def ground_error(state, position, key, harbour=False):
+    """version 6: why the piece's whole ground does not fit its zone at [position] (None = it does)."""
+    land = state["land"]
+    x, y = position
+    if not (0 <= x <= GRID_STEPS and 0 <= y <= GRID_STEPS):
+        return "Bauplatz liegt außerhalb der bebaubaren Fläche"
+    ground = ground_rect(key, land, position)
+    sea = ground_rect(key, land, position, "sea")
+    if harbour:
+        if any(zone(i, j) != "B" for i, j in ground):
+            return ("Der Steg wächst vom Strand ins Wasser – sein Fuß gehört auf den Strand" if sea
+                    else "Das Ruderboot liegt am Strand – nur auf dem Sand der Bucht")
+        if sea and (any(zone(i, j) != "W" for i, j in sea) or zone(x + GROUND["berth"][0], y + GROUND["berth"][1]) != "W"):
+            return "Der Steg braucht davor offenes Wasser ohne Felsen"
+        return None
+    if all(ground_land(i, j, land) for i, j in ground):
+        return None
+    zones = {zone(i, j) for i, j in ground}
+    if "B" in zones:
+        return "Am Strand liegt nur der Hafen – Gebäude stehen auf der Wiese"
+    if "R" in zones:
+        return "Dort liegen Felsen – der Boden passt hier nicht"
+    return "Passt hier nicht ganz auf die Insel – der Boden ragt über den Rand"
+
+
+def piece_cells(key, land, position, rings):
+    """The cells a piece occupies under the server's rule: version 6 ground, 5 graphic mask, 3/4 diamond rings."""
+    if ground_active():
+        return ground_cells(key, land, position)
+    if masks_active():
+        return mask_cells(key, land, position)
+    return footprint_cells(position, rings)
 
 
 def building_mask_key(state, b):
@@ -1803,8 +1876,7 @@ def is_special(d):
 
 def island_building_blocks(state, position, item=None):
     """Legacy decoration slots: does a standing building's footprint cover the slot's decoration footprint?"""
-    mine = mask_cells(decor_mask_key(item or "flowers"), state["land"], position) if masks_active() \
-        else footprint_cells(position, rings_of("decor", state["land"]))
+    mine = piece_cells(decor_mask_key(item or "flowers"), state["land"], position, rings_of("decor", state["land"]))
     return any(building_footprint(state, b) & mine for b in standing(state))
 
 
@@ -1854,20 +1926,44 @@ def land_fit_cell(state, position, building):
     """version 5: the cell nearest to [position] where [building]'s ground fits the land (other pieces ignored)."""
     x, y = position
     harbour = building == "HARBOUR"
-    cells = sorted(coast_cells(state["land"]) if harbour else grid_cells(state["land"]),
+    cells = sorted(spot_cells(state["land"], harbour),
                    key=lambda c: ((c[0] - x) ** 2 + (c[1] - y) ** 2, c[1], c[0]))
     key = building_mask_key(state, building)
-    return next((c for c in cells if not base_error(state, c, key, harbour=harbour)), list(position))
+    fits = (lambda c: not ground_error(state, c, key, harbour=harbour)) if ground_active() \
+        else (lambda c: not base_error(state, c, key, harbour=harbour))
+    return next((c for c in cells if fits(c)), list(position))
+
+
+def spot_cells(land, harbour):
+    """Candidate spots of a piece: version 6 every lattice cell for the harbour (its zones decide) and the meadow cells
+    of the land stage for everything else; before, the coast cells for the harbour and the build grid otherwise."""
+    if ground_active():
+        if harbour:
+            return [[i, j] for i in range(GRID_STEPS + 1) for j in range(GRID_STEPS + 1)]
+        return [c for c in grid_cells(land) if zone(c[0], c[1]) == "L"]
+    return coast_cells(land) if harbour else grid_cells(land)
+
+
+def spot_kept(position, land, harbour):
+    """May a saved piece keep this spot on read (normalize_layout)? The build grid; version 6 also every lattice cell
+    for the harbour (its pier head stands in the water). Zones never move saved pieces."""
+    x, y = position
+    if ground_active() and harbour:
+        return 0 <= x <= GRID_STEPS and 0 <= y <= GRID_STEPS
+    return grid_buildable(x, y, land)
 
 
 def nearest_free_cell(state, position, kind, ignore_building=None, ignore_decor=None):
     """Nearest buildable cell (shared grid) where the piece is not blocked; deterministic. The harbour
     only looks at coast cells. None when there is no free cell at all (never an occupied one)."""
     x, y = position
-    cells = sorted(coast_cells(state["land"]) if ignore_building == "HARBOUR" else grid_cells(state["land"]),
+    cells = sorted(spot_cells(state["land"], ignore_building == "HARBOUR"),
                    key=lambda c: ((c[0] - x) ** 2 + (c[1] - y) ** 2, c[1], c[0]))
     for cell in cells:
-        if masks_active():
+        if ground_active():
+            if ground_error(state, cell, held_key(state, kind, ignore_building, ignore_decor), harbour=ignore_building == "HARBOUR"):
+                continue
+        elif masks_active():
             # version 5: the whole mask must fit (ground on the land, harbour rule), not only the free spot
             key = held_key(state, kind, ignore_building, ignore_decor)
             if base_error(state, cell, key, harbour=ignore_building == "HARBOUR"):
@@ -1900,7 +1996,7 @@ def normalize_layout(state, strict=False):
 
     for b in standing(state):
         p = positions.get(b, ISLAND_DEFAULT_POSITIONS[b])
-        if not grid_buildable(p[0], p[1], land):
+        if not spot_kept(p, land, b == "HARBOUR"):
             positions[b] = place(p, "building", ignore_building=b)
     for d in state.get("decor", []):
         p = d["position"]
@@ -1929,15 +2025,13 @@ def island_occupied(conn, user_id):
 
 def building_footprint(state, b):
     position = state.get("positions", {}).get(b, ISLAND_DEFAULT_POSITIONS[b])
-    if masks_active():
-        return mask_cells(building_mask_key(state, b), state["land"], position)
-    return footprint_cells(position, rings_of("starter" if b in state.get("starters", []) else "big", state["land"]))
+    return piece_cells(building_mask_key(state, b), state["land"], position,
+                       rings_of("starter" if b in state.get("starters", []) else "big", state["land"]))
 
 
 def decor_footprint(state, d):
-    if masks_active():
-        return mask_cells(decor_mask_key(d.get("item", "")), state["land"], d["position"])
-    return footprint_cells(d["position"], rings_of("special" if is_special(d) else "decor", state["land"]))
+    return piece_cells(decor_mask_key(d.get("item", "")), state["land"], d["position"],
+                       rings_of("special" if is_special(d) else "decor", state["land"]))
 
 
 def held_key(state, kind, ignore_building=None, ignore_decor=None, item=None):
@@ -1961,10 +2055,8 @@ def placement_blocked(state, position, kind, ignore_building=None, ignore_decor=
     starters = set(state.get("starters", []))
     # 7.9.9: stage-0 pieces (hammock, palm, ...) are small, so all six fit on the starter island.
     small = ignore_building is not None and ignore_building in starters
-    if masks_active():
-        mine = mask_cells(held_key(state, kind, ignore_building, ignore_decor, item), state["land"], position)
-    else:
-        mine = footprint_cells(position, rings_of("decor" if kind != "building" else "starter" if small else "big", state["land"]))
+    mine = piece_cells(held_key(state, kind, ignore_building, ignore_decor, item), state["land"], position,
+                       rings_of("decor" if kind != "building" else "starter" if small else "big", state["land"]))
     for b in standing(state):
         if b != ignore_building and building_footprint(state, b) & mine:
             return "Bauplatz ist durch ein Gebäude belegt"
@@ -1978,9 +2070,14 @@ def building_spot_error(state, position, building):
     """Why a function building may not stand at [position] (None = it may): the grid, the coast rule of the
     harbour and footprint overlap. The building itself never blocks its own old spot."""
     x, y = position
-    if not grid_buildable(x, y, state["land"]):
+    if ground_active():
+        # version 6: the whole ground on its zone (the harbour: beach, pier head over open water), then ground overlap
+        reason = ground_error(state, [x, y], building_mask_key(state, building), harbour=building == "HARBOUR")
+        if reason:
+            return reason
+    elif not grid_buildable(x, y, state["land"]):
         return "Bauplatz liegt außerhalb der bebaubaren Fläche"
-    if building == "HARBOUR" and not grid_coast(x, y, state["land"]):
+    elif building == "HARBOUR" and not grid_coast(x, y, state["land"]):
         return "Der Hafen kann nur an der Küste stehen"
     if masks_active():
         reason = base_error(state, [x, y], building_mask_key(state, building), harbour=building == "HARBOUR")
@@ -1993,7 +2090,11 @@ def building_spot_error(state, position, building):
 
 
 def decor_blocked(conn, user_id, state, position, ignore_id=None, special=False, item=None):
-    if masks_active():
+    if ground_active():
+        reason = ground_error(state, position, held_key(state, "building" if special else "decor", ignore_decor=ignore_id, item=item))
+        if reason:
+            return reason
+    elif masks_active():
         key = held_key(state, "building" if special else "decor", ignore_decor=ignore_id, item=item)
         reason = base_error(state, position, key)
         if reason:
@@ -2005,7 +2106,8 @@ def valid_island_cell(position, land=5):
     if position is None or len(position) != 2:
         raise HTTPException(422, "Ungültiger Bauplatz")
     x, y = position
-    if not grid_buildable(x, y, land):
+    # version 6: the lattice; the piece's own rule (ground on its zone) is checked by the caller
+    if not (0 <= x <= GRID_STEPS and 0 <= y <= GRID_STEPS) if ground_active() else not grid_buildable(x, y, land):
         raise HTTPException(422, "Bauplatz liegt außerhalb der bebaubaren Fläche")
     return x, y
 
@@ -2184,7 +2286,7 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             if payload.building not in ISLAND_BUILDINGS:
                 raise HTTPException(422, "Ungültiger Bauplatz")
             spot = payload.position
-            if spot is None and masks_active():
+            if spot is None and GRID_VERSION >= 5:
                 # An old client that names no spot for a NEW building (version 5): the default spot, moved onto the
                 # land if the picture's ground would stick out there (nearest such cell, like normalize_layout). It is
                 # then validated like any spot: another piece standing there is never bypassed.
@@ -2196,7 +2298,7 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             if reason:
                 raise HTTPException(422, reason)
             state.setdefault("positions", {})[payload.building] = [x, y]
-        elif payload.action == "upgrade" and masks_active():
+        elif payload.action == "upgrade" and GRID_VERSION >= 5:
             # 7.9.12 (version 5): the next stage is a bigger picture. It must fit where the building stands (ground
             # on the land, no other piece inside its mask) BEFORE anything is paid; otherwise it is moved first by
             # the owner. Nothing is ever relocated on its own.
@@ -2217,7 +2319,10 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             here = state.get("positions", {}).get("HARBOUR", ISLAND_DEFAULT_POSITIONS["HARBOUR"])
             # version 5: only a harbour that is no longer on the coast moves; a stricter picture rule alone never
             # relocates a saved harbour (it is shown and offered better spots when the owner moves it).
-            if (not grid_coast(here[0], here[1], state["land"])) if masks_active() else building_spot_error(state, here, "HARBOUR"):
+            # version 6: beach and water do not move with the land stage, so a harbour never moves for it
+            if ground_active():
+                pass
+            elif (not grid_coast(here[0], here[1], state["land"])) if masks_active() else building_spot_error(state, here, "HARBOUR"):
                 state.setdefault("positions", {})["HARBOUR"] = free_cell_or_422(state, here, "building", ignore_building="HARBOUR")
         if payload.mode == "normal":
             if view["age_days"] < day:
