@@ -1,0 +1,11 @@
+[Unit]
+Description=Check gerfried-erweiterung for a CI-verified backend about once a minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=60s
+AccuracySec=10s
+Unit=gs-layermaxxing-autoupdate.service
+
+[Install]
+WantedBy=timers.target

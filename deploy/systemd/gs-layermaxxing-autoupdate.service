@@ -1,0 +1,12 @@
+[Unit]
+Description=GS Layermaxxing Gerfried test backend auto-deploy (CI-verified gerfried-erweiterung)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=%h
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3.12 %h/.local/share/gs-layermaxxing/deploy/gerfried-autoupdate.py
+TimeoutStartSec=900
+Nice=10

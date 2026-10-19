@@ -32,7 +32,7 @@ jobs:
           .venv/bin/pip install -r server/requirements-dev.txt
 
       - name: pytest
-        run: PYTHONPATH=server .venv/bin/pytest -q server/tests
+        run: PYTHONPATH=server .venv/bin/pytest -q server/tests scripts/tests/test_gerfried_autoupdate.py
 
   android:
     name: Android-Gate und APK
