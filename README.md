@@ -1,5 +1,11 @@
 # GS Layermaxxing 3.7
 
+## Vorschau und Android-Downloads
+
+<img src="docs/screenshots/anmeldung-v3.7.png" width="320" alt="GS Layermaxxing 3.7: Anmeldung">
+
+Anmeldung der Version **3.7 aus dem Hauptzweig**, aufgenommen ohne Benutzerkonto. Die weiteren Android-Versionen und ihre APKs findest du unter [Releases](https://github.com/2fast4youu/gs-layermaxxing/releases). Die dort angebotenen Gerfried-Erweiterungen gehören zu ihrer jeweils angegebenen Version.
+
 Private Android-App für verschlüsselte Nachrichten mit regelbasierter späterer Freigabe.
 
 ## V3-Funktionen
