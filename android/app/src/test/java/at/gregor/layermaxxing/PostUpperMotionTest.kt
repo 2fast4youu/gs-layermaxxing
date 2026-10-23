@@ -4,6 +4,7 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
@@ -68,6 +69,8 @@ abstract class PostUpperMotionContract {
         assertTrue(h.exists("tree-letter-text")); assertEquals(2, h.calls)
         h.tag("tree-letter-prev").performClick(); h.frames(5)
         assertEquals(ScenePhase.READING, h.phase()); assertEquals(2, h.calls)
+        assertTrue(h.exists("post-arrival")); assertTrue(h.locked.isEmpty())
+        h.tag("post-arrival-action").performScrollTo(); h.touch("post-arrival-action"); h.frames()
         assertEquals(listOf(3L), h.locked)
         h.back(); h.until(ScenePhase.REST)
     }

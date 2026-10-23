@@ -1,5 +1,6 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -11,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
@@ -57,7 +59,7 @@ internal object PostalStorageMotion {
 /** A native brass runner, drawn on the furniture rather than a Material slider panel. Uses actual paging. */
 @Composable
 internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: Modifier = Modifier,
-                            summary: String = "", compact: Boolean = false, onPage: (Int) -> Unit) {
+                            summary: String = "", onPage: (Int) -> Unit) {
     val last = (pages - 1).coerceAtLeast(0)
     val value = PostalStorageMotion.fractionAt(page, pages)
     val active = enabled && last > 0
@@ -68,17 +70,19 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
     }
     val currentChoose = rememberUpdatedState<(Float) -> Unit> { choose(it) }
     val ink = Color(0xFF27180C)
-    Column(modifier) {
-        if (!compact) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("früher", color = ink, fontFamily = Kit.Display, fontSize = 11.sp)
-            Text(if (summary.isNotBlank()) summary else "${page + 1} / ${last + 1}", color = ink,
-                fontFamily = Kit.Display, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text("jetzt", color = ink, fontFamily = Kit.Display, fontSize = 11.sp)
+    Column(modifier.background(Color(0xF2E2CCA0)).graphicsLayer { alpha = if (active) 1f else .6f }) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("← früher", color = ink, fontFamily = Kit.Display, fontSize = 11.sp, lineHeight = 14.sp)
+            Text("◷", color = ink, fontFamily = Kit.Display, fontSize = 13.sp, lineHeight = 16.sp)
+            Text("jetzt →", color = ink, fontFamily = Kit.Display, fontSize = 11.sp, lineHeight = 14.sp)
         }
-        Box(Modifier.fillMaxWidth().height(if (compact) 32.dp else 38.dp)) {
+        Text(if (summary.isNotBlank()) summary else if (active) "Zeit ziehen · ${page + 1}/${last + 1}" else "Keine älteren Seiten", color = ink,
+            fontFamily = Kit.Display, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth().testTag("post-time-label"))
+        Box(Modifier.fillMaxWidth().height(48.dp)) {
             Canvas(Modifier.fillMaxSize().padding(horizontal = 22.dp).testTag("post-time-rail")
                 .semantics {
-                    contentDescription = "Briefzeit: Seite ${page + 1} von ${last + 1}"
+                    contentDescription = "Briefzeit ziehen: links ältere Briefe, rechts Gegenwart. Seite ${page + 1} von ${last + 1}"
+                    stateDescription = if (active) "Zeitreise verfügbar" else "Keine weitere Zeitseite verfügbar"
                     progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f, (pages - 2).coerceAtLeast(0))
                     if (!active) disabled()
                     setProgress { if (active && it.isFinite()) { choose(it); true } else false }
@@ -111,16 +115,16 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                     drawLine(Color(0xAA412C17), Offset(x, y - 5.dp.toPx()), Offset(x, y + 5.dp.toPx()), 1.dp.toPx())
                 }
                 val x = value * size.width
-                drawCircle(Color(0x66301B0E), 9.dp.toPx(), Offset(x + 1.dp.toPx(), y + 2.dp.toPx()))
-                drawCircle(Brush.radialGradient(listOf(Color(0xFFF2D78B), Color(0xFF96703C)), center = Offset(x, y), radius = 9.dp.toPx()),
-                    8.dp.toPx(), Offset(x, y))
-                drawLine(Color(0xFF54391F), Offset(x, y - 4.dp.toPx()), Offset(x, y + 4.dp.toPx()), 1.dp.toPx())
+                drawCircle(Color(0x66301B0E), 17.dp.toPx(), Offset(x + 1.dp.toPx(), y + 2.dp.toPx()))
+                drawCircle(Brush.radialGradient(listOf(Color(0xFFF2D78B), Color(0xFF96703C)), center = Offset(x, y), radius = 17.dp.toPx()),
+                    16.dp.toPx(), Offset(x, y))
+                for (dx in listOf(-5f, 0f, 5f)) drawLine(Color(0xFF54391F), Offset(x + dx.dp.toPx(), y - 7.dp.toPx()), Offset(x + dx.dp.toPx(), y + 7.dp.toPx()), 2.dp.toPx())
             }
             if (active && page < last) Text("‹", fontSize = 25.sp, color = ink,
-                modifier = Modifier.align(Alignment.CenterStart).size(30.dp).testTag("tree-time-back")
+                modifier = Modifier.align(Alignment.CenterStart).size(48.dp).testTag("tree-time-back")
                     .clickable(onClickLabel = "Ältere Briefe") { onPage((page + 1).coerceAtMost(last)) })
             if (active && page > 0) Text("›", fontSize = 25.sp, color = ink,
-                modifier = Modifier.align(Alignment.CenterEnd).size(30.dp).testTag("tree-time-now")
+                modifier = Modifier.align(Alignment.CenterEnd).size(48.dp).testTag("tree-time-now")
                     .clickable(onClickLabel = "Zurück zur Gegenwart") { onPage(0) })
         }
     }

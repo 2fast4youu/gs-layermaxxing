@@ -8,6 +8,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -70,6 +72,42 @@ internal class CodexMotionHarness(
         assertEquals("bounded phase wait", target, phase())
     }
     fun touch(name: String) { tag(name).performTouchInput { click(center) }; rule.waitForIdle() }
+    fun flushPointerState() {
+        rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
+    }
+    /** Real selector input, including tall rows at 360dp / font 1.5. ScrollTo's repeated
+     * semantics action cannot advance this paused clock and can loop without making progress. */
+    fun scrollSelectorTo(name: String) {
+        val minimum = 48f * rule.activity.resources.displayMetrics.density
+        while (true) {
+            val node = tag(name).fetchSemanticsNode()
+            val visible = node.boundsInRoot
+            if (!visible.isEmpty && visible.height >= minOf(minimum, node.size.height.toFloat()) - 1f) return
+            val range = tag("post-selector-scroll").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange]
+            val before = range.value()
+            val viewport = tag("post-selector-scroll").fetchSemanticsNode().boundsInRoot
+            val upward = node.positionInRoot.y + node.size.height / 2f >= viewport.center.y
+            fun distanceToVisible(n: androidx.compose.ui.semantics.SemanticsNode): Float {
+                val needed = minOf(minimum, n.size.height.toFloat())
+                val top = n.positionInRoot.y
+                return maxOf(0f, viewport.top + needed - (top + n.size.height), top + needed - viewport.bottom)
+            }
+            val distanceBefore = distanceToVisible(node)
+            tag("post-selector-scroll").performTouchInput {
+                // Short, slow drags avoid flinging over small choices between tall mail rows.
+                if (upward) swipeUp(startY = height * .7f, endY = height * .4f, durationMillis = 600)
+                else swipeDown(startY = height * .3f, endY = height * .6f, durationMillis = 600)
+            }
+            flushPointerState()
+            frames(20)
+            val after = tag("post-selector-scroll").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange].value()
+            assertTrue("Selector must scroll toward $name: $before -> $after", if (upward) after > before else after < before)
+            val distanceAfter = distanceToVisible(tag(name).fetchSemanticsNode())
+            assertTrue("Target must get closer, preventing oscillating scroll loops: $distanceBefore -> $distanceAfter", distanceAfter < distanceBefore)
+        }
+    }
+    fun timePage() = tag("tree-scene-${phase().name}").fetchSemanticsNode().config[PostalTimePageKey]
+    fun visibleMailIds() = tag("tree-scene-${phase().name}").fetchSemanticsNode().config[PostalVisibleMailIdsKey]
     fun outside() { rule.onRoot().performTouchInput { click(Offset(width * .5f, height - 4f)) }; rule.waitForIdle() }
     fun back() { rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }; rule.waitForIdle() }
     fun start(
@@ -207,6 +245,9 @@ class CodexLetterMotionTest {
         assertTrue(h.exists("tree-letter-text"))
         assertNotNull(h.opened[1L])
         h.back(); h.until(ScenePhase.REST)
+        // REST begins the real reorder slide; stale hit targets stay disabled until it settles.
+        repeat(30) { if (!h.exists("tree-letter-1")) h.frames(1) }
+        h.tag("tree-letter-1").assertExists()
         assertEquals(0f, h.sample().camera, 0f)
         assertFalse(h.exists("tree-letter-text") || h.exists("tree-lifted"))
         // Initial order: 1,6,11,14,3,8,4,7,12. Now: 6,11,14,3,8,4,7,12,1.
@@ -216,7 +257,10 @@ class CodexLetterMotionTest {
         assertRestBounds("unopened letter at slot 0", firstEnvelope,
             h.tag("tree-env-6").fetchSemanticsNode().boundsInRoot)
         val currentEnvelope = h.tag("tree-env-1").fetchSemanticsNode().boundsInRoot
-        h.touch("tree-letter-1"); h.until(ScenePhase.READING)
+        // The reprioritized last-row envelope can lie behind the resting controls. Use the
+        // production readable picker, not an injected touch at an obscured semantics rectangle.
+        h.touch("post-mail"); h.frames(); h.scrollSelectorTo("post-select-1"); h.touch("post-select-1")
+        h.until(ScenePhase.READING)
         assertTrue(h.exists("tree-letter-text"))
         assertFalse(h.exists("tree-envelope"))
         h.back(); h.until(ScenePhase.REST)

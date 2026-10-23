@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -165,7 +166,7 @@ internal object TreeOrder {
 }
 
 /** NEW = "An wen?" on the paper, WRITE = the letter written on the paper (1074 end-to-end). A letter looked at is the [LetterScene]. */
-internal enum class TreeFocus { REST, BELT, ROPE, NEW, WRITE }
+internal enum class TreeFocus { REST, BELT, ROPE, MAIL, NEW, WRITE }
 
 /**
  * The painted tree pieces of 1074 (briefbaum-final/IMAGE-REQUESTS.json): the fountain pen and the time arrow. The
@@ -223,7 +224,8 @@ internal fun LetterTreePlace(
     var page by postalPage
     var query by rememberSaveable { mutableStateOf("") }
     var focus by rememberSaveable { mutableStateOf(startFocus) }
-    var peoplePage by rememberSaveable { mutableStateOf(0) }
+    var arrivalId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var peopleSearch by rememberSaveable { mutableStateOf("") }
     val scene = rememberSaveable(saver = LetterScene.Saver) { LetterScene() }
     // the letter just sent from the paper (the paper says so until one goes back)
     var sentNote by remember { mutableStateOf<String?>(null) }
@@ -259,17 +261,30 @@ internal fun LetterTreePlace(
     val direct = PostViews.direct(all)
     val people = PostViews.people(pals, all)
     if (person != null && people.none { it.id == person }) person = null
-    val q = if (level > 0 && direct.size > PostViews.SEARCH_FROM) query else ""
+    val q = query
     val counts = PostViews.counts(all, opened, person, q)
     val ordered = TreeOrder.order(PostViews.shown(all, opened, view, person, q), opened)
-    val perPage = anchors.sheets.size
+    val perPage = if (level == 3) 9 else anchors.sheets.size
     val pages = maxOf(1, (ordered.size + perPage - 1) / perPage)
     if (page >= pages) page = pages - 1
-    val onPage = frozen?.takeIf { !scene.atRest }?.mapNotNull { id -> direct.firstOrNull { it.id == id } } ?: TreeOrder.page(ordered, page, perPage)
+    val onPage = frozen?.takeIf { !scene.atRest }?.mapNotNull { id -> direct.firstOrNull { it.id == id } } ?: PostalMailGroups.faces(TreeOrder.page(ordered, page, perPage), level)
 
+    val faceIds = onPage.map { it.id }
+    var settledFaceIds by remember { mutableStateOf(faceIds) }
+    val pageSlide = remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(faceIds, still) {
+        if (scene.atRest && settledFaceIds != faceIds) {
+            pageSlide.snapTo(if (still) 0f else 1f)
+            if (!still) pageSlide.animateTo(0f, tween(220))
+        } else pageSlide.snapTo(0f)
+        settledFaceIds = faceIds
+    }
+    val pageSettled = settledFaceIds == faceIds && pageSlide.value == 0f
+
+    if (arrivalId != null && direct.none { it.id == arrivalId }) androidx.compose.runtime.SideEffect { arrivalId = null }
     val locked = direct.filter { Conversations.letterState(it, opened[it.id] != null).locked }.sortedBy { it.createdAt }
     val who = people.firstOrNull { it.id == person }
-    val current = scene.letter?.let { id -> direct.firstOrNull { it.id == id } }
+    val current = scene.letter?.let { id -> direct.firstOrNull { it.id == id && !Conversations.letterState(it, false).locked } }
     // a letter that is gone (account switch, the friendship's gate closed) ends the scene at once
     if (scene.letter != null && current == null) androidx.compose.runtime.SideEffect { scene.drop() }
     val slot = current?.let { c -> onPage.indexOfFirst { it.id == c.id } }?.takeIf { it >= 0 }
@@ -295,8 +310,19 @@ internal fun LetterTreePlace(
         }
         val i = ord.indexOfFirst { it.id == m.id }.coerceAtLeast(0)
         page = i / perPage
-        frozen = TreeOrder.page(ord, page, perPage).map { it.id }
+        frozen = PostalMailGroups.faces(TreeOrder.page(ord, page, perPage), level, m.id).map { it.id }
         scene.approach(m.id, read)
+    }
+    fun lockedTap(m: ApiClient.Message) { arrivalId = m.id }
+    fun finishMotion() {
+        scene.finishMotion()?.let { (id, _) ->
+            direct.firstOrNull { it.id == id && !Conversations.letterState(it, opened[it.id] != null).locked }?.let { approach(it, TreeOrder.kind(it, opened[it.id] != null) == TreeOrder.Kind.OPENED) }
+        }
+    }
+    fun backgroundTap() {
+        if (arrivalId != null) { arrivalId = null; return }
+        if (!scene.atRest) { finishMotion(); return }
+        if (focus != TreeFocus.REST) { focus = TreeFocus.REST }
     }
     fun readable(m: ApiClient.Message) = TreeOrder.kind(m, opened[m.id] != null) == TreeOrder.Kind.OPENED
 
@@ -328,7 +354,7 @@ internal fun LetterTreePlace(
                 unfold.go(0f, t(240))
                 cam.go(0f, tween(LetterMotion.LEAVE_MS, easing = LetterMotion.cameraEase))
                 val next = scene.left()
-                next?.let { (id, read) -> direct.firstOrNull { it.id == id }?.let { approach(it, read) } }
+                next?.let { (id, _) -> direct.firstOrNull { it.id == id && !Conversations.letterState(it, false).locked }?.let { approach(it, TreeOrder.kind(it, opened[it.id] != null) == TreeOrder.Kind.OPENED) } }
             }
         }
     }
@@ -360,26 +386,28 @@ internal fun LetterTreePlace(
     // back is always possible: the view lets go of a seal waiting for the server (its request keeps running – an answer
     // after that only changes the letter's state on the tree, it never pulls the view forward); a draft on the paper stays
     fun back() {
+        if (arrivalId != null) { arrivalId = null; return }
         if (!scene.atRest) { scene.out(); return }
         sentNote = null
+        if (leavingWrite) { leavingWrite = false; focus = TreeFocus.REST; return }
         if (writing && !still) leavingWrite = true else focus = TreeFocus.REST
     }
     // the paper composer needs its draft (after a restore without one: "An wen?")
     if (focus == TreeFocus.WRITE && (writer == null || writer.draft == null && sentNote == null)) focus = TreeFocus.NEW
-    androidx.activity.compose.BackHandler(enabled = focus != TreeFocus.REST || !scene.atRest) { back() }
+    androidx.activity.compose.BackHandler(enabled = arrivalId != null || focus != TreeFocus.REST || !scene.atRest) { back() }
     // pixel review 1074: on a narrow phone the tree is looked at a little closer at rest (≈1.2×), so the sheets, the belt's
     // windows and the time arrow board have room for readable ink at a large font
     val narrow = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 380
     val camera = when (focus) {
-        TreeFocus.BELT -> anchors.belt.region
-        TreeFocus.ROPE -> if (level > 0) anchors.rope.region else null
+        TreeFocus.BELT -> null
+        TreeFocus.ROPE -> null
         else -> if (narrow && level == 0) LetterTree.Box(.16f, .10f, .87f, .80f).region else null
     }
     val layout = remember { mutableStateOf<TreeLayout?>(null) }
     val idle = focus == TreeFocus.REST && scene.atRest
     // the letters may be tapped at rest and with the rope open (as before); never while one is looked at or written
-    val lettersTappable = scene.atRest && (focus == TreeFocus.REST || focus == TreeFocus.ROPE)
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().semantics { contentDescription = "${anchors.label}: ${direct.size} Briefe" }) {
+    val lettersTappable = pageSettled && scene.atRest && (focus == TreeFocus.REST || focus == TreeFocus.ROPE)
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().postalBackgroundTap { backgroundTap() }.semantics { contentDescription = "${anchors.label}: ${direct.size} Briefe" }) {
         val wPx = constraints.maxWidth.toFloat(); val hPx = constraints.maxHeight.toFloat()
         val target = with(density) { LetterCamera.target(wPx, hPx, 64.dp.toPx(), 132.dp.toPx()) }
         // while the letter floats, the camera lowers the envelope: its open top stays in view under the paper's lower edge
@@ -399,7 +427,8 @@ internal fun LetterTreePlace(
             FunctionStage(stage, camera, maxZoom = if (focus == TreeFocus.BELT) 2.0f else 1.3f, header = 64.dp, reserve = 24.dp, pictureOverride = if (backArt != 0) backArt else null, preservePictureOverflow = level > 0) { g ->
                 val l = TreeLayout(with(density) { androidx.compose.ui.geometry.Rect(g.picture.left.toPx(), g.picture.top.toPx(), (g.picture.left + g.picture.w).toPx(), (g.picture.top + g.picture.h).toPx()) }, wPx, hPx)
                 if (layout.value != l) layout.value = l
-                if (focus == TreeFocus.REST || focus == TreeFocus.ROPE || writing) {
+                // Keep the registered furniture and real stored mail behind every selection slip.
+                run {
                     // ---- the letters on the trunk, in the order of TreeOrder, one page of time
                     anchors.sheets.forEachIndexed { i, s ->
                         val m = onPage.getOrNull(i) ?: return@forEachIndexed
@@ -408,7 +437,7 @@ internal fun LetterTreePlace(
                         val kind = TreeOrder.kind(m, opened[m.id] != null)
                         val v = PostViews.viewOf(m, opened[m.id] != null)
                         if (m.id != scene.letter) Box(Modifier.graphicsLayer { alpha = 1f - .6f * cam.value }) {
-                            NailedLetter(g, i, r, m, kind, EnvelopeLook(seal = if (kind == TreeOrder.Kind.SEALED) 1f else 0f, waxMark = m.incoming), tilt = anchors.tilts[i] * .6f, anchors = anchors, progress = 0f, occupied = onPage.size)
+                            NailedLetter(g, i, r, m, kind, EnvelopeLook(seal = if (kind == TreeOrder.Kind.SEALED) 1f else 0f, waxMark = m.incoming), tilt = anchors.tilts[i] * .6f, anchors = anchors, progress = 0f, occupied = onPage.size, pageSlide = pageSlide.value)
                         }
                         val say = "Brief " + (if (m.incoming) "von " else "an ") + m.peerName + ": " + when (kind) {
                             TreeOrder.Kind.SEALED -> "angekommen, noch versiegelt – zum Kuvert"
@@ -421,90 +450,27 @@ internal fun LetterTreePlace(
                         if (lettersTappable) SheetZone(hit, say, "tree-letter-${m.id}", slot = "letter:${m.id}", exact = level > 0) {
                             when (kind) {
                                 TreeOrder.Kind.SEALED -> approach(m, read = false)
-                                TreeOrder.Kind.TRAVEL -> onLocked(m)
+                                TreeOrder.Kind.TRAVEL -> lockedTap(m)
                                 TreeOrder.Kind.OPENED -> approach(m, read = true)
                             }
                         }
                     }
                     if (level > 0 && materialReady) PostHolder(g, anchors, 0f, holderArt)
                     // ---- the time arrow: back to older letters / forward to now; the fountain pen: a new letter
-                    if (level == 0 && page < pages - 1 && idle) StageTimeArrow(g.box(anchors.arrowBack), level, back = true, "Zurück in der Zeit: ältere Briefe (${page + 2} von $pages)", "tree-time-back", context) { page += 1 }
-                    if (level == 0 && page > 0 && idle) StageTimeArrow(g.box(anchors.arrowNow), level, back = false, "Zurück zur Gegenwart", "tree-time-now", context) { page = 0 }
                     if (focus == TreeFocus.REST || writing) StagePen(g.box(anchors.pen), context, level, enabled = idle) { focus = if (writer?.draft != null) TreeFocus.WRITE else TreeFocus.NEW }
-                    // ---- the belt: the four views as numbers in its windows
-                    anchors.windows.forEachIndexed { i, w ->
-                        val v = PostViews.View.entries[i]
-                        val r = g.box(w)
-                        if (v == view) Box(r.mod().background(Brush.radialGradient(listOf(Color(0x66FFE2A0), Color.Transparent))))
-                        val countInk = if (level == 0) { if (v == view) RedInk else Ink }
-                            else if (v == view) Color(0xFFFFD988) else Color(0xFFF6E6C4)
-                        WindowNumber(r, "${counts[v] ?: 0}", 13f, countInk, "tree-count-${v.name}", highContrast = level > 0)
-                    }
+                    // Counts live only in the labelled phone controls / status picker.
+                    // The former source-window ink painted detached numbers over the furniture.
                     if (idle) Zone(g.box(anchors.belt), "Ansicht wählen: jetzt ${view.label}, ${counts[view] ?: 0} Briefe", "tree-belt") { focus = TreeFocus.BELT }
                     if (idle) {
                         Zone(g.box(anchors.rope), "Nach Person filtern: ${people.size} Personen" + (who?.let { ", jetzt ${it.name}" } ?: ""), "tree-rope") { focus = TreeFocus.ROPE }
                         who?.let { p -> StageNameTag(g, anchors, p.name, label = "Nur Briefe mit ${p.name} – alle Personen zeigen") { person = null; page = 0 } }
                         Zone(g.box(anchors.padlock), if (locked.isEmpty()) "Kein Brief unterwegs" else "Briefe unterwegs: ${locked.size}, den ältesten zeigen", "tree-padlock",
-                            enabled = locked.isNotEmpty()) { locked.firstOrNull()?.let(onLocked) }
+                            enabled = locked.isNotEmpty()) { locked.firstOrNull()?.let(::lockedTap) }
                     }
                 }
                 if (level > 0 && idle) {
-                    PostalTimeRail(page, pages, enabled = idle, modifier = g.box(anchors.timeRail).mod(),
-                        summary = "${ordered.size} Briefe", compact = true) { targetPage ->
-                        postalPage.value = targetPage
-                    }
                     if (ordered.isEmpty()) Box(g.box(anchors.sheets.first()).let { it.copy(w = g.picture.w * .42f) }.mod(), Alignment.Center) {
                         Text(if (direct.isEmpty()) "Noch keine Briefe" else "Keine Briefe in dieser Auswahl", style = ink(13f, color = Scratch), modifier = Modifier.testTag("post-empty"))
-                    }
-                }
-                // ---- the people on the rope
-                if (focus == TreeFocus.ROPE) {
-                    val cells: List<PostViews.Person?> = listOf<PostViews.Person?>(null) + people
-                    val per5 = anchors.pegs.size
-                    val pp = (cells.size + per5 - 1) / per5
-                    if (peoplePage >= pp) peoplePage = 0
-                    cells.drop(peoplePage * per5).take(per5).forEachIndexed { k, p ->
-                        val n = if (p == null) PostViews.counts(all, opened, null, "").getValue(view) else PostViews.personCounts(all, opened, view, "")[p.id] ?: 0
-                        StagePerson(g, anchors, k, p?.name ?: "Alle", n, chosen = p?.id == person, tag = "tree-strip-${p?.id ?: "alle"}",
-                            label = (p?.name ?: "Alle Personen") + ": $n Briefe", slot = "person:${p?.id ?: "alle"}") { person = p?.id; page = 0; focus = TreeFocus.REST }
-                    }
-                    if (pp > 1) {
-                        if (level > 0) {
-                            ObjectArrow(g.box(anchors.knotLeft), "‹")
-                            ObjectArrow(g.box(anchors.knotRight), "›")
-                        }
-                        Zone(g.box(anchors.knotLeft), "Vorige Personen an der Leine", "tree-knot-left") { peoplePage = (peoplePage - 1 + pp) % pp }
-                        Zone(g.box(anchors.knotRight), "Weitere Personen an der Leine", "tree-knot-right") { peoplePage = (peoplePage + 1) % pp }
-                    }
-                }
-                if (level > 0 && focus == TreeFocus.ROPE && direct.size > PostViews.SEARCH_FROM) {
-                    val at = g.box(anchors.rope)
-                    Box(Modifier.offset(x = 20.dp, y = (at.bottom + 52.dp).coerceAtMost(with(density) { hPx.toDp() } - 100.dp)).fillMaxWidth().padding(end = 40.dp)) {
-                        PaperSlip {
-                            androidx.compose.foundation.text.BasicTextField(query, { query = it; page = 0 },
-                                textStyle = ink(15f), singleLine = true,
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("post-search")
-                                    .semantics { contentDescription = "Briefe nach Name, Titel oder Kuvert suchen" },
-                                decorationBox = { inner -> if (query.isEmpty()) Text("Name oder Kuvert suchen …", style = ink(15f)); inner() })
-                        }
-                    }
-                }
-                // ---- close up: the belt with its scratched labels
-                if (focus == TreeFocus.BELT) {
-                    anchors.windows.forEachIndexed { i, w ->
-                        val v = PostViews.View.entries[i]
-                        val r = g.box(w)
-                        val on = v == view
-                        if (on) Box(r.mod().background(Brush.radialGradient(listOf(Color(0x88FFE2A0), Color.Transparent))))
-                        Box(r.mod(), Alignment.Center) {
-                            Text("${counts[v] ?: 0}", style = TextStyle(fontFamily = Kit.Display, fontSize = 17.sp, color = if (on) Color(0xFF6E1E10) else Ink), maxLines = 1, softWrap = false)
-                        }
-                        val span = g.picture.w * (if (level == 0) .07f else (anchors.windows[1].l - anchors.windows[0].l) * .85f) - 4.dp
-                        val below = DpRect(r.left + r.w / 2 - span / 2, r.bottom + 2.dp, span, 40.dp)
-                        Box(below.mod(), Alignment.TopCenter) { ScratchFit(v.label, on) }
-                        val zw = maxOf(span, 48.dp); val zone = DpRect(r.left + r.w / 2 - zw / 2, r.top - 6.dp, zw, (below.bottom - r.top) + 6.dp)
-                        Box(zone.mod().clickable(onClickLabel = "${v.label} zeigen") { view = v; page = 0; focus = TreeFocus.REST }
-                            .semantics { selected = on; role = Role.Tab; contentDescription = "${v.label}: ${counts[v] ?: 0}" }.testTag("tree-window-${v.name}"))
                     }
                 }
                 // ---- the letter looked at: the same envelope, in front of the bark that dims a little as the camera comes
@@ -577,8 +543,9 @@ internal fun LetterTreePlace(
             val env = restEnvelope?.let { LetterCamera.apply(it, c) } ?: target
             val s = EnvelopeArt.sheet(rise)
             val from = with(density) { DpRect((env.left + s.left * env.width).toDp(), (env.top + s.top * env.height).toDp(), (s.width * env.width).toDp(), (s.height * env.height).toDp()) }
-            FloatingPaper(from, lift, onOutside = { scene.out() }, outsideLabel = "Brief zurück ins Kuvert", below = READ_BELOW, dim = .16f,
-                footer = { PeerButtons(all, current, opened, onLocked) { m -> scene.goTo(m.id, readable(m)) } }) {
+            FloatingPaper(from, lift, onOutside = { if (reading) scene.out() else finishMotion() }, outsideLabel = "Brief zurück ins Kuvert", below = READ_BELOW, dim = .16f,
+                onPaperTap = if (reading) null else ({ finishMotion() }),
+                footer = { PeerButtons(all, current, opened, ::lockedTap) { m -> scene.goTo(m.id, readable(m)) } }) {
                 LetterOnPaper(current, opened, requests, unread, markAsked = markAsked == current.id, onOpen = onOpen,
                     onMark = { if (unread?.mark(current) == true) markAsked = current.id },
                     onlyPerson = person == current.peerId, onPerson = { only -> person = if (only) current.peerId else null; page = 0; scene.out() })
@@ -607,6 +574,61 @@ internal fun LetterTreePlace(
                 }
             }
         }
+        if (idle) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)
+            .background(Color(0xF2E2CCA0)).border(1.dp, Ink).padding(6.dp).testTag("post-controls")) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) { StampButton("Person: ${who?.name ?: "Alle"} ▾", "post-person", compact = true) { focus = TreeFocus.ROPE } }
+                Box(Modifier.weight(1f)) { StampButton("Status: ${view.label} (${counts[view] ?: 0}) ▾", "post-status", compact = true) { focus = TreeFocus.BELT } }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(.32f)) { StampButton("Briefe: ${ordered.size} ▾", "post-mail", compact = true) { focus = TreeFocus.MAIL } }
+                PostalTimeRail(page, pages, true, modifier = Modifier.weight(.68f), summary = if (pages == 1) "Keine älteren Seiten" else "${page + 1}/$pages · ${onPage.firstOrNull()?.let { java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy").format(java.time.Instant.ofEpochSecond(it.createdAt).atZone(java.time.ZoneId.systemDefault())) } ?: "leer"}") { page = it }
+            }
+        }
+        if (scene.atRest && focus in listOf(TreeFocus.ROPE, TreeFocus.BELT, TreeFocus.MAIL)) {
+            PostalSelector(onDismiss = { focus = TreeFocus.REST }) {
+                when (focus) {
+                    TreeFocus.ROPE -> {
+                        Text("Person auswählen", style = ink(20f, bold = true))
+                        androidx.compose.material3.OutlinedTextField(peopleSearch, { peopleSearch = it }, label = { Text("Person suchen") }, modifier = Modifier.fillMaxWidth().testTag("post-person-search"))
+                        StampButton("Alle Personen", "tree-strip-alle", slot = "person:alle") { person = null; page = 0; focus = TreeFocus.REST }
+                        val pc = PostViews.personCounts(all, opened, view, q)
+                        people.filter { it.name.contains(peopleSearch, true) }.forEach { p ->
+                            StampButton("${p.name} · ${pc[p.id] ?: 0}", "tree-strip-${p.id}", chosen = p.id == person, slot = "person:${p.id}") { person = p.id; page = 0; focus = TreeFocus.REST }
+                        }
+                    }
+                    TreeFocus.BELT -> {
+                        Text("Briefstatus auswählen", style = ink(20f, bold = true))
+                        PostViews.View.entries.forEach { v ->
+                            StampButton("${v.label}: ${counts[v] ?: 0}", "tree-window-${v.name}", chosen = view == v) { view = v; page = 0; focus = TreeFocus.REST }
+                        }
+                    }
+                    TreeFocus.MAIL -> {
+                        Text(if (level == 3) "Briefe in den drei Ablagen" else "Briefe auswählen", style = ink(20f, bold = true))
+                        androidx.compose.material3.OutlinedTextField(query, { query = it; page = 0 }, label = { Text("Name oder Kuvert suchen") }, modifier = Modifier.fillMaxWidth().testTag("post-search"))
+                        if (ordered.isEmpty()) Text("Keine Briefe in dieser Auswahl", style = ink(16f))
+                        ordered.forEachIndexed { index, m ->
+                            if (level == 3 && index % 3 == 0) Text("Zeitseite ${index / perPage + 1} · Ablage ${(index % perPage) / 3 + 1}: ${minOf(3, ordered.size - index)} Briefe", style = ink(16f, bold = true))
+                            val tray = if (level == 3) "Ablage ${(index % perPage) / 3 + 1} · " else ""
+                            StampButton("$tray${if (m.incoming) "von" else "an"} ${m.peerName}\n${PostViews.viewOf(m, opened[m.id] != null).label} · ${PostViews.availability(m, Conversations.letterState(m, opened[m.id] != null))}\n${m.title.ifBlank { m.coverNote }}", "post-select-${m.id}", slot = "letter:${m.id}") {
+                                focus = TreeFocus.REST
+                                if (Conversations.letterState(m, opened[m.id] != null).locked) lockedTap(m) else approach(m, readable(m))
+                            }
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+        arrivalId?.let { id -> direct.firstOrNull { it.id == id } }?.let { m ->
+            PostalSelector(onDismiss = { arrivalId = null }) {
+                Text("Brief ${if (m.incoming) "von" else "an"} ${m.peerName}", style = ink(21f, bold = true))
+                Text(PostViews.arrival(m), style = ink(17f), modifier = Modifier.testTag("post-arrival"))
+                Text("Das Siegel spielt einen Klang; mehrfaches Berühren kann Nebel zeigen. Der Brief bleibt versiegelt.", style = ink(15f))
+                StampButton("Siegelklang hören", "post-arrival-action") { arrivalId = null; onLocked(m) }
+                StampButton("Schließen", "post-arrival-close") { arrivalId = null }
+            }
+        }
         // the way back: a chalk arrow in the corner, no button disc
         Box(Modifier.statusBarsPadding().padding(start = 6.dp, top = 6.dp).size(48.dp)
             .clickable(onClickLabel = if (idle) "Zurück zur Insel" else "Zurück zu ${anchors.label}") { if (idle) onClose() else back() }
@@ -619,6 +641,8 @@ internal fun LetterTreePlace(
         Box(Modifier.size(1.dp).semantics {
             contentDescription = "Briefszene: ${scene.phase.name}"
             this[PostObjectMotionKey] = PostObjectSample(level, if (materialReady) anchors.holderTravel * cam.value else 0f, anchors.letterTravel * cam.value, materialReady)
+            this[PostalTimePageKey] = page
+            this[PostalVisibleMailIdsKey] = onPage.map { it.id }
             this[LetterMotionKey] = LetterMotionSample(cam.value, LetterMotion.seal(crack.value), flap, rise, lift)
         }.testTag("tree-scene-${scene.phase.name}"))
     }
@@ -671,7 +695,7 @@ private fun androidx.compose.ui.unit.Density.penRect(l: TreeLayout, anchors: Pos
 @Composable
 private fun NailedLetter(g: StageGeometry, i: Int, r: DpRect, m: ApiClient.Message, kind: TreeOrder.Kind, look: EnvelopeLook,
                          tilt: Float = LetterTree.tilts[i] * .6f, stateAlpha: Float = 1f,
-                         anchors: PostRegistration = PostRegistration.of(0), progress: Float = 0f, occupied: Int = anchors.sheets.size) {
+                         anchors: PostRegistration = PostRegistration.of(0), progress: Float = 0f, occupied: Int = anchors.sheets.size, pageSlide: Float = 0f) {
     val (word, short) = when (kind) {
         TreeOrder.Kind.SEALED -> "angekommen" to "neu"
         TreeOrder.Kind.TRAVEL -> "unterwegs" to "bald"
@@ -681,10 +705,10 @@ private fun NailedLetter(g: StageGeometry, i: Int, r: DpRect, m: ApiClient.Messa
     if (kind == TreeOrder.Kind.TRAVEL) {
         // the painted sheet itself, its paper below the nail
         if (anchors.level > 0) SceneEnvelope(envelopeRect(g, i, anchors, progress), anchors.tilts[i], EnvelopeLook(seal = 1f), "tree-env-${m.id}",
-            pose = PostalStorageMotion.pose(anchors.level, progress, i), storage = PhysicalPostalStorage.frame(anchors.level, i, progress, occupied)) {
-            InkFit(m.peerName, 13f, 8f, Ink, bold = true, modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp))
+            pose = PostalStorageMotion.pose(anchors.level, progress, i), storage = PhysicalPostalStorage.frame(anchors.level, i, progress, occupied), pageSlide = pageSlide) {
+            StoredSender(m.peerName, envelopeRect(g, i, anchors, progress), 1f)
         }
-        if (anchors.level == 0) Ink(r, anchors.tilts[i], top = .2f, bottom = .92f, gap = 0.dp) {
+        if (anchors.level == 0) Ink(r, anchors.tilts[i], top = .08f, bottom = .62f, gap = 0.dp) {
             // (the same name size as on the envelopes: no letter shouts louder than another)
             if (anchors.level == 0) InkFit(m.peerName, 12f, 8.5f, Ink, bold = true, tight = true, modifier = Modifier.weight(1f))
             InkFit(word, 10.5f, 8f, Ink, bold = true, fallback = short, tight = true, modifier = Modifier.weight(.8f))
@@ -692,9 +716,10 @@ private fun NailedLetter(g: StageGeometry, i: Int, r: DpRect, m: ApiClient.Messa
         return
     }
     val env = envelopeRect(g, i, anchors, progress)
-    SceneEnvelope(env, tilt, look, "tree-env-${m.id}", pose = PostalStorageMotion.pose(anchors.level, progress, i), storage = PhysicalPostalStorage.frame(anchors.level, i, progress, occupied)) {
+    SceneEnvelope(env, tilt, look, "tree-env-${m.id}", pose = PostalStorageMotion.pose(anchors.level, progress, i), storage = PhysicalPostalStorage.frame(anchors.level, i, progress, occupied), pageSlide = pageSlide) {
         // the name in ink on the closed flap, above the seal (the layers: seal .56–.84 of the height); it goes with the flap
-        InkFit(m.peerName, 14f, 8.5f, color, bold = true, tight = true,
+        if (anchors.level > 0) StoredSender(m.peerName, env, (1f - look.flap * 5f).coerceIn(0f, 1f))
+        else InkFit(m.peerName, 14f, 8.5f, color, bold = true, tight = true,
             modifier = Modifier.graphicsLayer { alpha = (1f - look.flap * 5f).coerceIn(0f, 1f) }
                 .padding(top = env.h * .06f, start = env.w * .12f, end = env.w * .12f).height(env.h * .42f))
     }
@@ -704,6 +729,16 @@ private fun NailedLetter(g: StageGeometry, i: Int, r: DpRect, m: ApiClient.Messa
         Ink(room, anchors.tilts[i], top = 0f, bottom = 1f, gap = 0.dp) {
             InkFit(word, 10.5f, 8f, color, bold = true, fallback = short, tight = true, modifier = Modifier.weight(1f))
         }
+    }
+}
+
+/** Ink stays on the same projected face and under the same wood masks as its envelope.
+ * A light address patch and larger dark type counter the cavity's ambient shade. */
+@Composable
+private fun StoredSender(name: String, env: DpRect, alpha: Float) {
+    Box(Modifier.padding(top = env.h * .04f, start = env.w * .08f, end = env.w * .08f)
+        .height(env.h * .46f).graphicsLayer { this.alpha = alpha }.background(Color(0xFFF6E5BE))) {
+        InkFit("$name ›", 22f, 11f, Ink, bold = true, tight = true, modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp))
     }
 }
 
@@ -878,21 +913,6 @@ private fun InkFit(text: String, maxSp: Float, minSp: Float, color: Color, bold:
     }
 }
 
-/** A number in one brass window of the belt: as large as the window lets it be (up to [maxSp]). */
-@Composable
-private fun WindowNumber(r: DpRect, text: String, maxSp: Float, color: Color, tag: String, highContrast: Boolean = false) {
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    fun st(sp: Float) = TextStyle(fontFamily = Kit.Display, fontSize = sp.sp, color = color,
-        shadow = if (highContrast) Shadow(Color(0xFF211208), Offset(0f, 1f), 2f) else null,
-        lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both))
-    val sp = remember(text, r, density) {
-        val w = with(density) { (r.w - 2.dp).roundToPx() }; val h = with(density) { (r.h - 1.dp).roundToPx() }
-        generateSequence(maxSp) { it - .5f }.takeWhile { it >= 6f }.firstOrNull { val l = measurer.measure(text, st(it), maxLines = 1, softWrap = false); l.size.width <= w && l.size.height <= h } ?: 6f
-    }
-    Box(r.mod(), Alignment.Center) { Text(text, style = st(sp).copy(lineHeight = sp.sp), maxLines = 1, softWrap = false, modifier = Modifier.testTag(tag)) }
-}
-
 /** A label scratched into the dark wood (light, one line, as large as the room under its window allows). */
 @Composable
 private fun ScratchFit(text: String, on: Boolean) {
@@ -959,14 +979,16 @@ private fun InkLink(text: String, tag: String, onClick: () -> Unit) {
  * step in red ink, the paper showing through the letters). At least 48 dp high.
  */
 @Composable
-private fun StampButton(text: String, tag: String, primary: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+private fun StampButton(text: String, tag: String, primary: Boolean = false, enabled: Boolean = true, chosen: Boolean = false, slot: String? = null, compact: Boolean = false, onClick: () -> Unit) {
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(5.dp)
     Box(Modifier.heightIn(min = 48.dp).padding(vertical = 3.dp).graphicsLayer { alpha = if (enabled) 1f else .5f }.clip(shape)
         .background(if (primary) RedInk.copy(alpha = .92f) else Color(0x1A1E1208), shape)
         .border(2.5.dp, if (primary) RedInk else Ink, shape)
-        .clickable(enabled = enabled, onClickLabel = text, onClick = onClick).semantics { role = Role.Button; contentDescription = text }.testTag(tag)
-        .padding(horizontal = 14.dp, vertical = 8.dp), Alignment.CenterStart) {
-        Text(text, style = ink(16f, bold = true, color = if (primary) Color(0xFFF6E9CC) else Ink), maxLines = 2)
+        .clickable(enabled = enabled, onClickLabel = text, onClick = onClick).semantics { role = Role.Button; contentDescription = text; selected = chosen; slot?.let { set(SceneSlotKey, it) } }.testTag(tag)
+        .padding(horizontal = if (compact) 7.dp else 14.dp, vertical = if (compact) 5.dp else 8.dp), Alignment.CenterStart) {
+        val textStyle = ink(if (compact) 13f else 16f, bold = true, color = if (primary) Color(0xFFF6E9CC) else Ink)
+        Text(text, style = if (compact) textStyle.copy(lineHeight = 16.sp) else textStyle,
+            maxLines = if (compact) 2 else Int.MAX_VALUE, overflow = if (compact) TextOverflow.Ellipsis else TextOverflow.Clip)
     }
 }
 
@@ -1257,7 +1279,6 @@ private fun PaperFields(content: @Composable () -> Unit) {
 private fun StagePen(r: DpRect, context: android.content.Context, level: Int, enabled: Boolean, onClick: () -> Unit) {
     if (level == 0) Pen(r, context, enabled, onClick)
     else {
-        if (level == 1) Box(r.mod(), Alignment.Center) { Text("schreiben", style = ink(11f, color = Scratch), modifier = Modifier.rotate(-90f)) }
         Zone(r, "Am Schreibzeug einen Brief schreiben", "tree-pen", enabled, onClick = onClick)
     }
 }

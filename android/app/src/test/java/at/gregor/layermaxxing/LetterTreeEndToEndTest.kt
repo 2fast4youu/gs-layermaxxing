@@ -60,10 +60,8 @@ open class LetterTreeEndToEndTest {
     /** A tap like a finger's: what lies further down the paper is scrolled into view first (the paper scrolls). */
     private fun tap(t: String) {
         if (postLevel > 0 && t.startsWith("tree-letter-") && !exists(t)) {
-            val pages = NativePostTestDriver(rule)
-            if (exists("tree-time-now")) pages.tap("tree-time-now")
-            repeat(40) { if (!exists(t) && exists("tree-time-back")) pages.tap("tree-time-back") }
-            assertTrue("letter reachable through production paging: $t", exists(t))
+            NativePostTestDriver(rule).letter(t.removePrefix("tree-letter-").toLong())
+            return
         }
         scrollTo(t); tag(t).performClick(); frames() }
     /** Scrolls the paper (tree-page) so that [t] stands in its middle, as a finger would. */
@@ -184,10 +182,11 @@ open class LetterTreeEndToEndTest {
 
     @Test fun travellingLettersStayBehindTheirGateAndNeverAskToOpen() {
         start()
-        tap("tree-letter-3"); tap("tree-letter-8")
+        tap("tree-letter-3"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
+        tap("tree-letter-8"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
         assertEquals(listOf("locked:3", "locked:8"), calls)
         assertFalse(exists("tree-envelope") || exists("tree-lifted"))
-        tap("tree-padlock")
+        tap("tree-padlock"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
         assertTrue(calls.last().startsWith("locked:") && calls.none { it.startsWith("open:") })
     }
 

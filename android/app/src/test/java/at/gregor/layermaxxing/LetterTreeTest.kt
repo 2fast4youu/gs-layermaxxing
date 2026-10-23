@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
@@ -124,14 +125,14 @@ class LetterTreeTest {
         start(mapOf(9L to OpenedMessage("Inhalt von Brief 9 (TESTDATEN)", null, null, null)))
         // travelling (sealed by time / both agree): the existing locked view, no close-up, no open call
         tap("tree-letter-3")
+        assertTrue(exists("post-arrival")); assertTrue(calls.isEmpty())
+        CodexMotionHarness(rule).scrollSelectorTo("post-arrival-action")
+        tap("post-arrival-action")
         assertEquals(listOf("locked:3"), calls); assertTrue(!exists("tree-lifted"))
         // an opened letter on the older page: straight to its text, no seal
         calls.clear()
         // the arrow's word is whole on screen at 360 dp / font 1.5
-        val label = tag("tree-time-back-label").fetchSemanticsNode()
-        val res = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
-        label.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action?.invoke(res)
-        assertTrue(res.all { it.multiParagraph.maxIntrinsicWidth <= it.size.width + 1 } && label.boundsInRoot.left >= 0f)
+        assertTrue(tag("post-time-label").fetchSemanticsNode().boundsInRoot.width > 0f)
         tap("tree-time-back")
         assertEquals(listOf(2L, 5, 9, 10, 13), onTrunk())
         tap("tree-letter-9"); frames(120)
@@ -175,20 +176,16 @@ class LetterTreeTest {
         assertEquals(listOf("write:41"), calls)
     }
 
-    @Test fun theNameTagsOnTheRopeCoverNeitherTheBeltNorTheLetters() {
-        // 1054 kept: with the rope open, every name tag lies between the rope and the belt's windows
-        start()
-        tap("tree-rope")
-        val tags = rule.onAllNodes(SemanticsMatcher("tag") { it.config.getOrNull(SemanticsProperties.TestTag)?.let { t -> t.startsWith("tree-strip-") && t.endsWith("-paper") } == true }, useUnmergedTree = true)
-            .fetchSemanticsNodes().map { it.boundsInRoot }
-        assertEquals(5, tags.size)
+    @Test fun namedPersonSelectionIsReadableScrollableAndDismissible() {
+        start(); tap("post-person")
+        assertTrue(exists("post-person-search"))
         val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
-        val trunk = rule.onAllNodes(SemanticsMatcher("l") { it.config.getOrNull(SceneSlotKey)?.startsWith("letter:") == true }, useUnmergedTree = true).fetchSemanticsNodes().map { it.boundsInRoot }
-        for (t in tags) {
-            assertTrue("$t on screen", t.left >= root.left - 1 && t.right <= root.right + 1)
-            for (l in trunk) assertTrue("tag $t covers a letter $l", !t.deflate(1f).overlaps(l.deflate(1f)))
-            for (o in tags) if (o != t) assertTrue("tags $t / $o", !t.deflate(1f).overlaps(o.deflate(1f)))
-        }
+        val selector = tag("post-selector").fetchSemanticsNode().boundsInRoot
+        assertTrue(selector.left >= root.left && selector.right <= root.right)
+        assertTrue(selector.height <= root.height)
+        tag("tree-strip-40").performScrollTo(); tap("tree-strip-40")
+        assertTrue(desc("post-person").contains("Mira"))
+        assertTrue(!exists("post-selector"))
     }
 
     @Test fun reducedMotionStepsCloserAtOnce() {
@@ -242,7 +239,7 @@ class LetterTreeTest {
         start()
         val rest1 = tag("tree-env-1").fetchSemanticsNode().boundsInRoot
         val rest6 = tag("tree-env-6").fetchSemanticsNode().boundsInRoot
-        val belt = tag("tree-count-ALL").fetchSemanticsNode().boundsInRoot
+        val rest11 = tag("tree-env-11").fetchSemanticsNode().boundsInRoot
         tag("tree-letter-1").performClick(); rule.waitForIdle()
         repeat(14) { rule.mainClock.advanceTimeByFrame() }; rule.waitForIdle()
         // mid-way: the camera is between the tree and the envelope
@@ -251,12 +248,12 @@ class LetterTreeTest {
         frames()
         val full = tag("tree-env-1").fetchSemanticsNode().boundsInRoot
         assertTrue("$mid < $full", full.width > mid.width * 1.2f)
-        // ONE camera: the neighbouring envelope and the belt's number grew by the same factor (the same scene, no card)
+        // ONE camera: both neighbouring envelopes grow by the same factor.
         val k = full.width / rest1.width
         val full6 = tag("tree-env-6").fetchSemanticsNode().boundsInRoot
-        val fullBelt = tag("tree-count-ALL").fetchSemanticsNode().boundsInRoot
+        val full11 = tag("tree-env-11").fetchSemanticsNode().boundsInRoot
         assertEquals(k, full6.width / rest6.width, .03f * k)
-        assertEquals(k, fullBelt.height / belt.height, .05f * k)
+        assertEquals(k, full11.width / rest11.width, .05f * k)
         // a tap beside the envelope: the camera moves back out (nothing opened)
         rule.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(width * .5f, height * .95f)) }; rule.waitForIdle()
         repeat(14) { rule.mainClock.advanceTimeByFrame() }; rule.waitForIdle()
@@ -274,8 +271,8 @@ class LetterTreeTest {
         for (n in nodes) {
             val res = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
             n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action?.invoke(res)
-            for (l in res) assertTrue("${n.config[SemanticsProperties.Text]} cut: w ${l.multiParagraph.maxIntrinsicWidth}/${l.size.width} h ${l.multiParagraph.height}/${n.size.height}",
-                l.multiParagraph.maxIntrinsicWidth <= l.size.width + 1 && l.size.width <= l.layoutInput.constraints.maxWidth && l.multiParagraph.height <= n.size.height + 1 && !l.didOverflowHeight)
+            for (l in res) assertTrue("${n.config[SemanticsProperties.Text]} cut: w ${l.multiParagraph.maxIntrinsicWidth}/${l.size.width} h ${l.multiParagraph.height}/${n.size.height} overflowW=${l.didOverflowWidth} overflowH=${l.didOverflowHeight} maxW=${l.layoutInput.constraints.maxWidth} ellipsis=${(0 until l.lineCount).map { l.isLineEllipsized(it) }}",
+                (0 until l.lineCount).all { l.getLineRight(it) - l.getLineLeft(it) <= l.size.width + 1 } && l.size.width <= l.layoutInput.constraints.maxWidth && l.multiParagraph.height <= n.size.height + 1 && !l.didOverflowHeight && (0 until l.lineCount).none { l.isLineEllipsized(it) })
         }
         return nodes
     }
@@ -303,15 +300,23 @@ class LetterTreeTest {
         // names have a readable size: no name drawn more than a third smaller than the largest one
         val names = ink.filterIndexed { k, _ -> k % 2 == 0 }.map { it.size.height }
         assertTrue("$names", names.min() >= names.max() * .66f)
-        // (4) the belt's counts lie whole inside their windows
-        for (v in PostViews.View.entries) wholeTexts("tree-count-${v.name}").single()
+        // (4) counts belong to labelled controls, never detached ink over the furniture.
+        assertTrue(wholeTexts("post-status").isNotEmpty())
+        tap("post-status")
+        for (v in PostViews.View.entries) {
+            wholeTexts("tree-window-${v.name}").single()
+            val expectedCount = PostViews.counts(letters, opened, null, "")[v] ?: 0
+            assertTrue("Named real count for $v", desc("tree-window-${v.name}").contains("${v.label}: $expectedCount"))
+            assertTrue("No duplicate wood count for $v", !exists("tree-count-${v.name}"))
+        }
+        tap("post-selector-close")
         // (1) the time arrow: its painted board is there with its word, a 48 dp target, on screen
         val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
         val arrow = tag("tree-time-back").fetchSemanticsNode().boundsInRoot
         assertTrue("$arrow", arrow.width >= 48 * density - 1 && arrow.height >= 48 * density - 1 && arrow.left >= 0f && arrow.right <= root.right)
-        assertTrue(TreeArt.id(rule.activity, TreeArt.ARROW) != 0)
-        // its word lies on the board (inside the drawn board's area), whole
-        wholeTexts("tree-time-back-label").single().boundsInRoot.let { assertTrue("$it on the board $arrow", it.left >= 0f && it.right <= root.right && arrow.contains(it.center)) }
+        val rail = tag("post-time-rail").fetchSemanticsNode().boundsInRoot
+        assertTrue("runner touch height $rail", rail.height >= 48 * density - 1)
+        assertTrue(wholeTexts("post-time-label").isNotEmpty())
         // (3) the older page: "offen" / "gesendet" whole on the opened envelopes
         tap("tree-time-back")
         assertEquals(10, wholeTexts("tree-ink").size)

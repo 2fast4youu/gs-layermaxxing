@@ -246,6 +246,7 @@ class LetterSceneTest {
         // previous: letter 3 (sent to Mira, still travelling) – its gate: the app's locked view, no text, no move
         assertTrue(tag("tree-letter-prev").fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString().contains("unterwegs"))
         tap("tree-letter-prev")
+        assertTrue(exists("post-arrival")); assertTrue(calls.isEmpty()); tap("post-arrival-action")
         assertEquals(listOf("locked:3"), calls); assertEquals(ScenePhase.READING, phase())
         // newer: letter 1 (arrived, sealed) – back in, out, in to letter 1: it stays sealed until its own tap
         tap("tree-letter-next", 400)

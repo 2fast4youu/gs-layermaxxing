@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
@@ -95,6 +96,7 @@ class StageSceneSmallScreenTest {
                 // the letter tree: its brass belt touched, the four windows with their scratched labels on screen, labels whole
                 rule.onNodeWithTag("tree-belt", useUnmergedTree = true).performClick(); frames()
                 for (v in PostViews.View.entries) {
+                    rule.onNodeWithTag("tree-window-${v.name}", useUnmergedTree = true).performScrollTo(); frames()
                     val n = rule.onNodeWithTag("tree-window-${v.name}", useUnmergedTree = true).fetchSemanticsNode()
                     val r = unclipped(n)
                     assertTrue("$msg ${v.label} $r", r.width >= 48 * density - 1 && r.height >= 48 * density - 1 && r.left >= -1 && r.right <= root.right + 1 && r.bottom <= root.bottom)
@@ -221,7 +223,7 @@ class StageSceneSmallScreenTest {
         d.back()
         assertEquals(letters.map { "letter:${it.id}" }.toSet(), d.letters())
         if (d.exists("tree-time-now")) d.tap("tree-time-now")
-        d.tap("tree-rope")
+        d.tap("post-mail")
         d.tag("post-search").performTextInput("Freund 12")
         d.frames()
         d.back()

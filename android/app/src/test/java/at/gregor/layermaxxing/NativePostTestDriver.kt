@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -22,41 +23,22 @@ internal class NativePostTestDriver(val rule: AndroidComposeTestRule<ActivitySce
     fun keys(prefix: String) = slots(prefix).map { it.config[SceneSlotKey] }.toSet()
     fun back() { rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames(200) }
     fun letters(): Set<String> {
-        if (exists("tree-time-now")) tap("tree-time-now")
-        val seen = mutableSetOf<String>()
-        repeat(40) {
-            seen += keys("letter:")
-            if (!exists("tree-time-back")) return seen
-            tap("tree-time-back")
-        }
-        error("letter page bound exceeded")
+        tap("post-mail")
+        val actual = keys("letter:")
+        back()
+        return actual
     }
-    fun people(): Set<String> {
-        val seen = mutableSetOf<String>()
-        val initial = keys("person:")
-        repeat(40) {
-            seen += keys("person:")
-            if (!exists("tree-knot-right")) return seen
-            tap("tree-knot-right")
-            if (keys("person:") == initial) return seen
-        }
-        error("person page bound exceeded")
-    }
+    fun people(): Set<String> = keys("person:")
     fun person(id: Long?) {
         val name = "tree-strip-${id ?: "alle"}"
-        repeat(40) {
-            if (exists(name)) { tap(name); return }
-            assertTrue("more person pages", exists("tree-knot-right")); tap("tree-knot-right")
-        }
-        error("person not reachable")
+        tag(name).performScrollTo()
+        tap(name)
     }
     fun letter(id: Long) {
-        val name = "tree-letter-$id"
-        if (!exists(name) && exists("tree-time-now")) tap("tree-time-now")
-        repeat(40) {
-            if (exists(name)) { tap(name); frames(40); return }
-            assertTrue("letter $id reachable through paging", exists("tree-time-back")); tap("tree-time-back")
-        }
-        error("letter not reachable")
+        tap("post-mail")
+        val name = "post-select-$id"
+        tag(name).performScrollTo()
+        tap(name)
+        frames(40)
     }
 }

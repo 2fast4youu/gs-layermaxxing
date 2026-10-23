@@ -668,6 +668,7 @@ private fun LetterPlace(
                 when (view) {
                     PostViews.View.ALL -> "Noch keine Briefe"; PostViews.View.UNREAD -> "Nichts Ungelesenes"
                     PostViews.View.READ -> "Noch nichts gelesen"; PostViews.View.SENT -> "Noch nichts gesendet"
+                    PostViews.View.TRAVEL -> "Keine Briefe unterwegs"
                 } + (person?.let { " mit $it" } ?: ""),
                 if (query.isNotBlank()) "Keine Treffer für „${query.trim()}“." else "Hier erscheint jeder Brief, auch unterwegs oder versiegelt.",
                 Modifier.widthIn(max = 260.dp).semantics { set(SceneSlotKey, "empty:${view.name}") },

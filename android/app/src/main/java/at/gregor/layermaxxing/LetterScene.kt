@@ -147,6 +147,20 @@ internal class LetterScene {
         ScenePhase.REST -> false
     }
 
+    /** Decorative motion only. Never answers a request or opens a seal on the server. */
+    fun finishMotion(): Pair<Long, Boolean>? {
+        when (phase) {
+            ScenePhase.APPROACH -> { arrived(); if (phase == ScenePhase.EMERGING) emerged() }
+            ScenePhase.UNSEALING -> { unsealed(); emerged() }
+            ScenePhase.EMERGING -> emerged()
+            ScenePhase.STOWING -> { stowed(); if (phase == ScenePhase.RESEALING) resealed() else return left() }
+            ScenePhase.RESEALING -> resealed()
+            ScenePhase.LEAVING -> return left()
+            else -> Unit
+        }
+        return null
+    }
+
     /** The server marked the letter unread: it goes back in and the seal is pressed on again. */
     fun markedUnread() { if (phase == ScenePhase.READING) { reseal = true; then = null; phase = ScenePhase.STOWING } }
 
@@ -436,7 +450,7 @@ internal fun DrawScope.drawSheet(sheet: ImageBitmap, r: Rect, unfold: Float) {
 /** An envelope with its layers at [rect] (dp, in the scene) – the same object on the trunk and looked at closely. */
 @Composable
 internal fun SceneEnvelope(rect: DpRect, tilt: Float, look: EnvelopeLook, tag: String,
-                           pose: StoragePose = StoragePose(), storage: StorageFrame? = null, ink: (@Composable () -> Unit)? = null) {
+                           pose: StoragePose = StoragePose(), storage: StorageFrame? = null, pageSlide: Float = 0f, ink: (@Composable () -> Unit)? = null) {
     val pics = EnvelopeArt.of(LocalContext.current.resources)
     Box(Modifier.offset(x = rect.left, y = rect.top).size(rect.w, rect.h).graphicsLayer {
         rotationX = if (storage == null) pose.pitch else 0f; rotationY = if (storage == null) pose.yaw else 0f
@@ -445,7 +459,13 @@ internal fun SceneEnvelope(rect: DpRect, tilt: Float, look: EnvelopeLook, tag: S
         transformOrigin = if (pose == StoragePose()) androidx.compose.ui.graphics.TransformOrigin.Center
             else androidx.compose.ui.graphics.TransformOrigin(.5f, .7f)
     }.drawWithContent {
-        if (storage == null) { drawContent() } else {
+        if (storage == null) {
+            if (pageSlide == 0f) drawContent() else {
+                val canvas = drawContext.canvas.nativeCanvas
+                canvas.save(); canvas.clipRect(0f, 0f, size.width, size.height)
+                canvas.translate(size.width * pageSlide, 0f); drawContent(); canvas.restore()
+            }
+        } else {
             val slot = storage.slot
             val scale = size.width / slot.width
             val canvas = drawContext.canvas.nativeCanvas
@@ -471,6 +491,11 @@ internal fun SceneEnvelope(rect: DpRect, tilt: Float, look: EnvelopeLook, tag: S
                     0, dst, 0, 4)) { "Degenerate registered postal face" }
             }
             canvas.concat(matrix)
+            if (pageSlide != 0f) {
+                // In the registered face plane: moving mail can never paint across a wooden lip.
+                canvas.clipRect(0f, 0f, size.width, size.height)
+                canvas.translate(size.width * pageSlide, 0f)
+            }
             val shade = (storage.light * 255).toInt().coerceIn(0,255)
             val paint = android.graphics.Paint().apply {
                 colorFilter = android.graphics.LightingColorFilter(android.graphics.Color.rgb(shade,shade,shade), 0)
@@ -483,7 +508,7 @@ internal fun SceneEnvelope(rect: DpRect, tilt: Float, look: EnvelopeLook, tag: S
             canvas.restore()
             canvas.restore()
         }
-    }.semantics { this[StoragePoseKey] = pose; storage?.let { this[StorageFrameKey] = it } }.testTag(tag)) {
+    }.semantics { this[StoragePoseKey] = pose; this[PostalPageSlideKey] = pageSlide; storage?.let { this[StorageFrameKey] = it } }.testTag(tag)) {
         Canvas(Modifier.fillMaxSize()) { drawEnvelope(pics, look) }
         ink?.invoke()
     }
@@ -499,7 +524,7 @@ internal fun SceneEnvelope(rect: DpRect, tilt: Float, look: EnvelopeLook, tag: S
 internal fun FloatingPaper(
     from: DpRect, lift: Float, onOutside: () -> Unit, outsideLabel: String,
     /** Kept free under the paper (reading: the envelope's open top shows there, the letter floats over it). */
-    below: Float = 0f, dim: Float = .30f,
+    below: Float = 0f, dim: Float = .30f, onPaperTap: (() -> Unit)? = null,
     footer: (@Composable RowScope.() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit,
 ) {
     val pics = EnvelopeArt.of(LocalContext.current.resources)
@@ -520,7 +545,7 @@ internal fun FloatingPaper(
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim * e))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = outsideLabel, onClick = onOutside)
             .semantics { contentDescription = outsideLabel; role = Role.Button }.testTag("tree-outside"))
-        Box(Modifier.offset(x = left, y = y).size(w, h).pointerInput(Unit) { detectTapGestures { } }.testTag("tree-lifted")) {
+        Box(Modifier.offset(x = left, y = y).size(w, h).pointerInput(onPaperTap) { detectTapGestures { onPaperTap?.invoke() } }.testTag("tree-lifted")) {
             Canvas(Modifier.fillMaxSize()) { drawSheet(pics.sheet, Rect(0f, 0f, size.width, size.height), unfold = u) }
             if (e > .85f) Column(Modifier.fillMaxSize().graphicsLayer { alpha = ((e - .85f) / .15f).coerceIn(0f, 1f) }
                 .padding(horizontal = 18.dp, vertical = 14.dp)) {

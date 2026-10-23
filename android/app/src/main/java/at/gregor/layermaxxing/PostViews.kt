@@ -2,7 +2,7 @@ package at.gregor.layermaxxing
 
 /**
  * 7.9.14: what the post shows, on every stage the same rule (the tree, the mailbox drawer, the letter room, the counter):
- *  - four labelled views with real counts: Alle, Ungelesen, Gelesen, Gesendet;
+ *  - labelled views with real counts: Alle, Ungelesen, Gelesen, Gesendet, Unterwegs;
  *  - the READING state is the own one and nothing else: an incoming letter is "Gelesen" when the server has my read time
  *    for it or it was opened here, otherwise "Ungelesen"; a sent letter is "Gesendet". Whether a letter is still
  *    travelling, sealed or waiting for a gate is its AVAILABILITY ([availability]) and never changes its view: a sealed
@@ -13,7 +13,7 @@ package at.gregor.layermaxxing
  * Only direct letters (group letters live with their group).
  */
 internal object PostViews {
-    enum class View(val label: String) { ALL("Alle"), UNREAD("Ungelesen"), READ("Gelesen"), SENT("Gesendet") }
+    enum class View(val label: String) { ALL("Alle"), UNREAD("Ungelesen"), READ("Gelesen"), SENT("Gesendet"), TRAVEL("Unterwegs") }
     data class Person(val id: Long, val name: String, val emoji: String, val color: String?)
 
     /** Above this many direct letters the post offers its search. */
@@ -30,7 +30,11 @@ internal object PostViews {
     }
 
     fun inView(m: ApiClient.Message, view: View, opened: Map<Long, *>): Boolean =
-        view == View.ALL || viewOf(m, opened[m.id] != null) == view
+        when (view) {
+            View.ALL -> true
+            View.TRAVEL -> Conversations.letterState(m, opened[m.id] != null).locked
+            else -> viewOf(m, opened[m.id] != null) == view
+        }
 
     fun matches(m: ApiClient.Message, query: String): Boolean {
         val q = query.trim()
@@ -59,6 +63,22 @@ internal object PostViews {
     /** The count beside every person: in the chosen view and search. */
     fun personCounts(letters: List<ApiClient.Message>, opened: Map<Long, *>, view: View, query: String): Map<Long, Int> =
         shown(letters, opened, view, null, query).groupingBy { it.peerId }.eachCount()
+
+    /** Public release metadata only; elapsed dates never imply a successful server release. */
+    fun arrival(m: ApiClient.Message, now: Long = System.currentTimeMillis() / 1000): String {
+        fun date(at: Long) = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, java.util.Locale.GERMAN).format(java.util.Date(at * 1000))
+        val gate = availability(m, Conversations.letterState(m, false), now)
+        if (m.unlocked) return gate
+        val timing = when {
+            m.mode == "random" && m.randomFrom != null && m.randomTo != null ->
+                "Zeitfenster: ${date(m.randomFrom)} bis ${date(m.randomTo)}. Der genaue Zeitpunkt ist unbekannt."
+            m.releaseAt != null -> "Freigabezeit: ${date(m.releaseAt)}. " +
+                if (m.releaseAt > now) "Noch ${formatRemaining(m.releaseAt - now)}." else "Zeit erreicht; Ankunft noch nicht bestätigt."
+            m.mode == "manual" || m.mode == "mutual" || m.mode == "presence" -> "Kein fester Ankunftstermin."
+            else -> "Ankunftstermin unbekannt."
+        }
+        return "$gate\n$timing"
+    }
 
     /**
      * Where the letter is, independent of its reading state: travelling (timed / random), sealed until a gate opens

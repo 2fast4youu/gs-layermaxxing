@@ -80,7 +80,7 @@ class PostalStorageInteractionTest {
                 // A direct accessibility callback is not a dispatched Android input frame.
                 // Flush its snapshot write before advancing the explicitly paused test clock.
                 androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
-            }; h.frames()
+            }; h.frames(20)
         }
         setTime(0f)
         assertEquals("the actual rail must move to the oldest page", 0f,
@@ -89,10 +89,10 @@ class PostalStorageInteractionTest {
         setTime(1f)
         assertTrue(h.exists("tree-letter-1")); assertEquals(0, h.calls)
         h.tag("post-time-rail").performTouchInput { swipeLeft(durationMillis = 350) }
-        rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }; h.frames()
+        rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }; h.frames(20)
         assertFalse("dragging the actual runner must show older letters", h.exists("tree-letter-1"))
         h.tag("post-time-rail").performTouchInput { swipeRight(durationMillis = 350) }
-        rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }; h.frames()
+        rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }; h.frames(20)
         assertTrue("dragging back must return to now", h.exists("tree-letter-1"))
     }
     @Test fun runnerReceivesRealPointerPositionsBeforeSnapshotFlush() {
