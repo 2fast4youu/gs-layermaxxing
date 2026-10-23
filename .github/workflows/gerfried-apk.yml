@@ -4,6 +4,12 @@ on:
   push:
     branches: [gerfried, gerfried-erweiterung]
   workflow_dispatch:
+    inputs:
+      backend_only:
+        description: 'Nur Backend pruefen/deployen; keine alte Android-APK bauen oder veroeffentlichen'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -37,6 +43,9 @@ jobs:
   android:
     name: Android-Gate und APK
     needs: backend
+    # An explicitly requested backend-only rollout does not publish an unrelated old APK.
+    # Normal push builds and normal manual builds retain all existing Android gates.
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.backend_only }}
     runs-on: ubuntu-latest
     env:
       DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}

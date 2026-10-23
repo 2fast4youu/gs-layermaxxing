@@ -26,7 +26,7 @@ APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
-SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4", "build_grid_v5", "build_grid_v6"]
+SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4", "build_grid_v5", "build_grid_v6", "build_grid_v7"]
 # 7.9.9: the four glossary categories (the first one is the default for old clients and old rows).
 GLOSSARY_CATEGORIES = ("Begriffe", "Witze", "Sprüche", "Zitate")
 # One-time creative entitlement for the accounts that already exist on the test
@@ -187,6 +187,12 @@ def initialize_database() -> None:
             PRIMARY KEY(blocker_id,blocked_id),
             FOREIGN KEY(blocker_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY(blocked_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS letter_unread_marks (
+            message_id INTEGER NOT NULL, user_id INTEGER NOT NULL, marked_at INTEGER NOT NULL,
+            PRIMARY KEY(message_id,user_id),
+            FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         CREATE TABLE IF NOT EXISTS message_reactions (
             message_id INTEGER NOT NULL, user_id INTEGER NOT NULL, emoji TEXT NOT NULL, created_at INTEGER NOT NULL,
@@ -1727,8 +1733,16 @@ def coast_cells(land):
 #       piece's whole ground lies on land (zone L inside the build ellipse), the harbour on the beach (stage 0) or with its
 #       pier root on the beach, the pier head and its berth over open water (stage 1..3). Saved layouts are never moved,
 #       deleted or reinterpreted for it; a write only may not create a NEW ground overlap (test_v17_ground).
-# The code of versions 4 and 5 stays as it was (the historic tests pin GRID_VERSION = 4 / 5 and run it unchanged).
-GRID_VERSION = 6
+#   7 = 7.9.14 edge (build_grid_v7): rule 6 unchanged, plus ONE rule for the friends' look-out (LIGHTHOUSE: palm,
+#       look-out, signal station, lighthouse): whenever it is newly placed or moved (build, move, an upgrade to a new
+#       spot), its ground must touch the island's EDGE – a meadow cell of the land stage next to the non-meadow that
+#       reaches the open sea (edge_cells: beach, shore, rock or water connected to the lattice border, not an inland
+#       rock). The ground rectangles (island_ground.json) are unchanged. Saved layouts are never moved or deleted for it
+#       and an upgrade where the building stands is not checked against it. geometry/island_edge.json
+#       (tools/island_edge.py) pins the edge cells and the look-out's spots on an empty island per land x stage for the
+#       app (test_v18_edge, IslandEdgeTest). An app that knows only version 6 shows "please update" and writes nothing.
+# The code of versions 4 and 5 stays as it was (the historic tests pin GRID_VERSION = 4 / 5 / 6 and run it unchanged).
+GRID_VERSION = 7
 FOOTPRINT_RINGS_V3 = {
     "big": (2, 2, 1, 1, 1, 1),
     "starter": (1, 1, 1, 1, 1, 1),
@@ -1803,6 +1817,44 @@ def ground_error(state, position, key, harbour=False):
     if "R" in zones:
         return "Dort liegen Felsen – der Boden passt hier nicht"
     return "Passt hier nicht ganz auf die Insel – der Boden ragt über den Rand"
+
+
+def edge_active():
+    """grid_version 7 (7.9.14): the friends' look-out stands at the island's edge."""
+    return GRID_VERSION >= 7
+
+
+EDGE_BUILDINGS = ("LIGHTHOUSE",)
+EDGE_ERROR = "Die Ausschau der Freunde steht immer am Inselrand – mit Blick aufs Meer"
+_EDGE_CACHE = {}
+
+
+def edge_cells(land):
+    """version 7: the meadow cells of [land] (zone L inside the build ellipse) with a 4-neighbour outside the meadow
+    that is connected to the lattice border through non-meadow cells (the coast; an inland rock is not an edge)."""
+    land = max(0, min(5, land))
+    if land not in _EDGE_CACHE:
+        meadow = {(i, j) for i in range(GRID_STEPS + 1) for j in range(GRID_STEPS + 1) if ground_land(i, j, land)}
+        outside = set()
+        todo = [(i, j) for i in range(-1, GRID_STEPS + 2) for j in (-1, GRID_STEPS + 1)] + \
+               [(i, j) for j in range(-1, GRID_STEPS + 2) for i in (-1, GRID_STEPS + 1)]
+        while todo:
+            c = todo.pop()
+            if c in outside or c in meadow or not (-1 <= c[0] <= GRID_STEPS + 1 and -1 <= c[1] <= GRID_STEPS + 1):
+                continue
+            outside.add(c)
+            todo += [(c[0] + 1, c[1]), (c[0] - 1, c[1]), (c[0], c[1] + 1), (c[0], c[1] - 1)]
+        _EDGE_CACHE[land] = {c for c in meadow if any((c[0] + dx, c[1] + dy) in outside for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))}
+    return _EDGE_CACHE[land]
+
+
+def edge_error(state, position, building):
+    """version 7: why [building] may not be newly placed at [position] for the edge rule (None = it may)."""
+    if not edge_active() or building not in EDGE_BUILDINGS:
+        return None
+    if ground_rect(building_mask_key(state, building), state["land"], position) & edge_cells(state["land"]):
+        return None
+    return EDGE_ERROR
 
 
 def piece_cells(key, land, position, rings):
@@ -1929,7 +1981,7 @@ def land_fit_cell(state, position, building):
     cells = sorted(spot_cells(state["land"], harbour),
                    key=lambda c: ((c[0] - x) ** 2 + (c[1] - y) ** 2, c[1], c[0]))
     key = building_mask_key(state, building)
-    fits = (lambda c: not ground_error(state, c, key, harbour=harbour)) if ground_active() \
+    fits = (lambda c: not ground_error(state, c, key, harbour=harbour) and not edge_error(state, c, building)) if ground_active() \
         else (lambda c: not base_error(state, c, key, harbour=harbour))
     return next((c for c in cells if fits(c)), list(position))
 
@@ -2294,7 +2346,8 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             x, y = valid_island_cell(spot if spot is not None else ISLAND_DEFAULT_POSITIONS[payload.building], state["land"])
             # Same island in both modes, so other buildings, special and ordinary decoration always block;
             # the harbour only stands on the coast (7.9.10).
-            reason = building_spot_error(state, [x, y], payload.building)
+            # version 7: a newly placed or moved look-out stands at the island's edge (saved spots are kept)
+            reason = building_spot_error(state, [x, y], payload.building) or edge_error(state, [x, y], payload.building)
             if reason:
                 raise HTTPException(422, reason)
             state.setdefault("positions", {})[payload.building] = [x, y]
@@ -3143,6 +3196,10 @@ def message_meta(conn: sqlite3.Connection, row: sqlite3.Row, current: int, incom
     if incoming:
         result["sender_id"] = row["sender_id"]
         result["sender_name"] = row["sender_name"]
+        # the recipient's own reading marker (never shown to the sender, never touches read_at)
+        result["marked_unread"] = conn.execute(
+            "SELECT 1 FROM letter_unread_marks WHERE message_id=? AND user_id=?", (row["id"], row["recipient_id"])
+        ).fetchone() is not None
     else:
         result["recipient_id"] = row["recipient_id"]
         result["recipient_name"] = row["recipient_name"]
@@ -3280,10 +3337,26 @@ def message_content(message_id: int, user: sqlite3.Row = Depends(current_user)) 
         if row["one_time"] and row["read_at"] is not None: raise HTTPException(410, "Einmal-Nachricht wurde bereits geöffnet")
         read_at = row["read_at"] or now_ts()
         conn.execute("UPDATE messages SET read_at=? WHERE id=? AND read_at IS NULL", (read_at, message_id))
+        # read again: the own "unread" marker is lifted (the first read time stays)
+        conn.execute("DELETE FROM letter_unread_marks WHERE message_id=? AND user_id=?", (message_id, user["id"]))
         return {"ciphertext": row["ciphertext"], "nonce": row["nonce"], "encryption_key": row["encryption_key"],
                 "attachment_name": row["attachment_name"], "attachment_mime": row["attachment_mime"],
                 "attachment_ciphertext": row["attachment_ciphertext"], "attachment_nonce": row["attachment_nonce"],
                 "canonical_metadata": row["canonical_metadata"]}
+
+
+@app.post("/api/messages/{message_id}/unread")
+def mark_letter_unread(message_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
+    """The recipient's personal "unread again" for a letter already read. Only a reading marker: read_at (the sender's
+    receipt), release, proofs and the read-once rule stay as they are; a read-once letter is consumed and refused."""
+    with db() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id=? AND recipient_id=? AND message_class='letter'", (message_id, user["id"])).fetchone()
+        if not row: raise HTTPException(404, "Nachricht nicht gefunden")
+        require_letters_enabled(conn, user["id"], row["sender_id"])
+        if row["one_time"]: raise HTTPException(409, "Einmal-Briefe können nicht wieder ungelesen werden")
+        if row["read_at"] is None or not unlocked(conn, row, now_ts()): raise HTTPException(409, "Der Brief wurde noch nicht gelesen")
+        conn.execute("INSERT OR IGNORE INTO letter_unread_marks(message_id,user_id,marked_at) VALUES (?,?,?)", (message_id, user["id"], now_ts()))
+    return {"marked_unread": True}
 
 
 @app.post("/api/messages/{message_id}/release")
