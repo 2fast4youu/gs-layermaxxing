@@ -115,7 +115,7 @@ class IslandStartUiTest {
             assertEquals("baubar", card.fetchSemanticsNode().config[SemanticsProperties.StateDescription])
             rule.onAllNodesWithText(IslandStages.of(b, 0).name)[0].assertExists()
         }
-        rule.onAllNodesWithText("Schlafplatz")[0].assertExists()
+        rule.onAllNodesWithText("Nachtlager")[0].assertExists()
         rule.onAllNodesWithContentDescription("Mein Haus platzieren")[0].performClick(); tick()
         rule.onAllNodesWithContentDescription("Bestätigen")[0].performClick(); tick(900)
         assertEquals("build", sent.requests.single().action)
@@ -172,7 +172,8 @@ class IslandStartUiTest {
             openFromMenu(b)
             val stage = IslandStages.of(b, 0)
             rule.onAllNodesWithContentDescription("Ort: ${stage.name}")[0].assertExists()
-            rule.onAllNodesWithContentDescription("Kopfbild: ${stage.name}")[0].assertExists()
+            // (a clean stage – the letter tree – draws no header picture: the place itself is the picture)
+            if (!StageScenes.of(b, 0).clean) rule.onAllNodesWithContentDescription("Kopfbild: ${stage.name}")[0].assertExists()
             rule.onAllNodesWithContentDescription("Stufe: ${stage.subtitle}")[0].assertExists()
             rule.onAllNodesWithContentDescription("Ort: ${IslandStages.of(b, 3).name}").assertCountEquals(0)
             rule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }; tick(900)

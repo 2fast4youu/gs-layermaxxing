@@ -131,11 +131,11 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
-private enum class ComposeMode(val label: String, val api: String) {
+internal enum class ComposeMode(val label: String, val api: String) {
     DURATION("Nach einer Dauer", "timed"), DATE_TIME("Zu einem Zeitpunkt", "timed"), MANUAL("Von mir freigeben", "manual"),
     MUTUAL("Wenn beide zustimmen", "mutual"), PRESENCE("Wenn beide online sind", "presence"), RANDOM("Zufällig", "random")
 }
-private enum class DelayUnit(val label: String, val seconds: Long) {
+internal enum class DelayUnit(val label: String, val seconds: Long) {
     MINUTES("Minuten", 60), HOURS("Stunden", 3600), DAYS("Tage", 86400)
 }
 internal data class OpenedMessage(val text: String, val attachment: ByteArray?, val name: String?, val mime: String?)
@@ -258,7 +258,8 @@ fun LayerHome(
     fun act(block: suspend () -> Unit) {
         scope.launch { runCatching { block(); refresh() }.onFailure { error = ApiErrors.friendly(it.message) } }
     }
-    fun openLetter(message: ApiClient.Message) = act {
+    // 1074: one request per letter at a time (the tree's seal, the inbox, the thread share it); see LetterOpener
+    val opener = rememberLetterOpener(opened, fetch = { message ->
         val content = api.content(token, message.id)
         val aad = content.canonicalMetadata?.toByteArray() ?: byteArrayOf()
         val text = CryptoBox.decryptBytes(content.ciphertext, content.nonce, content.encryptionKey, aad).toString(Charsets.UTF_8)
@@ -269,12 +270,18 @@ fun LayerHome(
                     EvidenceProtocol.attachmentAad(content.canonicalMetadata, content.attachmentName, content.attachmentMime)
                 else byteArrayOf(),
             ) else null
-        opened[message.id] = OpenedMessage(text, bytes, content.attachmentName, content.attachmentMime)
-    }
+        OpenedMessage(text, bytes, content.attachmentName, content.attachmentMime)
+    }, onDone = { scope.launch { runCatching { refresh() } } }, onError = { error = ApiErrors.friendly(it) })
+    fun openLetter(message: ApiClient.Message) { opener.open(message) }
+    // Briefbaum 22.10.: "auf ungelesen setzen" – the recipient's own server-side marker (one request per letter)
+    val unreadMarker = rememberUnreadMarker(opened, transmit = { message -> api.markUnread(token, message.id) },
+        onDone = { scope.launch { runCatching { refresh() } } }, onError = { error = ApiErrors.friendly(it) })
+    // the letter being written on the letter tree's paper (kept when going back to the tree; a new account starts empty)
+    val treeDraft = remember(token) { mutableStateOf<LetterDraft?>(null) }
 
     LaunchedEffect(token) {
         // Switching accounts must not leak the previous account's transient state.
-        opened.clear(); epProposal = null; openThreadFriend = null; proof = null; composeLetterFriend = null
+        opener.reset(); unreadMarker.reset(); opened.clear(); epProposal = null; openThreadFriend = null; proof = null; composeLetterFriend = null
         dismissedRequests.clear(); dismissedEpLetters.clear()
         peopleOpen = false; sparksOpen = false; sparkCompose = false
         hub = null; topicScope = null
@@ -419,6 +426,11 @@ fun LayerHome(
                     onChat = { id -> openThreadFriend = id },
                     onComposeLetter = { composeLetterFriend = it },
                     onOpenLetter = ::openLetter, onLockedTap = ::lockedLetterTap,
+                    openRequests = opener.requests,
+                    unreadMarker = unreadMarker,
+                    // 1074: the letter tree writes on its own paper with the same draft / send path as the sheet
+                    letterWriter = LetterWriter(friends, groups, friendshipSettings, creativeActive,
+                        transmit = { request -> api.send(token, request) }, onSent = { act {} }, draftState = treeDraft),
                     onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
                     onAllTopics = { hub = "topics" },
                     onGlossary = { hub = "glossary" },
@@ -900,93 +912,21 @@ private fun SendScreen(
     initialRecipient: Long?, creativeActive: Boolean = false,
     onClose: () -> Unit, onSent: (Long?, Long?) -> Unit, initialText: String = "",
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var title by remember { mutableStateOf("") }; var coverNote by remember { mutableStateOf("") }; var text by remember(initialText) { mutableStateOf(initialText) }
-    var selected by remember(initialRecipient) { mutableStateOf(initialRecipient?.let(::setOf) ?: emptySet()) }; var groupId by remember { mutableStateOf<Long?>(null) }
-    var mode by remember { mutableStateOf(ComposeMode.DURATION) }; var amount by remember { mutableStateOf("3") }
+    // 1074: the draft and its send are shared with the letter tree's paper composer (LetterCompose.kt)
+    val draft = remember(initialRecipient, initialText) { LetterDraft(initialRecipient, initialText) }
     var modeMenu by remember { mutableStateOf(false) }
     var recipientMenu by remember { mutableStateOf(false) }
-    var unit by remember { mutableStateOf(DelayUnit.DAYS) }; var dateTime by remember { mutableStateOf(LocalDateTime.now().plusDays(1).withSecond(0).withNano(0)) }
-    var randomStart by remember { mutableStateOf("1") }; var randomEnd by remember { mutableStateOf("24") }
-    var randomStartUnit by remember { mutableStateOf(DelayUnit.HOURS) }; var randomEndUnit by remember { mutableStateOf(DelayUnit.HOURS) }
-    var oneTime by remember { mutableStateOf(false) }
-    var attachment by remember { mutableStateOf<Triple<String, String, ByteArray>?>(null) }; var busy by remember { mutableStateOf(false) }
-    var notice by remember { mutableStateOf<String?>(null) }; var confirmManual by remember { mutableStateOf(false) }
+    var confirmManual by remember { mutableStateOf(false) }
     var detailsOpen by remember { mutableStateOf(false) }; var infoSheet by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
     val bodyFocus = remember { FocusRequester() }
     // The sealed text field owns the screen, so it takes the focus as the sheet
     // settles; requesting earlier would hit an unattached FocusRequester.
     LaunchedEffect(Unit) { delay(250); runCatching { bodyFocus.requestFocus() } }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) scope.launch {
-            runCatching { withContext(Dispatchers.IO) {
-                val bytes = context.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
-                require(bytes.size <= 2_000_000) { "Der Anhang darf höchstens 2 MB groß sein." }
-                var name = "Anhang"; context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME); if (cursor.moveToFirst() && index >= 0) name = cursor.getString(index)
-                }
-                Triple(name, context.contentResolver.getType(uri) ?: "application/octet-stream", bytes)
-            } }.onSuccess { attachment = it }.onFailure { notice = it.message }
-        }
-    }
-    val targetValid = groupId != null || selected.isNotEmpty()
-    val minimumDelay = if (groupId == null) selected.mapNotNull { id ->
-        settings.firstOrNull { it.friendId == id }?.minLetterDelaySeconds
-    }.maxOrNull() ?: 0L else 0L
-    val now = Instant.now().epochSecond
-    val scheduleValid = when (mode) {
-        ComposeMode.DURATION -> (amount.toLongOrNull() ?: 0) > 0
-        ComposeMode.DATE_TIME -> dateTime.atZone(ZoneId.systemDefault()).toEpochSecond() > now
-        ComposeMode.RANDOM -> {
-            val from = (randomStart.toLongOrNull() ?: 0) * randomStartUnit.seconds
-            val to = (randomEnd.toLongOrNull() ?: 0) * randomEndUnit.seconds
-            from >= 60 && to - from >= 60
-        }
-        else -> true
-    }
-    suspend fun send() {
-        busy = true; notice = null
-        runCatching {
-            val current = Instant.now().epochSecond
-            val minimum = current + minimumDelay + 5
-            val release = when (mode) {
-                ComposeMode.DURATION -> maxOf(current + (amount.toLongOrNull() ?: 0) * unit.seconds, minimum)
-                ComposeMode.DATE_TIME -> dateTime.atZone(ZoneId.systemDefault()).toEpochSecond()
-                else -> null
-            }
-            val randomFrom = if (mode == ComposeMode.RANDOM)
-                maxOf(current + (randomStart.toLongOrNull() ?: 1) * randomStartUnit.seconds, minimum) else null
-            val randomTo = if (mode == ComposeMode.RANDOM) {
-                val requested = current + (randomEnd.toLongOrNull() ?: 24) * randomEndUnit.seconds
-                if (randomFrom != null) maxOf(requested, randomFrom + 60) else requested
-            } else null
-            val metadata = LetterMetadata(
-                title.trim(), coverNote.trim(), if (groupId == null) selected.toList() else emptyList(),
-                groupId, mode.api, release, randomFrom, randomTo, oneTime,
-            )
-            val sealed = withContext(Dispatchers.Default) {
-                EvidenceProtocol.seal(text, metadata, attachment?.first, attachment?.second, attachment?.third)
-            }
-            val encrypted = CryptoBox.Encrypted(sealed.ciphertext, sealed.nonce, sealed.releaseKey)
-            val encryptedAttachment = sealed.attachment?.let {
-                ApiClient.EncryptedAttachment(it.name, it.mime, it.ciphertext, it.nonce)
-            }
-            api.send(token, ApiClient.SendRequest(
-                recipientIds = if (groupId == null) selected.toList() else emptyList(), groupId = groupId,
-                encrypted = encrypted, title = title.trim(), mode = mode.api, releaseAt = release,
-                randomFrom = randomFrom, randomTo = randomTo,
-                oneTime = oneTime, attachment = encryptedAttachment, coverNote = coverNote.trim(), evidence = sealed.evidence,
-            ))
-        }.onSuccess { ids ->
-            val likelyFriend = if (groupId == null) selected.firstOrNull() else null
-            text = ""; title = ""; coverNote = ""; attachment = null; notice = "✓ Verschlüsselt gesendet"
-            onSent(ids.firstOrNull(), likelyFriend)
-        }
-            .onFailure { notice = it.message ?: "Senden fehlgeschlagen" }
-        busy = false
-    }
+    val pickAttachment = rememberAttachmentPicker(draft)
+    val minimumDelay = draft.minimumDelay(settings)
+    suspend fun send() = draft.send(minimumDelay, { request -> api.send(token, request) }, onSent)
     if (confirmManual) ConfirmDialog("Manuelle Nachricht senden?", "Sie bleibt gesperrt, bis du sie später ausdrücklich freigibst.",
         { confirmManual = false; scope.launch { send() } }) { confirmManual = false }
 
@@ -998,16 +938,16 @@ private fun SendScreen(
             friends.forEach { friend ->
                 Surface(
                     modifier = Modifier.fillMaxWidth().clickable {
-                        groupId = null
-                        selected = if (friend.id in selected) selected - friend.id else selected + friend.id
+                        draft.groupId = null
+                        draft.selected = if (friend.id in draft.selected) draft.selected - friend.id else draft.selected + friend.id
                     },
                     shape = RoundedCornerShape(16.dp),
-                    color = if (friend.id in selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    color = if (friend.id in draft.selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                 ) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(friend.avatarEmoji, fontSize = 22.sp, modifier = Modifier.width(38.dp))
                         Text(friend.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                        if (friend.id in selected) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 21.dp)
+                        if (friend.id in draft.selected) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 21.dp)
                     }
                 }
             }
@@ -1017,16 +957,16 @@ private fun SendScreen(
                 groups.forEach { group ->
                     Surface(
                         modifier = Modifier.fillMaxWidth().clickable {
-                            groupId = if (groupId == group.id) null else group.id
-                            if (groupId != null) selected = emptySet()
+                            draft.groupId = if (draft.groupId == group.id) null else group.id
+                            if (draft.groupId != null) draft.selected = emptySet()
                         },
                         shape = RoundedCornerShape(16.dp),
-                        color = if (groupId == group.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        color = if (draft.groupId == group.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                     ) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             AppIcon(R.drawable.ico_group, null, modifier = Modifier.width(38.dp), size = 24.dp)
                             Text("${group.name} (${group.members.size})", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                            if (groupId == group.id) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 21.dp)
+                            if (draft.groupId == group.id) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 21.dp)
                         }
                     }
                 }
@@ -1053,9 +993,9 @@ private fun SendScreen(
             Spacer(Modifier.height(4.dp))
             ComposeMode.entries.forEach { choice ->
                 Surface(
-                    modifier = Modifier.fillMaxWidth().clickable { mode = choice },
+                    modifier = Modifier.fillMaxWidth().clickable { draft.mode = choice },
                     shape = RoundedCornerShape(18.dp),
-                    color = if (mode == choice) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    color = if (draft.mode == choice) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                 ) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(modeIcon(choice), null, modifier = Modifier.padding(end = 18.dp), tint = MaterialTheme.colorScheme.primary, size = 24.dp)
@@ -1063,18 +1003,18 @@ private fun SendScreen(
                             Text(choice.label, fontWeight = FontWeight.SemiBold)
                             Text(modeDescription(choice), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (mode == choice) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 22.dp)
+                        if (draft.mode == choice) AppIcon(R.drawable.ico_check, null, tint = MaterialTheme.colorScheme.primary, size = 22.dp)
                     }
                 }
             }
             // The chosen mode's own inputs live right below it, not on the main sheet.
-            when (mode) {
-                ComposeMode.DURATION -> NumberAndUnit(amount, { amount = it }, unit, { unit = it })
-                ComposeMode.DATE_TIME -> DateTimeChooser(dateTime) { dateTime = it }
+            when (draft.mode) {
+                ComposeMode.DURATION -> NumberAndUnit(draft.amount, { draft.amount = it }, draft.unit, { draft.unit = it })
+                ComposeMode.DATE_TIME -> DateTimeChooser(draft.dateTime) { draft.dateTime = it }
                 ComposeMode.RANDOM -> {
                     Text("Zufällig innerhalb dieses Fensters:")
-                    NumberAndUnit(randomStart, { randomStart = it }, randomStartUnit, { randomStartUnit = it }, "Frühestens")
-                    NumberAndUnit(randomEnd, { randomEnd = it }, randomEndUnit, { randomEndUnit = it }, "Spätestens")
+                    NumberAndUnit(draft.randomStart, { draft.randomStart = it }, draft.randomStartUnit, { draft.randomStartUnit = it }, "Frühestens")
+                    NumberAndUnit(draft.randomEnd, { draft.randomEnd = it }, draft.randomEndUnit, { draft.randomEndUnit = it }, "Spätestens")
                     Text("Das Fenster muss mindestens 1 Minute groß sein. Den tatsächlichen Zeitpunkt wählt der Server.", fontSize = 12.sp)
                 }
                 else -> Unit
@@ -1088,9 +1028,9 @@ private fun SendScreen(
     }
 
     val recipientLabel = when {
-        groupId != null -> "Gruppe: " + groups.firstOrNull { it.id == groupId }?.name.orEmpty()
-        selected.isEmpty() -> "Empfänger wählen"
-        else -> friends.filter { it.id in selected }.joinToString { "${it.avatarEmoji} ${it.name}" }
+        draft.groupId != null -> "Gruppe: " + groups.firstOrNull { it.id == draft.groupId }?.name.orEmpty()
+        draft.selected.isEmpty() -> "Empfänger wählen"
+        else -> friends.filter { it.id in draft.selected }.joinToString { "${it.avatarEmoji} ${it.name}" }
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
@@ -1106,8 +1046,8 @@ private fun SendScreen(
 
         // One large field owns the screen; everything else is a chip below it.
         OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
+            value = draft.text,
+            onValueChange = { draft.text = it },
             modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp, vertical = 8.dp)
                 .focusRequester(bodyFocus),
             placeholder = { Text("Dein versiegelter Text …") },
@@ -1120,14 +1060,14 @@ private fun SendScreen(
                 .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedTextField(title, { title = it.take(100) }, Modifier.fillMaxWidth(),
+            OutlinedTextField(draft.title, { draft.title = it.take(100) }, Modifier.fillMaxWidth(),
                 label = { Text("Brieftitel – optional") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
-            OutlinedTextField(coverNote, { coverNote = it.take(1000) }, Modifier.fillMaxWidth(),
+            OutlinedTextField(draft.coverNote, { draft.coverNote = it.take(1000) }, Modifier.fillMaxWidth(),
                 label = { Text("Öffentlicher Umschlagtext") },
                 supportingText = { Text("Offen und unverschlüsselt sichtbar") }, minLines = 2)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(oneTime, { oneTime = it }); Spacer(Modifier.width(8.dp)); Text("Nur einmal lesbar")
+                Switch(draft.oneTime, { draft.oneTime = it }); Spacer(Modifier.width(8.dp)); Text("Nur einmal lesbar")
             }
         }
 
@@ -1136,7 +1076,7 @@ private fun SendScreen(
             horizontalArrangement = Arrangement.spacedBy(7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ComposerChip(sealChipLabel(mode, amount, unit, dateTime, minimumDelay), highlighted = true) {
+            ComposerChip(sealChipLabel(draft.mode, draft.amount, draft.unit, draft.dateTime, minimumDelay), highlighted = true) {
                 keyboard?.hide(); modeMenu = true
             }
             // Creative testing: one tap per release preset. The letter itself takes
@@ -1147,12 +1087,12 @@ private fun SendScreen(
                 ComposerChip(label) {
                     val chosen = DelayUnit.entries.lastOrNull { seconds >= it.seconds && seconds % it.seconds == 0L }
                         ?: DelayUnit.MINUTES
-                    mode = ComposeMode.DURATION; unit = chosen; amount = (seconds / chosen.seconds).toString()
+                    draft.mode = ComposeMode.DURATION; draft.unit = chosen; draft.amount = (seconds / chosen.seconds).toString()
                 }
             }
-            ComposerChip(attachment?.first ?: "Anhang", icon = R.drawable.ico_attach) { keyboard?.hide(); picker.launch("*/*") }
+            ComposerChip(draft.attachment?.first ?: "Anhang", icon = R.drawable.ico_attach) { keyboard?.hide(); pickAttachment() }
             ComposerChip("Details", icon = if (detailsOpen) R.drawable.ico_collapse else R.drawable.ico_expand) { detailsOpen = !detailsOpen }
-            if (oneTime) ComposerChip("1×")
+            if (draft.oneTime) ComposerChip("1×")
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -1161,13 +1101,13 @@ private fun SendScreen(
             )
             TextButton(onClick = { keyboard?.hide(); infoSheet = true }) { Text("Mehr", fontSize = 12.sp) }
         }
-        attachment?.let { Text("${it.third.size / 1024} KB · verschlüsselt", Modifier.padding(horizontal = 14.dp), fontSize = 11.sp) }
-        notice?.let { Text(it, Modifier.padding(horizontal = 14.dp), color = if (it.startsWith("✓")) Color(0xFF19703B) else MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+        draft.attachment?.let { Text("${it.third.size / 1024} KB · verschlüsselt", Modifier.padding(horizontal = 14.dp), fontSize = 11.sp) }
+        draft.notice?.let { Text(it, Modifier.padding(horizontal = 14.dp), color = if (it.startsWith("✓")) Color(0xFF19703B) else MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         Button(
-            onClick = { keyboard?.hide(); if (mode == ComposeMode.MANUAL) confirmManual = true else scope.launch { send() } },
-            enabled = targetValid && text.isNotBlank() && scheduleValid && !busy,
+            onClick = { keyboard?.hide(); if (draft.mode == ComposeMode.MANUAL) confirmManual = true else scope.launch { send() } },
+            enabled = draft.canSend(),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).height(52.dp),
-        ) { Text(if (busy) "Wird versiegelt …" else "Versiegelt senden", fontWeight = FontWeight.Bold) }
+        ) { Text(if (draft.busy) "Wird versiegelt …" else "Versiegelt senden", fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -1193,7 +1133,7 @@ private fun ComposerChip(text: String, highlighted: Boolean = false, icon: Int? 
 }
 
 /** Short, honest summary of the release gate, including the agreed minimum delay. */
-private fun sealChipLabel(
+internal fun sealChipLabel(
     mode: ComposeMode, amount: String, unit: DelayUnit, dateTime: LocalDateTime, minimumDelay: Long,
 ): String {
     val base = when (mode) {
@@ -1489,7 +1429,7 @@ private fun NavCard(title: String, subtitle: String, onClick: () -> Unit) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun NumberAndUnit(
+internal fun NumberAndUnit(
     amount: String, onAmount: (String) -> Unit, unit: DelayUnit, onUnit: (DelayUnit) -> Unit,
     label: String = "Nach",
 ) {
@@ -1503,7 +1443,7 @@ private fun NumberAndUnit(
 }
 
 @Composable
-private fun DateTimeChooser(value: LocalDateTime, onChange: (LocalDateTime) -> Unit) {
+internal fun DateTimeChooser(value: LocalDateTime, onChange: (LocalDateTime) -> Unit) {
     val context = LocalContext.current
     Text("Gewählt: ${value.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))}", fontWeight = FontWeight.SemiBold)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1672,7 +1612,7 @@ private fun modeIcon(mode: ComposeMode): Int = when (mode) {
     ComposeMode.DURATION -> R.drawable.ico_timer; ComposeMode.DATE_TIME -> R.drawable.ico_date; ComposeMode.MANUAL -> R.drawable.ico_manual
     ComposeMode.MUTUAL -> R.drawable.ico_check_double; ComposeMode.PRESENCE -> R.drawable.ico_presence; ComposeMode.RANDOM -> R.drawable.ico_random
 }
-private fun modeDescription(mode: ComposeMode): String = when (mode) {
+internal fun modeDescription(mode: ComposeMode): String = when (mode) {
     ComposeMode.DURATION -> "Öffnet nach einer Anzahl Stunden oder Tage."
     ComposeMode.DATE_TIME -> "Öffnet an einem bestimmten Datum und zu einer Uhrzeit."
     ComposeMode.MANUAL -> "Bleibt gesperrt, bis du sie selbst freigibst."

@@ -15,8 +15,17 @@ from collections import deque
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from test_v9_quests import auth, befriend, load_app, register
+from test_v9_quests import auth, befriend, register
+from test_v9_quests import load_app as _load_app
 from test_island_evolution import earn, state
+
+
+def load_app(tmp_path):
+    """7.9.14: the current server runs version 7 (version 6 + the look-out's edge rule, test_v18_edge); this file pins
+    version 6 exactly, like the historic files pin 4 and 5, and runs it unchanged."""
+    m = _load_app(tmp_path)
+    m.GRID_VERSION = 6
+    return m
 
 APP = Path(__file__).resolve().parents[1] / "app"
 GRID = json.loads((APP / "island_grid.json").read_text())

@@ -54,7 +54,9 @@ class IslandStartModelTest {
         val c = ApiClient.IslandConstruction(land = 0, starters = setOf("HOUSE"), positions = mapOf("HOUSE" to listOf(10, 10)))
         val placed = IslandPlans.placedBuildings(0, c)
         assertEquals(setOf(IsleBuilding.HOUSE), placed.keys)
-        assertEquals(IslandStages.of(IsleBuilding.HOUSE, 0).res, placed.getValue(IsleBuilding.HOUSE).res)
+        // 7.9.14: a ground-rule (v6) island draws the style E picture; a rule 5 island keeps the picture its masks were measured from
+        assertEquals(IslandStages.of(IsleBuilding.HOUSE, 0).art, placed.getValue(IsleBuilding.HOUSE).res)
+        assertEquals(IslandStages.of(IsleBuilding.HOUSE, 0).res, IslandPlans.placedBuildings(0, c.copy(gridVersion = PlacementRule.MASKS)).getValue(IsleBuilding.HOUSE).res)
         // 7.9.10 footprints: a cell where the small stage-0 footprint fits but a big stage-1 one would overlap.
         val big = c.copy(starters = emptySet(), buildings = mapOf("HOUSE" to 1))
         val near = IslandGrid.buildableCells(0).first { p ->

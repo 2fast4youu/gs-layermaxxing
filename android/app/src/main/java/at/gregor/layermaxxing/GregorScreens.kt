@@ -81,6 +81,12 @@ internal class GlossaryCommands {
     var shown by mutableStateOf<String?>(null)
     /** False on a server without the shared glossary (read only): the quill then says why instead of opening. */
     var canAdd by mutableStateOf(true)
+    /** 7.9.14: the library's painted register (ribbons, card drawers, banners) picks a category ([pick], null = Alle). */
+    var pick by mutableStateOf<String?>(null)
+    var picks by androidx.compose.runtime.mutableIntStateOf(0)
+    fun choose(category: String?) { pick = category; picks++ }
+    /** 7.9.14: the place shows its own register for the categories (the chips on the page are left out). */
+    var register = false
 }
 internal val LocalGlossaryCommands = androidx.compose.runtime.staticCompositionLocalOf<GlossaryCommands?> { null }
 
@@ -139,6 +145,7 @@ fun GlossaryScreen(
                 filter = order[(order.indexOf(filter) + 1) % order.size]; expanded = null
             }
         }
+        LaunchedEffect(commands.picks) { if (commands.picks > 0) { filter = commands.pick; expanded = null } }
         LaunchedEffect(filter, sharedAvailable) { commands.shown = filter; commands.canAdd = sharedAvailable }
     }
     val rows = Dictionary.rows(shared, query, filter)
@@ -157,7 +164,7 @@ fun GlossaryScreen(
                     shape = RoundedCornerShape(24.dp),
                 )
             }
-            item {
+            if (commands?.register != true) item {
                 // 7.9.13: the categories wrap onto the next line on narrow book pages (a scrolling row cut "Sprüche" off
                 // on the Bücherstube / Bibliothek pages): every chip whole and visible.
                 FlowRow(
@@ -241,7 +248,8 @@ fun GlossaryScreen(
                 }
             }
         }
-        if (sharedAvailable) ExtendedFloatingActionButton(
+        // 7.9.14: in the library's place the quill beside the book adds a word (the same command); its pages keep the room
+        if (sharedAvailable && commands?.register != true) ExtendedFloatingActionButton(
             onClick = { newTerm = query.trim(); newText = ""; newCategory = GlossaryCategories.DEFAULT; adding = true },
             modifier = Modifier.align(Alignment.End).padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp).semantics { contentDescription = "Wort hinzufügen" },
             text = { Text("Wort hinzufügen") }, icon = { AppIcon(R.drawable.ico_add, null, size = 20.dp) },

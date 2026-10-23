@@ -56,6 +56,8 @@ internal object StageFixtures {
     }
 
     /** The action every view keeps on every stage (the golden button). */
+    /** stage-ui-redesign: a clean stage has no golden action – its painted things act (the letter tree's blank sheet). */
+    fun action(b: IsleBuilding, level: Int): String? = if (StageScenes.of(b, level).clean) null else action(b)
     fun action(b: IsleBuilding): String? = when (b) {
         IsleBuilding.POST -> "Brief schreiben"
         IsleBuilding.HARBOUR -> "Quest anpinnen"

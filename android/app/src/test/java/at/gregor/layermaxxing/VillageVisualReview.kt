@@ -803,13 +803,13 @@ class VillageVisualReview {
     }) { EvolutionIsland(startingPoints=0, nav=true) }
     @Test fun ausbauMenuBuilt() = shot("ausbau-04-menue-stufe2", captureDialogs=true, gesture={
         rule.onAllNodesWithText("Menü")[0].performClick(); settle(900)
-        rule.onAllNodesWithText("Postfächer")[0].assertExists()
-        rule.onAllNodesWithText("Leuchtfeuer")[0].assertExists()
+        rule.onAllNodesWithText("Briefstube")[0].assertExists()
+        rule.onAllNodesWithText("Signalstation")[0].assertExists()
     }) { EvolutionIsland(grown=true, level=2, nav=true, eligible=true) }
     @Test fun ausbauPreview() = shot("ausbau-05-grosse-vorschau", captureDialogs=true, gesture={
         rule.onAllNodesWithContentDescription("Post").filter(androidx.compose.ui.test.hasClickAction())[0].performClick(); settle()
         rule.onAllNodesWithText("Ausbauen")[0].performClick(); settle(900)
-        rule.onAllNodesWithContentDescription("Ausbauvorschau: Postfächer")[0].assertExists()
+        rule.onAllNodesWithContentDescription("Ausbauvorschau: Briefstube")[0].assertExists()
         rule.onAllNodesWithText("Verschieben").assertCountEquals(0)
     }) { EvolutionIsland(grown=true, level=1, nav=true) }
     @Test fun ausbauSpecialShelf() = shot("ausbau-06-spezialdeko", gesture={
@@ -845,7 +845,7 @@ class VillageVisualReview {
     }) { EvolutionIsland(grown=true, level=1, nav=true, withLife=true) }
     @Test fun start69EmptyShelf() = shot("start69-03-leere-insel-bauleiste", gesture={
         rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()
-        rule.onAllNodesWithText("Schlafplatz")[0].assertExists()
+        rule.onAllNodesWithText("Nachtlager")[0].assertExists()
         rule.onAllNodesWithContentDescription("Abschnitt Gebäude").assertCountEquals(0)
     }) { EvolutionIsland(startingPoints=0, nav=true) }
     @Test fun start69EmptyShelfGrey() = shot("start69-04-leere-insel-bauleiste-grau", gesture={
@@ -872,7 +872,7 @@ class VillageVisualReview {
         openPlace("Freunde"); rule.onAllNodesWithContentDescription("Ort: Aussichtspalme")[0].assertExists()
     }) { EvolutionIsland(startingPoints=0, nav=true) }
     @Test fun start69LighthouseStage2() = shot("start69-08-leuchtturm-stufe2", gesture={
-        openPlace("Freunde"); rule.onAllNodesWithContentDescription("Ort: Leuchtfeuer")[0].assertExists()
+        openPlace("Freunde"); rule.onAllNodesWithContentDescription("Ort: Signalstation")[0].assertExists()
     }) { EvolutionIsland(grown=true, level=2, nav=true) }
     @Test fun start69PostStage0() = shot("start69-09-post-stufe0", gesture={
         openPlace("Post"); rule.onAllNodesWithContentDescription("Ort: Briefbaum")[0].assertExists()
@@ -887,10 +887,10 @@ class VillageVisualReview {
         VillageTheme(true) { LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossarySeed, addTerm = { _, _, _ -> }) }, level = 0) }
     }
     @Test fun start69GlossaryFilter() = shot("start69-11-woerterbuch-filter-witze", gesture={
-        rule.onAllNodesWithContentDescription("Kategorie Witze")[0].performClick(); settle()
+        rule.onAllNodesWithContentDescription("Register Witze")[0].performClick(); settle()
     }) { VillageTheme(true) { LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossarySeed, addTerm = { _, _, _ -> }) }, level = 2) } }
     @Test fun start69GlossaryNewWord() = shot("start69-12-woerterbuch-neues-wort", captureDialogs=true, gesture={
-        rule.onAllNodesWithContentDescription("Wort hinzufügen")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); settle()
+        rule.onAllNodesWithContentDescription("Feder – Wort hinzufügen")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick); settle()
     }) { VillageTheme(true) { LibraryBook(onClose = {}, glossary = { GlossaryScreen(seed = glossarySeed, addTerm = { _, _, _ -> }) }, level = 3) } }
 
     // 7.9.10 island placement + building menus (Veit): production IslandWorld after real interactions on fixtures.
@@ -992,7 +992,7 @@ class VillageVisualReview {
         rule.onAllNodesWithContentDescription("Stufe 2 von 3")[0].assertExists()
     }) { EvolutionIsland(grown=true, level=2, nav=true, eligible=true) }
     @Test fun menuPlaceHeaderStage() = shot("menu-09-ort-kopf-leuchtfeuer-stufe2", gesture={
-        openPlace("Freunde"); rule.onAllNodesWithContentDescription("Ort: Leuchtfeuer")[0].assertExists()
+        openPlace("Freunde"); rule.onAllNodesWithContentDescription("Ort: Signalstation")[0].assertExists()
     }) { EvolutionIsland(grown=true, level=2, nav=true) }
     @Test fun menuLandSheet() = shot("menu-10-land-vergroessern", captureDialogs=true, gesture={
         rule.onAllNodesWithContentDescription("Bauen – Bauleiste öffnen")[0].performClick(); settle()

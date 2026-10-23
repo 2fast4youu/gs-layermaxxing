@@ -197,14 +197,14 @@ class IslandAusbauTest {
         rule.onAllNodesWithText("Ausbauen")[0].performClick(); tick(900)
         rule.onAllNodesWithText("Öffnen").assertCountEquals(0)
         rule.onAllNodesWithText("Verschieben").assertCountEquals(0)
-        for (name in listOf("Postkasten", "Postfächer")) {
+        for (name in listOf("Postkasten", "Briefstube")) {
             val preview = rule.onAllNodesWithContentDescription("Ausbauvorschau: $name")[0]
             assertTrue("large painted preview", preview.getBoundsInRoot().height >= 160.dp)
         }
         rule.onAllNodesWithText("Auf Stufe 2 ausbauen")[0].performClick(); tick(900)
         assertEquals("upgrade", sent.requests.single().action)
         rule.onAllNodesWithText("Schließen")[0].performClick(); tick()
-        rule.onAllNodesWithText("Postfächer")[0].assertExists()
+        rule.onAllNodesWithText("Briefstube")[0].assertExists()
         rule.onAllNodesWithText("Menü")[0].performClick(); tick(900)
         rule.onAllNodesWithText("Briefe · Stufe 2")[0].assertExists()
     }
@@ -215,8 +215,10 @@ class IslandAusbauTest {
         val ground = rule.onAllNodesWithContentDescription("Inselboden")[0]
         ground.performTouchInput {
             val box = piece.size * width
-            // Transparent left quarter of the tower's square (alpha bounds begin at .291).
-            click(Offset(piece.x * width - box * .40f, piece.y * height - box * .55f))
+            // 7.9.14: transparent left margin of the lookout's picture: 4 % of the box left of its measured visible bounds
+            val b = SpriteBounds.of(piece.res)
+            org.junit.Assert.assertTrue("the picture has a transparent margin to tap into: ${b.toList()}", b[0] > .06f)
+            click(Offset(piece.x * width - box * .5f + box * (b[0] - .04f), piece.y * height - box * .55f))
         }; tick(900)
         rule.onAllNodesWithContentDescription("Gebäudeaktionen").assertCountEquals(0)
         ground.performTouchInput {

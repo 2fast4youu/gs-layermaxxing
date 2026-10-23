@@ -71,13 +71,15 @@ class StageStoryTest {
         for (l in 0..3) StageStory.of(IsleBuilding.CAMPFIRE, l).items.forEach { assertTrue(it.res != R.drawable.decor_hammock && it.res != R.drawable.b_house) }
     }
 
-    @Test fun ordinaryStartersStandOnTheClearingOnlyTheHarbourStarterOnTheBeach() {
+    @Test fun ordinaryStartersAreNotOnTheBeachOnlyTheHarbourStarterIsAtTheWater() {
+        // 7.9.14: the painted places themselves: the night camp, the letter tree, the stump and the campfire are inland
+        // (forest, meadow); the palm stands at the island's edge looking out to sea; the landing starts on the shore
         for (b in IsleBuilding.entries) {
             val start = StageScenes.of(b, 0)
-            if (b == IsleBuilding.HARBOUR) assertEquals(R.drawable.terrain_sand, start.ground)
-            else {
-                assertEquals("$b", R.drawable.terrain_home, start.ground)
-                assertTrue("$b ${start.caption}", "Strand" !in start.caption && "Sand" !in start.caption)
+            when (b) {
+                IsleBuilding.HARBOUR -> assertTrue(start.caption, start.caption.contains("Steg") && start.caption.contains("Ufer"))
+                IsleBuilding.LIGHTHOUSE -> assertTrue(start.caption, start.caption.contains("Rand") && start.caption.contains("Meer"))
+                else -> assertTrue("$b ${start.caption}", "Strand" !in start.caption && "Sand" !in start.caption && "Meer" !in start.caption)
             }
         }
     }
@@ -99,7 +101,8 @@ class StageStoryTest {
             val msg = "$b $level"
             val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
             val drawn = things()
-            assertEquals(msg, StageStory.of(b, level).items.map { "story:${it.key}" }.toSet(), drawn.map { it.first }.toSet())
+            // a clean stage has no story buttons: its painted things act (letter tree: padlock = sealed, sheets = letters)
+            assertEquals(msg, if (StageScenes.of(b, level).clean) emptySet() else StageStory.of(b, level).items.map { "story:${it.key}" }.toSet(), drawn.map { it.first }.toSet())
             for ((id, r) in drawn) {
                 assertTrue("$msg $id ≥ 48 dp", r.width >= 48 * density - 1 && r.height >= 48 * density - 1)
                 assertTrue("$msg $id on screen", r.left >= 0f && r.right <= root.right + 1 && r.bottom <= root.bottom + 1 && r.top >= 0f)
@@ -107,7 +110,7 @@ class StageStoryTest {
                 assertTrue("$msg $id described", node.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull()?.isNotBlank() == true)
             }
             for (i in drawn.indices) for (j in i + 1 until drawn.size) assertTrue(msg, !drawn[i].second.overlaps(drawn[j].second))
-            StageFixtures.action(b)?.let { a ->
+            StageFixtures.action(b, level)?.let { a ->
                 val action = rule.onAllNodesWithText(a)[0].fetchSemanticsNode().boundsInRoot
                 drawn.forEach { (id, r) -> assertTrue("$msg $id over the action", !r.overlaps(action)) }
             }
@@ -137,9 +140,19 @@ class StageStoryTest {
             rule.runOnIdle { current = level; androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
             if (level == 0) rule.setContent { androidx.compose.runtime.key(current) { VillageTheme(true) { PostOffice(StageFixtures.friends, letters, emptyMap(), onOpen = { opened += it.id }, onLocked = { locked += it.id }, onWrite = {}, onClose = {}, level = current) } } }
             frames()
-            assertTrue("$level", described("flap")[SemanticsProperties.ContentDescription].single().endsWith("· 2"))
-            tap("flap"); assertEquals("$level", listOf(5L), opened)
-            tap("seal"); assertEquals("$level", listOf(8L), locked)
+            val post = NativePostTestDriver(rule)
+            assertEquals(letters.map { "letter:${it.id}" }.toSet(), post.letters())
+            if (post.exists("tree-time-now")) post.tap("tree-time-now")
+                // All post stages use their own physical anchors and the shared seal protocol.
+                // the letter tree (clean stage): the unread letter is opened from its sheet, the padlock shows the oldest sealed one
+                val t = { tag: String -> rule.onNode(androidx.compose.ui.test.hasTestTag(tag), useUnmergedTree = true).performClick(); frames() }
+                // 1074: an arrived letter hangs sealed – its envelope, then its seal opens it through the real call
+                // (22.10. native scene: the camera moves to the envelope – 720 ms – before it takes a tap)
+                t("tree-letter-5"); frames(); frames(); t("tree-envelope"); assertEquals("$level", listOf(5L), opened)
+                // (the camera moves back out first: 640 ms)
+                rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames(); frames(); frames()
+                t("tree-padlock"); assertEquals("$level", listOf(8L), locked)
+
         }
     }
 
@@ -149,9 +162,11 @@ class StageStoryTest {
         var calls = 0
         rule.setContent { VillageTheme(true) { PostOffice(StageFixtures.friends, emptyList(), emptyMap(), onOpen = { calls++ }, onLocked = { calls++ }, onWrite = {}, onClose = {}, level = 1) } }
         frames()
-        assertEquals("Keine ungelesenen Briefe", described("flap").getOrNull(SemanticsProperties.StateDescription))
-        assertTrue(described("flap")[SemanticsProperties.ContentDescription].single().endsWith("· 0"))
-        thing("flap")[0].performClick(); thing("seal")[0].performClick(); frames()
+        val post = NativePostTestDriver(rule)
+        assertTrue(post.keys("letter:").isEmpty())
+        assertTrue(post.exists("post-empty"))
+        assertEquals("Kein Brief unterwegs", post.description("tree-padlock"))
+        post.tag("tree-padlock").performClick(); frames()
         assertEquals(0, calls)
     }
 
@@ -173,7 +188,7 @@ class StageStoryTest {
         frames()
         tap("books")
         assertTrue("next category: Begriffe", described("books")[SemanticsProperties.ContentDescription].single().contains("jetzt: Begriffe"))
-        rule.onAllNodesWithContentDescription("Kategorie Begriffe")[0].assertIsSelected()
+        rule.onAllNodesWithContentDescription("Register Begriffe")[0].assertIsSelected()
         // the quill reaches the glossary in the book (its add dialog is the existing one; its focused field never lets
         // Robolectric idle, so the command is checked, not the dialog's pixels)
         assertEquals(0, seen!!.add)

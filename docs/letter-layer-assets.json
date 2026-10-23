@@ -1,0 +1,158 @@
+{
+ "generator": "scripts/letter_layers.py",
+ "interim": false,
+ "assets": {
+  "e_post_0_lay_body": {
+   "source": "N2-envelope-landscape-back-open-empty.png",
+   "source_sha256": "d66111b01e9dcc7cbe47bd82190cfbfe9dff16d2f022af134902c4d941fdfcdb",
+   "crop_px": [
+    180,
+    337,
+    1331,
+    955
+   ],
+   "transform": "keyed, uniform scale 0.78193",
+   "px": [
+    900,
+    483
+   ],
+   "bytes": 146768
+  },
+  "e_post_0_lay_flap_in": {
+   "source": "N2-envelope-landscape-back-open-empty.png",
+   "source_sha256": "d66111b01e9dcc7cbe47bd82190cfbfe9dff16d2f022af134902c4d941fdfcdb",
+   "crop_px": [
+    180,
+    30,
+    1331,
+    337
+   ],
+   "transform": "keyed, uniform scale 0.78193 (same as the body)",
+   "px": [
+    900,
+    240
+   ],
+   "bytes": 42902
+  },
+  "e_post_0_lay_flap_out": {
+   "source": "N1-envelope-landscape-back-sealed.png",
+   "source_sha256": "4f1216ffabb2185715842ec759b142f1fcb8f336d9931da6cd058ede151724ee",
+   "crop_px": [
+    104,
+    146,
+    1409,
+    650
+   ],
+   "transform": "keyed, cut on the traced outline, uniform scale 0.88199 (N1 body width -> N2 body width) then 0.78193",
+   "px": [
+    900,
+    348
+   ],
+   "bytes": 64524,
+   "outline_px": [
+    [
+     104,
+     146
+    ],
+    [
+     104,
+     148
+    ],
+    [
+     205,
+     312
+    ],
+    [
+     753,
+     643
+    ],
+    [
+     1302,
+     312
+    ],
+    [
+     1408,
+     148
+    ],
+    [
+     1408,
+     146
+    ]
+   ]
+  },
+  "e_post_0_lay_seal": {
+   "source": "N4-wax-seal-intact.png",
+   "source_sha256": "e056fe43be67fab151af92e71f42697aada5ac07b8eb634684e381167b3bd64c",
+   "crop_px": [
+    32,
+    185,
+    1054,
+    1223
+   ],
+   "transform": "keyed, centred on a square 1038px canvas, uniform scale 0.24663",
+   "px": [
+    256,
+    256
+   ],
+   "bytes": 24556
+  },
+  "e_post_0_lay_sheet": {
+   "source": "N3-letter-sheet-portrait.png",
+   "source_sha256": "565ff67f4f266917979de0624a395dcbe1a6a61311809c93a9a65c4b354d616f",
+   "crop_px": [
+    81,
+    68,
+    982,
+    1410
+   ],
+   "transform": "keyed, uniform scale 0.79911",
+   "px": [
+    720,
+    1072
+   ],
+   "bytes": 181878
+  }
+ },
+ "geometry": {
+  "body_aspect": 1.8625,
+  "requested_body_aspect": 1.45,
+  "n1_body_aspect": 1.7804,
+  "flap_out_height": 0.7193,
+  "flap_out_tip": 0.7093,
+  "flap_in_height": 0.4968,
+  "flap_in_tip": 0.4919,
+  "pocket_opening": [
+   [
+    0.0,
+    0.0113
+   ],
+   [
+    0.3301,
+    0.3673
+   ],
+   [
+    0.4579,
+    0.4595
+   ],
+   [
+    0.5387,
+    0.4595
+   ],
+   [
+    0.6603,
+    0.3673
+   ],
+   [
+    0.9991,
+    0.0113
+   ]
+  ],
+  "sheet_aspect": 1.4895,
+  "requested_sheet_aspect": 1.41,
+  "sheet_folds": [
+   0.304,
+   0.6423
+  ],
+  "note": "N1/N2/N3 deviate from the requested 1.45 / 1.41 (see RESULT-MATERIAL.md): used as delivered, nothing stretched."
+ }
+}

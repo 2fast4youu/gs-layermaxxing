@@ -53,5 +53,6 @@ internal object SpriteBounds {
     )
     /** Fallback for a sprite without a measured box: the middle of the lower box. */
     private val fallback = floatArrayOf(.2f, .25f, .8f, 1f)
-    fun of(res: Int): FloatArray = table[res] ?: fallback
+    /** 7.9.14: a style E sprite's visible part relative to its BOX (it may reach over it: crowns, roofs, piers). */
+    fun of(res: Int): FloatArray = StyleEArt.byRes(res)?.bounds ?: table[res] ?: fallback
 }

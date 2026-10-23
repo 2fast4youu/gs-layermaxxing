@@ -196,21 +196,38 @@ internal object HarbourRoute {
         return path
     }
 
-    fun length(path: List<Offset>): Float = path.zipWithNext().sumOf { (p, q) -> (q - p).getDistance().toDouble() }.toFloat()
+    // 7.9.14: length / at / part walk the path by index (no pair list per call) and part walks it once for all its
+    // points; the arithmetic is the same as before, so every point is bit for bit the same (IslandMapPerfReproTest).
+    fun length(path: List<Offset>): Float {
+        var sum = 0.0
+        for (i in 1 until path.size) sum += (path[i] - path[i - 1]).getDistance().toDouble()
+        return sum.toFloat()
+    }
 
     /** The point at share [t] (0..1) of the path's length. */
-    fun at(path: List<Offset>, t: Float): Offset {
-        val target = length(path) * t.coerceIn(0f, 1f)
-        var run = 0f
-        for ((p, q) in path.zipWithNext()) {
+    fun at(path: List<Offset>, t: Float): Offset = walk(path, length(path) * t.coerceIn(0f, 1f), Cursor())
+
+    /** Where a walk along a path stands: the piece [i] and the length [run] before it. */
+    private class Cursor(var i: Int = 1, var run: Float = 0f, var last: Float = 0f)
+
+    /** The point [target] px along [path], walking on from [from]; a target behind the last one walks from the start. */
+    private fun walk(path: List<Offset>, target: Float, from: Cursor): Offset {
+        if (target < from.last) { from.i = 1; from.run = 0f }
+        from.last = target
+        while (from.i < path.size) {
+            val p = path[from.i - 1]; val q = path[from.i]
             val l = (q - p).getDistance()
-            if (run + l >= target) return if (l < 1e-3f) p else p + (q - p) * ((target - run) / l)
-            run += l
+            if (from.run + l >= target) return if (l < 1e-3f) p else p + (q - p) * ((target - from.run) / l)
+            from.run += l; from.i++
         }
         return path.last()
     }
     /** The part of the path between shares [t0] and [t1] (for drawing the sailed and the open part). */
-    fun part(path: List<Offset>, t0: Float, t1: Float, steps: Int = 32): List<Offset> = (0..steps).map { at(path, t0 + (t1 - t0) * it / steps) }
+    fun part(path: List<Offset>, t0: Float, t1: Float, steps: Int = 32): List<Offset> {
+        val total = length(path)
+        val cursor = Cursor()
+        return List(steps + 1) { walk(path, total * (t0 + (t1 - t0) * it / steps).coerceIn(0f, 1f), cursor) }
+    }
 
     /**
      * Where along the route from HOME to the friend a letter's boat is: an outgoing letter sails home → friend, an
@@ -268,14 +285,18 @@ internal object SeaChart {
         return (p - (a + d * t)).getDistance()
     }
 
+    /** 7.9.14: how many exact [clearance] evaluations ran (a deterministic work count for the performance tests). */
+    internal var probes = 0L
+
     /** Signed distance of [p] to the coasts: negative inside land / a rock, else the distance to the nearest of them. */
     fun clearance(p: Offset, coasts: List<Coast>): Float {
+        probes++
         var best = Float.MAX_VALUE
         for (c in coasts) {
             val b = c.bounds
             // far away from this island: its box is a lower bound of the distance
             val dx = maxOf(b.left - p.x, 0f, p.x - b.right); val dy = maxOf(b.top - p.y, 0f, p.y - b.bottom)
-            if (kotlin.math.hypot(dx, dy) >= best) continue
+            if (kotlin.math.sqrt(dx * dx + dy * dy) >= best) continue
             var d = Float.MAX_VALUE
             val o = c.outline
             for (i in o.indices) d = minOf(d, segDist(p, o[i], o[(i + 1) % o.size]))
@@ -294,7 +315,34 @@ internal object SeaChart {
         fun at(c: Int, r: Int) = Offset(bounds.left + c * cell, bounds.top + r * cell)
         fun cellOf(p: Offset) = (((p.x - bounds.left) / cell).let { kotlin.math.round(it).toInt() }.coerceIn(0, cols - 1)) to
             (((p.y - bounds.top) / cell).let { kotlin.math.round(it).toInt() }.coerceIn(0, rows - 1))
+
+        /**
+         * 7.9.14: exactly `clearance(p, coasts) >= need`, but decided from the nearest grid point where that is certain:
+         * in open water the clearance is the distance to the nearest coast or rock, so it changes at most by the distance
+         * moved. Only where the grid cannot decide (near the [need] line) the exact clearance is computed. Same answer,
+         * a fraction of the work for the many samples of a route check (IslandMapPerfReproTest).
+         */
+        fun atLeast(p: Offset, need: Float): Boolean {
+            if (need > 0f) {
+                val c = kotlin.math.round((p.x - bounds.left) / cell).toInt().coerceIn(0, cols - 1)
+                val r = kotlin.math.round((p.y - bounds.top) / cell).toInt().coerceIn(0, rows - 1)
+                val v = clear[r * cols + c]
+                if (v >= 0f) {
+                    val d = (p - at(c, r)).getDistance() + SLACK
+                    if (v - d >= need) return true
+                    if (v + d < need) return false
+                }
+            }
+            return clearance(p, coasts) >= need
+        }
+
+        private class Dock(val at: Offset?)
+        private val docks = java.util.concurrent.ConcurrentHashMap<List<Any?>, Dock>()
+        /** A dock exit depends only on the berth, the target and the hull: computed once per field (routes and every lane). */
+        internal fun dockOf(key: List<Any?>, find: () -> Offset?): Offset? = docks.getOrPut(key) { Dock(find()) }.at
     }
+    /** Rounding room of [Field.atLeast] in px (the grid only decides with at least this margin). */
+    private const val SLACK = .5f
 
     /** Is the straight piece [a] → [b] at least [need] px off every coast and inside [bounds]? Sampled finely. */
     fun clearSegment(a: Offset, b: Offset, coasts: List<Coast>, need: Float, bounds: Rect?, step: Float): Boolean {
@@ -303,6 +351,17 @@ internal object SeaChart {
             val p = a + (b - a) * (k.toFloat() / n)
             if (bounds != null && !bounds.contains(p)) return false
             if (clearance(p, coasts) < need) return false
+        }
+        return true
+    }
+
+    /** The same check over a [Field]'s coasts, each sample decided by [Field.atLeast] (same answer, less work). */
+    private fun clearSegment(a: Offset, b: Offset, field: Field, need: Float, bounds: Rect?, step: Float): Boolean {
+        val n = ((b - a).getDistance() / step).toInt().coerceAtLeast(1)
+        for (k in 0..n) {
+            val p = a + (b - a) * (k.toFloat() / n)
+            if (bounds != null && !bounds.contains(p)) return false
+            if (!field.atLeast(p, need)) return false
         }
         return true
     }
@@ -354,7 +413,11 @@ internal object SeaChart {
      * 7.9.13: with a [toward] point the clear exit whose direction turns least towards it is taken (a boat bound north
      * no longer leaves southwards and turns ~107° at the dock exit); without, the first clear one as before.
      */
-    private fun dock(berth: Offset, field: Field, hull: Float, keel: Float, bounds: Rect, toward: Offset? = null): Offset? {
+    private fun dock(berth: Offset, field: Field, hull: Float, keel: Float, bounds: Rect, toward: Offset? = null): Offset? =
+        if (bounds != field.bounds) findDock(berth, field, hull, keel, bounds, toward)
+        else field.dockOf(listOf(berth, toward, hull, keel)) { findDock(berth, field, hull, keel, bounds, toward) }
+
+    private fun findDock(berth: Offset, field: Field, hull: Float, keel: Float, bounds: Rect, toward: Offset?): Offset? {
         if (toward != null) {
             val want = toward - berth
             // a little more room than the hull, so the smoothed turn after the exit still keeps the hull clear
@@ -373,9 +436,9 @@ internal object SeaChart {
         while (d <= hull * 8) {
             val e = berth + dir * d
             if (!bounds.contains(e)) break
-            if (clearance(e, field.coasts) >= hull * room) {
+            if (field.atLeast(e, hull * room)) {
                 // the first clear point in this direction; the dock piece to it keeps the whole hull in water too
-                if (clearSegment(berth, e, field.coasts, hull, null, keel)) return e
+                if (clearSegment(berth, e, field, hull, null, keel)) return e
                 break
             }
             d += keel
@@ -392,7 +455,7 @@ internal object SeaChart {
         fun snap(p: Offset): Pair<Int, Int>? {
             val (pc, pr) = field.cellOf(p)
             return (-3..3).flatMap { dc -> (-3..3).map { dr -> pc + dc to pr + dr } }
-                .filter { (c, r) -> free(c, r) && clearSegment(p, field.at(c, r), field.coasts, hull, field.bounds, field.cell / 3) }
+                .filter { (c, r) -> free(c, r) && clearSegment(p, field.at(c, r), field, hull, field.bounds, field.cell / 3) }
                 .minByOrNull { (c, r) -> (field.at(c, r) - p).getDistance() }
         }
         val (c0, r0) = snap(from) ?: return null
@@ -432,12 +495,12 @@ internal object SeaChart {
     }
 
     /** Drop every point a straight, checked piece can skip (string pulling). */
-    private fun pull(path: List<Offset>, coasts: List<Coast>, hull: Float, bounds: Rect, step: Float): List<Offset> {
+    private fun pull(path: List<Offset>, field: Field, hull: Float, bounds: Rect, step: Float): List<Offset> {
         val out = mutableListOf(path.first())
         var i = 0
         while (i < path.lastIndex) {
             var j = path.lastIndex
-            while (j > i + 1 && !clearSegment(path[i], path[j], coasts, hull, bounds, step)) j--
+            while (j > i + 1 && !clearSegment(path[i], path[j], field, hull, bounds, step)) j--
             out += path[j]; i = j
         }
         return out
@@ -484,8 +547,8 @@ internal object SeaChart {
         val bounds = field.bounds
         val step = (keel).coerceAtLeast(1f)
         val plan = hull * room
-        val middle = if (clearSegment(ea, eb, field.coasts, plan, bounds, step)) listOf(ea, eb)
-            else search(ea, eb, field, plan)?.let { pull(it, field.coasts, plan, bounds, step) } ?: return null
+        val middle = if (clearSegment(ea, eb, field, plan, bounds, step)) listOf(ea, eb)
+            else search(ea, eb, field, plan)?.let { pull(it, field, plan, bounds, step) } ?: return null
         // 7.9.13: the turn at the dock exits is smoothed too (it was a corner of up to ~107°). The whole line berth → berth
         // is cut round; a piece inside a dock circle (around a berth, radius = its dock piece) needs the keel's water,
         // every other piece the whole hull. The first (smoothest) checked result wins.
@@ -503,10 +566,10 @@ internal object SeaChart {
         for (rounds in 3 downTo 1) {
             var s = middle
             repeat(rounds) { s = chaikin(s) }
-            if (s.zipWithNext().all { (p, q) -> clearSegment(p, q, field.coasts, hull, bounds, step) }) return listOf(a) + s + listOf(b)
+            if (s.zipWithNext().all { (p, q) -> clearSegment(p, q, field, hull, bounds, step) }) return listOf(a) + s + listOf(b)
         }
         // the tight polyline is the last answer only if it is checked water as well (never an unchecked piece over land)
-        return if (middle.zipWithNext().all { (p, q) -> clearSegment(p, q, field.coasts, hull, bounds, step) }) listOf(a) + middle + listOf(b) else null
+        return if (middle.zipWithNext().all { (p, q) -> clearSegment(p, q, field, hull, bounds, step) }) listOf(a) + middle + listOf(b) else null
     }
 
     /** 7.9.13: the sharpest turn a drawn (= sailed) line may have between two neighbouring pieces, degrees. */
@@ -531,7 +594,7 @@ internal object SeaChart {
     private fun checkedWay(s: List<Offset>, ra: Float, rb: Float, field: Field, hull: Float, keel: Float): Boolean {
         val a = s.first(); val b = s.last(); val step = keel.coerceAtLeast(1f)
         fun inDock(p: Offset) = (p - a).getDistance() <= ra || (p - b).getDistance() <= rb
-        return s.zipWithNext().all { (p, q) -> clearSegment(p, q, field.coasts, hull, if (inDock(p) && inDock(q)) null else field.bounds, step) }
+        return s.zipWithNext().all { (p, q) -> clearSegment(p, q, field, hull, if (inDock(p) && inDock(q)) null else field.bounds, step) }
     }
 
     /**

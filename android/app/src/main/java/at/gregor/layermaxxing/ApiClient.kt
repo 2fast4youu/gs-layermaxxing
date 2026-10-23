@@ -94,6 +94,8 @@ class ApiClient(
         val oneTime: Boolean, val readAt: Long?, val senderApproved: Boolean, val recipientApproved: Boolean,
         val attachmentName: String?, val attachmentMime: String?, val groupId: Long?, val reactions: List<Reaction>,
         val ciphertext: String?, val nonce: String?, val encryptionKey: String?,
+        /** Briefbaum 22.10.: the recipient's own "unread again" marker (read_at and the sender's receipt stay). */
+        val markedUnread: Boolean = false,
     )
     data class MessageContent(
         val ciphertext: String, val nonce: String, val encryptionKey: String,
@@ -662,6 +664,8 @@ class ApiClient(
     suspend fun pendingProofExport(token: String): String = io {
         executeRaw(authorized(token, "api/proofs/pending").get().build())
     }
+    /** Briefbaum 22.10.: marks a read letter unread again for me (a personal marker; refused for read-once letters). */
+    suspend fun markUnread(token: String, id: Long) = unitCall(authorized(token, "api/messages/$id/unread").post(emptyBody()).build())
     suspend fun release(token: String, id: Long) = unitCall(authorized(token, "api/messages/$id/release").post(emptyBody()).build())
     suspend fun approve(token: String, id: Long) = unitCall(authorized(token, "api/messages/$id/approve").post(emptyBody()).build())
     suspend fun retract(token: String, id: Long) = unitCall(authorized(token, "api/messages/$id").delete().build())
@@ -737,6 +741,7 @@ class ApiClient(
         groupId = json.nullableLong("group_id"), reactions = json.optJSONArray("reactions")?.objects()?.map {
             Reaction(it.getLong("user_id"), it.getString("name"), it.getString("emoji"))
         }.orEmpty(), ciphertext = json.nullableString("ciphertext"), nonce = json.nullableString("nonce"), encryptionKey = json.nullableString("encryption_key"),
+        markedUnread = incoming && json.optBoolean("marked_unread"),
     )
 
     private suspend fun <T> array(token: String, path: String, mapper: (JSONObject) -> T): List<T> = io {

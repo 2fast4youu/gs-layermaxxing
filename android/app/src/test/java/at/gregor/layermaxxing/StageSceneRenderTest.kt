@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -22,8 +23,8 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * 7.9.11: all 24 building × stage views rendered as the production composables in a real Android window
  * (Robolectric NATIVE graphics, JVM simulation, not a device), with fixture data and every action. Checked on the
- * pixels, not only on semantics: the header sign reads (contrast of the title against its painted sign), the
- * stage's light is the configured one, and every stage of a building looks clearly different from its others.
+ * pixels, not only on semantics: the header sign reads (contrast of the title against its painted sign), 7.9.14 the
+ * stage's painted place fills the screen as mapped, and every stage of a building looks clearly different from its others.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -58,16 +59,30 @@ class StageSceneRenderTest {
     private fun differs(a: IntArray, b: IntArray): Double = a.indices.count { i ->
         listOf(16, 8, 0).any { s -> kotlin.math.abs(((a[i] shr s) and 255) - ((b[i] shr s) and 255)) > 18 }
     }.toDouble() / a.size
-    /**
-     * Mean colour of the open sea between the header and the island ground (16.5–18.5 % of the height, middle of the
-     * width: no hero, no boat prop there): the painted sea tile in the stage's light.
-     */
-    private fun seaBand(b: Bitmap): Triple<Int, Int, Int> {
+    /** Mean colour of the window's left 2 % between 30 % and 70 % of the height (no UI there). */
+    private fun edgeStrip(b: Bitmap): IntArray {
         var r = 0L; var g = 0L; var bl = 0L; var n = 0
-        for (y in (b.height * .165).toInt() until (b.height * .185).toInt() step 2) for (x in (b.width * .3).toInt() until (b.width * .7).toInt() step 2) {
+        for (y in (b.height * .3).toInt() until (b.height * .7).toInt() step 2) for (x in 0 until (b.width * .02).toInt().coerceAtLeast(2)) {
             val p = b.getPixel(x, y); r += (p shr 16) and 255; g += (p shr 8) and 255; bl += p and 255; n++
         }
-        return Triple((r / n).toInt(), (g / n).toInt(), (bl / n).toInt())
+        return intArrayOf((r / n).toInt(), (g / n).toInt(), (bl / n).toInt())
+    }
+    /** The same strip taken from the decoded scene picture as FunctionStage maps it onto a [w] × [h] window (Crop). */
+    private fun pictureEdge(scene: StageScenes.Scene, w: Int, h: Int): IntArray {
+        val id = scene.picture
+        val res = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().resources
+        val pic = android.graphics.BitmapFactory.decodeResource(res, id, android.graphics.BitmapFactory.Options().apply { inScaled = false })
+        val aspect = pic.width.toFloat() / pic.height
+        val byHeight = w.toFloat() / h < aspect
+        val iw = if (byHeight) h * aspect else w.toFloat(); val ih = if (byHeight) h.toFloat() else w / aspect
+        val l = if (byHeight) StageScenes.panLeft(scene, w.toFloat(), iw, 8 * res.displayMetrics.density) else (w - iw) / 2; val t = (h - ih) / 2
+        var r = 0L; var g = 0L; var bl = 0L; var n = 0
+        for (y in (h * .3).toInt() until (h * .7).toInt() step 2) for (x in 0 until (w * .02).toInt().coerceAtLeast(2)) {
+            val px = (((x - l) / iw) * pic.width).toInt().coerceIn(0, pic.width - 1); val py = (((y - t) / ih) * pic.height).toInt().coerceIn(0, pic.height - 1)
+            val p = pic.getPixel(px, py); r += (p shr 16) and 255; g += (p shr 8) and 255; bl += p and 255; n++
+        }
+        pic.recycle()
+        return intArrayOf((r / n).toInt(), (g / n).toInt(), (bl / n).toInt())
     }
 
     @Test fun allTwentyFourStagesRenderTheirOwnSceneWithAReadableHeaderAndTheRealData() {
@@ -75,7 +90,7 @@ class StageSceneRenderTest {
         rule.mainClock.autoAdvance = false
         rule.setContent { androidx.compose.runtime.key(current) { StageFixtures.Place(current.first, current.second) } }
         val grids = mutableMapOf<Pair<IsleBuilding, Int>, IntArray>()
-        val sea = mutableMapOf<Pair<IsleBuilding, Int>, Triple<Int, Int, Int>>()
+        val edges = mutableMapOf<Pair<IsleBuilding, Int>, Pair<IntArray, IntArray>>()
         for (b in IsleBuilding.entries) for (level in 0..3) {
             // The clock is paused (endless water/flame animations): the state write must happen on the UI thread and be
             // announced to the recomposer before the frames advance, otherwise the frames run without an invalidation
@@ -95,26 +110,36 @@ class StageSceneRenderTest {
             rule.onAllNodesWithContentDescription("Stufe: ${scene.stage.subtitle}")[0].assertExists()
             val stage = rule.onAllNodesWithContentDescription("Bühne: ${scene.caption}")[0].fetchSemanticsNode()
             assertEquals(msg, scene.signature, stage.config.getOrNull(SemanticsProperties.StateDescription))
-            StageFixtures.action(b)?.let { rule.onAllNodesWithText(it)[0].assertExists() }
+            StageFixtures.action(b, level)?.let { rule.onAllNodesWithText(it)[0].assertExists() }
             // the real data is there on every stage
             when (b) {
-                IsleBuilding.POST -> rule.onAllNodesWithText("Anna")[0].assertExists()
+                // 1011: at rest the post tells its real numbers on its plate (the letters appear at the touched drawer)
+                // (the letter tree, a clean stage: the six letters are written on its sheets)
+                IsleBuilding.POST -> {
+                    val post = NativePostTestDriver(rule)
+                    assertEquals(msg, minOf(6, PostRegistration.of(level).sheets.size), post.keys("letter:").size)
+                    assertEquals(msg, StageFixtures.letters.map { "letter:${it.id}" }.toSet(), post.letters())
+                    if (post.exists("tree-time-now")) post.tap("tree-time-now")
+                }
                 IsleBuilding.HARBOUR -> rule.onAllNodesWithText("Gemeinsam auf den Gipfel")[0].assertExists()
                 IsleBuilding.LIGHTHOUSE -> { rule.onAllNodesWithText("Jonas")[0].assertExists(); rule.onAllNodesWithText("Gerfried")[0].assertExists() }
-                IsleBuilding.LIBRARY -> rule.onAllNodesWithContentDescription("Kategorie Witze")[0].assertExists()
+                IsleBuilding.LIBRARY -> rule.onAllNodesWithContentDescription("Register Witze")[0].assertExists()
                 IsleBuilding.CAMPFIRE -> rule.onAllNodesWithText("Bergfreunde", substring = true)[0].assertExists()
                 IsleBuilding.HOUSE -> rule.onAllNodesWithText("Gregor")[0].assertExists()
             }
             // header readability on the pixels: the cream title against its painted sign and shadow (WCAG AA 4.5:1)
             val whole = window()
-            val title = crop(whole, rule.onAllNodesWithContentDescription("Ort: $name")[0].fetchSemanticsNode().boundsInWindow)
-            val ls = (0 until title.height step 2).flatMap { y -> (0 until title.width step 2).map { x -> lum(title.getPixel(x, y)) } }.sorted()
-            val hi = ls[(ls.size * .95).toInt().coerceAtMost(ls.size - 1)]; val lo = ls[(ls.size * .05).toInt()]
-            assertTrue("$msg title contrast ${(hi + .05) / (lo + .05)}", (hi + .05) / (lo + .05) >= 4.5)
+            // (a clean stage draws no sign: its name is only read out; nothing to measure)
+            if (!scene.clean) {
+                val title = crop(whole, rule.onAllNodesWithContentDescription("Ort: $name")[0].fetchSemanticsNode().boundsInWindow)
+                val ls = (0 until title.height step 2).flatMap { y -> (0 until title.width step 2).map { x -> lum(title.getPixel(x, y)) } }.sorted()
+                val hi = ls[(ls.size * .95).toInt().coerceAtMost(ls.size - 1)]; val lo = ls[(ls.size * .05).toInt()]
+                assertTrue("$msg title contrast ${(hi + .05) / (lo + .05)}", (hi + .05) / (lo + .05) >= 4.5)
+            }
             // the compose root (the window may have a status bar inset above it)
             val shot = crop(whole, rule.onRoot().fetchSemanticsNode().boundsInWindow)
             grids[b to level] = grid(shot)
-            sea[b to level] = seaBand(shot)
+            edges[b to level] = edgeStrip(shot) to pictureEdge(scene, shot.width, shot.height)
             whole.recycle()
         }
         for (b in IsleBuilding.entries) {
@@ -123,19 +148,11 @@ class StageSceneRenderTest {
                 val d = differs(grids.getValue(b to i), grids.getValue(b to j))
                 assertTrue("$b stage $i vs $j differ only in ${"%.3f".format(d)} of the screen", d >= .12)
             }
-            // the light on the open sea is the configured one: blue-green by day, warm in the evening, dark at night
-            for (level in 0..2) {
-                // (7.9.12: where the open book of a stage lies over that strip of sea, the sea is not visible there)
-                if ((StageScenes.of(b, level).book?.top ?: 1f) < .19f) continue
-                val (r, g, bl) = sea.getValue(b to level)
-                val l = lum((0xFF shl 24) or (r shl 16) or (g shl 8) or bl)
-                val m = "$b stage $level sea ($r,$g,$bl)"
-                when (StageScenes.of(b, level).backdrop) {
-                    StageScenes.Backdrop.DAY_BEACH -> assertTrue(m, r - bl <= -12 && l > .09)
-                    StageScenes.Backdrop.EVENING_BEACH -> assertTrue(m, r - bl >= 5 && l > .09)
-                    StageScenes.Backdrop.NIGHT_SEA -> assertTrue(m, l < .08)
-                    StageScenes.Backdrop.INTERIOR -> Unit
-                }
+            // 7.9.14: the painted place itself fills the screen as mapped (Crop): along the left edge (the 8 dp margin
+            // no surface uses, between the header and the action row) the window shows the scene picture's own colours
+            for (level in 0..3) {
+                val (shot, pic) = edges.getValue(b to level)
+                assertTrue("$b stage $level edge differs from its picture by $shot vs $pic", listOf(0, 1, 2).all { kotlin.math.abs(shot[it] - pic[it]) <= 28 })
             }
         }
     }

@@ -24,7 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.Dp
 
 /**
@@ -146,7 +146,7 @@ internal object IslandPlans {
             // 7.9.12: on a construction ledger the size is the one its occupancy mask was measured at (IslandMasks,
             // the same file the server validates with): sprite, touch target and grid can never disagree.
             val size = construction?.let { IslandMasks.building(b, tier, it.land).size } ?: (p.size * (.9f + tier * .16f)).coerceAtMost(.145f)
-            p.copy(res = IslandArtwork.resource(b, tier), x = x, y = y, size = size,
+            p.copy(res = IslandArtwork.resource(b, tier, construction), x = x, y = y, size = size,
                 primitive = b.takeIf { tier == 0 }, tier = tier)
         }
     }
@@ -195,6 +195,26 @@ internal object IslandPlans {
 
 }
 
+/**
+ * 7.9.14: raster pictures the island screens show many times at once (the painted terrain under every island of the
+ * map, the letter boats), decoded once per process and shared. painterResource decodes a raster resource again for
+ * every place it is used (Compose UI 1.7: one remember per call site), so a map of 13 islands decoded the 1100 × 898
+ * terrain 13 times on the main thread. Same picture, same drawing, one decode.
+ */
+internal object IslandBitmaps {
+    private val cache = java.util.concurrent.ConcurrentHashMap<Int, androidx.compose.ui.graphics.ImageBitmap>()
+    private val decoded = java.util.concurrent.atomic.AtomicInteger()
+    /** How many pictures were really decoded (tests). */
+    val decodes: Int get() = decoded.get()
+    fun cached(id: Int): Boolean = cache.containsKey(id)
+    fun of(res: android.content.res.Resources, id: Int): androidx.compose.ui.graphics.ImageBitmap =
+        cache.getOrPut(id) { decoded.incrementAndGet(); androidx.compose.ui.graphics.ImageBitmap.imageResource(res, id) }
+}
+
+@Composable
+internal fun islandBitmap(id: Int): androidx.compose.ui.graphics.ImageBitmap =
+    IslandBitmaps.of(androidx.compose.ui.platform.LocalContext.current.resources, id)
+
 /** Terrain + paths + parts. [overlay] draws labels/slots on top in the same box coordinates. */
 @Composable
 internal fun DynamicIsland(
@@ -239,7 +259,7 @@ internal fun DynamicIsland(
         val dry = remember(green) {
             androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(.62f + .38f * green) })
         }
-        Image(painterResource(R.drawable.terrain_home), null, landLayer, contentScale = ContentScale.FillBounds,
+        Image(islandBitmap(R.drawable.terrain_home), null, landLayer, contentScale = ContentScale.FillBounds,
             colorFilter = if (green < 1f) dry else null)
         if (plan.trails.isNotEmpty()) Canvas(Modifier.fillMaxSize()) {
             // Trodden paths: a soft worn edge and a narrow sandy middle, under every sprite and shadow.
@@ -268,7 +288,7 @@ internal fun DynamicIsland(
         plan.pieces.sortedBy { it.y }.forEachIndexed { i, p ->
             val box: Dp = w * p.size
             val building = p.name?.let { name -> IsleBuilding.entries.firstOrNull { it.label == name } }
-            PaintedIslandPlace(building, p.tier, p.res, description = p.name,
+            PaintedIslandPlace(building, p.tier, p.res, description = p.name, onGround = true,
                 modifier = Modifier.offset(x = w * (if (plan.mirror) 1f - p.x else p.x) - box / 2, y = h * p.y - box).size(box)
                     .then(
                         if (p.lifted) Modifier.graphicsLayer {

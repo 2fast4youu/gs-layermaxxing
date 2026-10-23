@@ -1,23 +1,41 @@
 package at.gregor.layermaxxing
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 7.9.11 → 7.9.12: every building × stage 0..3 (24 combinations) is its own FUNCTION STAGE. The names and functions
- * of [IslandStages] stay. The 7.9.11 template (the island piece as a hero at the top, a universal parchment card with
- * the data below a fixed line) is gone: every stage has a big painted place (set piece or room) and the data objects
- * sit at anchors in that place (slots, the ring around a fire / table, the book's pages). The anchors' positions in
- * the painted geometry are checked on the decoded pictures in StageSceneRenderTest.
+ * 7.9.14 (style E): every building × stage 0..3 (24 combinations) is its own painted place (the generated detail picture
+ * of that stage, e_<b>_<s>_scene) with the surfaces the data lives on; no old background, no set piece, no props over
+ * the picture. Names follow the approved stories (Nachtlager, Briefstube, Signalstation, Schreibplatz, Lagerfeuer,
+ * Anlegestelle …). The surfaces' positions on the rendered views are checked in StageSceneAnchorTest.
  */
 class StageScenesTest {
-    private val finished = setOf(R.drawable.b_post, R.drawable.b_house, R.drawable.b_hall, R.drawable.b_library, R.drawable.b_lighthouse,
-        R.drawable.b_workshop, R.drawable.b_board, R.drawable.isle_manor, R.drawable.lm_post, R.drawable.lm_library, R.drawable.lm_jetty,
-        R.drawable.bg_post, R.drawable.bg_hall, R.drawable.bg_house, R.drawable.bg_library, R.drawable.bg_lighthouse, R.drawable.bg_harbour)
+    /** The 7.9.13 backgrounds and set pieces that must not come back as a stage's place. */
+    private val old = setOf(R.drawable.bg_post, R.drawable.bg_hall, R.drawable.bg_house, R.drawable.bg_library, R.drawable.bg_lighthouse,
+        R.drawable.bg_harbour, R.drawable.fief_build_closeup, R.drawable.fief_treasury_closeup, R.drawable.n_tree, R.drawable.lm_post_ruin,
+        R.drawable.decor_hammock, R.drawable.decor_palm, R.drawable.n_crates, R.drawable.lm_campfire, R.drawable.p_table, R.drawable.fief_signpost,
+        R.drawable.fief_jetty, R.drawable.b_board)
+
+    private val scenePictures = mapOf(
+        IsleBuilding.HOUSE to listOf(R.drawable.e_house_0_scene, R.drawable.e_house_1_scene, R.drawable.e_house_2_scene, R.drawable.e_house_3_scene),
+        IsleBuilding.POST to listOf(R.drawable.e_post_0_scene, R.drawable.e_post_1_scene, R.drawable.e_post_2_scene, R.drawable.e_post_3_scene),
+        IsleBuilding.LIGHTHOUSE to listOf(R.drawable.e_lighthouse_0_scene, R.drawable.e_lighthouse_1_scene, R.drawable.e_lighthouse_2_scene, R.drawable.e_lighthouse_3_scene),
+        IsleBuilding.LIBRARY to listOf(R.drawable.e_library_0_scene, R.drawable.e_library_1_scene, R.drawable.e_library_2_scene, R.drawable.e_library_3_scene),
+        IsleBuilding.CAMPFIRE to listOf(R.drawable.e_campfire_0_scene, R.drawable.e_campfire_1_scene, R.drawable.e_campfire_2_scene, R.drawable.e_campfire_3_scene),
+        IsleBuilding.HARBOUR to listOf(R.drawable.e_harbour_0_scene, R.drawable.e_harbour_1_scene, R.drawable.e_harbour_2_scene, R.drawable.e_harbour_3_scene),
+    )
+    private val sprites = mapOf(
+        IsleBuilding.HOUSE to listOf(R.drawable.e_house_0, R.drawable.e_house_1, R.drawable.e_house_2, R.drawable.e_house_3),
+        IsleBuilding.POST to listOf(R.drawable.e_post_0, R.drawable.e_post_1, R.drawable.e_post_2, R.drawable.e_post_3),
+        IsleBuilding.LIGHTHOUSE to listOf(R.drawable.e_lighthouse_0, R.drawable.e_lighthouse_1, R.drawable.e_lighthouse_2, R.drawable.e_lighthouse_3),
+        IsleBuilding.LIBRARY to listOf(R.drawable.e_library_0, R.drawable.e_library_1, R.drawable.e_library_2, R.drawable.e_library_3),
+        IsleBuilding.CAMPFIRE to listOf(R.drawable.e_campfire_0, R.drawable.e_campfire_1, R.drawable.e_campfire_2, R.drawable.e_campfire_3),
+        IsleBuilding.HARBOUR to listOf(R.drawable.e_harbour_0, R.drawable.e_harbour_1, R.drawable.e_harbour_2, R.drawable.e_harbour_3),
+    )
 
     @Test fun twentyFourScenesOnePerBuildingAndStage() {
         val all = StageScenes.all
@@ -26,68 +44,68 @@ class StageScenesTest {
         for (b in IsleBuilding.entries) for (l in 0..3) assertEquals(StageScenes.of(b, l), all.single { it.building == b && it.level == l })
     }
 
-    @Test fun namesAndFunctionsOfTheStagesStayAndTheHeaderShowsTheIslandPiece() {
+    @Test fun theApprovedStageNamesAndTheAssetIdentityOfEveryStage() {
         val names = mapOf(
-            IsleBuilding.POST to listOf("Briefbaum", "Postkasten", "Postfächer", "Postamt"),
-            IsleBuilding.LIGHTHOUSE to listOf("Aussichtspalme", "Ausguck", "Leuchtfeuer", "Leuchtturm"),
-            IsleBuilding.LIBRARY to listOf("Wörter am Treibholz", "Lesedach", "Bücherstube", "Bibliothek"),
-            IsleBuilding.CAMPFIRE to listOf("Feuerkreis", "Treffhütte", "Gemeindehaus", "Festhalle"),
-            IsleBuilding.HARBOUR to listOf("Strandtreff", "Bootssteg", "Anleger", "Hafen"),
-            IsleBuilding.HOUSE to listOf("Schlafplatz", "Holzhütte", "Häuschen", "Landhaus"),
+            IsleBuilding.HOUSE to listOf("Nachtlager", "Unterschlupf", "Holzhütte", "Landhaus"),
+            IsleBuilding.POST to listOf("Briefbaum", "Postkasten", "Briefstube", "Postamt"),
+            IsleBuilding.LIGHTHOUSE to listOf("Aussichtspalme", "Ausguck", "Signalstation", "Leuchtturm"),
+            IsleBuilding.LIBRARY to listOf("Schreibplatz", "Lesedach", "Schreibstube", "Bibliothek"),
+            IsleBuilding.CAMPFIRE to listOf("Lagerfeuer", "Treffplatz", "Versammlungshaus", "Glashaus"),
+            IsleBuilding.HARBOUR to listOf("Anlegestelle", "Bootssteg", "Anleger", "Hafen"),
         )
         for ((b, list) in names) for (l in 0..3) {
             val s = StageScenes.of(b, l)
-            assertEquals(list[l], s.stage.name)
-            assertEquals(IslandStages.function(b), s.stage.function)
-            assertEquals(IslandStages.of(b, l).res, s.hero)
+            val st = IslandStages.of(b, l)
+            assertEquals(list[l], st.name)
+            assertEquals(IslandStages.function(b), st.function)
+            // one picture family per stage: the island sprite, the header picture and the painted place
+            assertEquals("$b $l sprite", sprites.getValue(b)[l], st.art)
+            assertEquals("$b $l header", st.art, s.hero)
+            assertEquals("$b $l scene", scenePictures.getValue(b)[l], s.picture)
+            assertEquals(s.picture, st.scene)
+            assertEquals("$b $l frame", st.art, StyleEArt.of(b, l).res)
         }
+        assertEquals(IslandEvolution.primitiveName(IsleBuilding.HOUSE), "Nachtlager")
+        // the night camp has no hammock anywhere (name, look, story); the 7.9.13 picture stays only for the version 5 contract
+        val camp = IslandStages.of(IsleBuilding.HOUSE, 0)
+        assertFalse(camp.look.contains("Hängematte"))
+        assertFalse(StageStory.of(IsleBuilding.HOUSE, 0).core.contains("Hängematte"))
+        assertNotEquals(R.drawable.decor_hammock, camp.art)
+        assertEquals("v5 masks were measured from it", R.drawable.decor_hammock, camp.res)
     }
 
-    @Test fun everyStageIsAPlaceWithDataAnchorsNotAHeroAboveACard() {
+    @Test fun everyStageIsItsOwnPaintedPlaceNotAnOldBackgroundWithProps() {
+        val pictures = StageScenes.all.map { it.picture }
+        assertEquals("24 different painted places", 24, pictures.toSet().size)
         for (s in StageScenes.all) {
             val msg = "${s.building} ${s.level}"
-            // a big painted place: a set piece or a painted room (7.9.12: no composed plank/polygon rooms any more)
-            assertTrue(msg, s.piece != null || s.room != null)
-            if (s.backdrop == StageScenes.Backdrop.INTERIOR) assertNotNull(msg, s.room)
-            s.piece?.let { assertTrue("$msg set piece is big", it.width >= .4f) }
-            // where the data lives in it
-            val anchors = s.slots + s.detailSlots + listOfNotNull(s.centre)
-            assertTrue(msg, anchors.isNotEmpty() || s.book != null)
-            anchors.forEach { assertTrue("$msg $it", it.x in 0f..1f && it.y in 0f..1f) }
-            s.book?.let { assertTrue(msg, it.bottom - it.top >= .45f && it.right - it.left >= .85f) }
-            // anchors in a picture's own space need that picture
-            if (s.space == StageScenes.Space.PIECE) assertNotNull(msg, s.piece)
-            if (s.space == StageScenes.Space.ROOM) assertNotNull(msg, s.room)
+            assertTrue("$msg reuses an old picture", s.picture !in old)
+            assertTrue(msg, s.caption.isNotBlank())
+            assertTrue(msg, s.surfaces.isNotEmpty())
+            s.surfaces.forEach { (k, r) ->
+                assertTrue("$msg $k inside the picture $r", r.left >= 0f && r.top >= 0f && r.right <= 1f && r.bottom <= 1f)
+                assertTrue("$msg $k has an area $r", r.width > .05f && r.height > .03f)
+                // the calm header zone of the picture (top 9 %) is the header's
+                assertTrue("$msg $k under the header zone", r.top >= .09f)
+            }
         }
     }
 
-    @Test fun naturalStartsAreNotFinishedRoomsAndTheFinalStagesKeepTheirPaintedRoom() {
-        for (b in IsleBuilding.entries) {
-            val start = StageScenes.of(b, 0)
-            assertNull("$b 0", start.room)
-            assertTrue("$b 0", start.outdoor && start.backdrop != StageScenes.Backdrop.INTERIOR)
-            assertTrue("$b 0", (listOfNotNull(start.piece?.res) + start.props.map { it.res }).none { it in finished })
-            assertEquals(b.background(), StageScenes.of(b, 3).room)
+    @Test fun everyBuildingKeepsItsSurfacesOnEveryStage() {
+        val need = mapOf(
+            IsleBuilding.POST to setOf(StageScenes.Surface.TABS, StageScenes.Surface.PEOPLE, StageScenes.Surface.LETTERS),
+            IsleBuilding.HOUSE to setOf(StageScenes.Surface.AVATAR, StageScenes.Surface.NAME, StageScenes.Surface.NOTES, StageScenes.Surface.COUNTERS),
+            IsleBuilding.LIGHTHOUSE to setOf(StageScenes.Surface.SEA),
+            IsleBuilding.LIBRARY to setOf(StageScenes.Surface.BOOK, StageScenes.Surface.REGISTER),
+            IsleBuilding.CAMPFIRE to setOf(StageScenes.Surface.SIGN, StageScenes.Surface.PICKER),
+            IsleBuilding.HARBOUR to setOf(StageScenes.Surface.BOARD),
+        )
+        for ((b, set) in need) for (l in 0..3) {
+            val s = StageScenes.of(b, l)
+            assertTrue("$b $l ${s.surfaces.keys}", s.surfaces.keys.containsAll(set))
         }
-    }
-
-    @Test fun theFireRingHasNoHouseOrHammockAndTheHutIsAnInterior() {
-        val foreign = setOf(R.drawable.decor_hammock, R.drawable.b_house, R.drawable.fief_hut_stage1, R.drawable.isle_manor, R.drawable.place_home)
-        for (l in 0..3) {
-            val s = StageScenes.of(IsleBuilding.CAMPFIRE, l)
-            assertTrue("$l", (listOfNotNull(s.piece?.res, s.room) + s.props.map { it.res }).none { it in foreign })
-        }
-        val fire = StageScenes.of(IsleBuilding.CAMPFIRE, 0)
-        assertEquals(R.drawable.lm_campfire, fire.piece!!.res); assertNotNull(fire.centre)
-        val hut = StageScenes.of(IsleBuilding.CAMPFIRE, 1)
-        assertEquals(StageScenes.Backdrop.INTERIOR, hut.backdrop); assertEquals(R.drawable.p_table, hut.piece!!.res); assertNotNull(hut.centre)
-        // the meeting hut is a painted hut interior, not a composed plank room
-        assertEquals(R.drawable.fief_build_closeup, hut.room)
-        // the cottage stage is its living corner inside, not the outside view with things in front of it
-        StageScenes.of(IsleBuilding.HOUSE, 2).let { assertEquals(StageScenes.Backdrop.INTERIOR, it.backdrop); assertNotNull(it.room); assertNull(it.piece) }
-        // the house's hut stage is inside the hut, not its outside view
-        assertEquals(R.drawable.fief_treasury_closeup, StageScenes.of(IsleBuilding.HOUSE, 1).room)
-        assertEquals(StageScenes.Backdrop.INTERIOR, StageScenes.of(IsleBuilding.POST, 2).backdrop)
+        // the groups sit around a real centre (fire / table) on every stage
+        for (l in 0..3) assertNotNull(StageScenes.of(IsleBuilding.CAMPFIRE, l).centre)
     }
 
     @Test fun everyStageLooksAndHoldsDifferentlyFromTheOthersOfItsBuilding() {
@@ -95,26 +113,30 @@ class StageScenesTest {
             val scenes = (0..3).map { StageScenes.of(b, it) }
             assertEquals("$b", 4, scenes.map { it.signature }.toSet().size)
             assertEquals("$b", 4, scenes.map { it.holder }.toSet().size)
-            assertTrue("$b", scenes.map { it.caption }.toSet().size == 4 && scenes.all { it.caption.isNotBlank() })
-            assertNotEquals("$b", scenes[0].holder, scenes[3].holder)
+            assertTrue("$b", scenes.map { it.caption }.toSet().size == 4)
         }
     }
 
-    @Test fun theDataHoldersFollowTheStage() {
-        assertEquals(StageScenes.Holder.PINNED_ENVELOPE, StageScenes.of(IsleBuilding.POST, 0).holder)
-        assertEquals(R.drawable.n_tree, StageScenes.of(IsleBuilding.POST, 0).piece!!.res)
-        assertEquals(StageScenes.Holder.MAILBOX, StageScenes.of(IsleBuilding.POST, 1).holder)
-        assertEquals(R.drawable.lm_post_ruin, StageScenes.of(IsleBuilding.POST, 1).piece!!.res)
-        assertEquals(StageScenes.Holder.CUBBY, StageScenes.of(IsleBuilding.POST, 2).holder)
-        assertEquals(StageScenes.Holder.CUBBY_WALL, StageScenes.of(IsleBuilding.POST, 3).holder)
-        assertTrue(StageScenes.of(IsleBuilding.POST, 3).slots.size > StageScenes.of(IsleBuilding.POST, 2).slots.size)
-        assertEquals(StageScenes.Holder.ROWBOAT, StageScenes.of(IsleBuilding.LIGHTHOUSE, 0).holder)
-        assertEquals(StageScenes.Holder.SAILBOAT, StageScenes.of(IsleBuilding.LIGHTHOUSE, 1).holder)
-        assertEquals(StageScenes.Backdrop.NIGHT_SEA, StageScenes.of(IsleBuilding.LIGHTHOUSE, 2).backdrop)
-        assertEquals(StageScenes.Holder.FIRE_RING, StageScenes.of(IsleBuilding.CAMPFIRE, 0).holder)
-        assertEquals(StageScenes.Holder.PARCHMENT, StageScenes.of(IsleBuilding.LIBRARY, 0).holder)
-        assertEquals(StageScenes.Holder.NOTES_ON_POST, StageScenes.of(IsleBuilding.HARBOUR, 0).holder)
-        assertEquals(StageScenes.Holder.KEEPSAKES, StageScenes.of(IsleBuilding.HOUSE, 0).holder)
-        assertEquals(R.drawable.decor_hammock, StageScenes.of(IsleBuilding.HOUSE, 0).piece!!.res)
+    @Test fun theStoriesFollowTheApprovedConcepts() {
+        // groups: cosy round tables, no compartments, no courtyard houses
+        for (l in 0..3) StageScenes.of(IsleBuilding.CAMPFIRE, l).caption.let { c ->
+            assertFalse(c, c.contains("Abteil") || c.contains("Hofh") || c.contains("Gemeinschaftshof"))
+        }
+        assertTrue(StageScenes.of(IsleBuilding.CAMPFIRE, 2).caption.contains("Kamin"))
+        assertTrue(StageScenes.of(IsleBuilding.CAMPFIRE, 3).caption.contains("Glashaus"))
+        // the harbour: always a landing that starts on the shore; boats are letter boats only, quests stay notes
+        for (l in 0..3) {
+            val s = StageScenes.of(IsleBuilding.HARBOUR, l)
+            assertTrue(s.caption, s.caption.contains("Steg") || s.caption.contains("Kai") || s.caption.contains("Anleger"))
+            StageStory.of(IsleBuilding.HARBOUR, l).let { ch ->
+                assertFalse(ch.core, ch.core.contains("Aufgabe") && ch.core.contains("Boot"))
+                ch.items.filter { it.act == StageStory.Act.ARRIVALS }.forEach { assertTrue(it.label, it.label.contains("Brief")) }
+            }
+        }
+        // the post: the letters are nailed to the trunk at the start, a real drawer follows
+        assertTrue(StageScenes.of(IsleBuilding.POST, 0).caption.contains("genagelt"))
+        assertEquals(StageScenes.Holder.MAIL_DRAWER, StageScenes.of(IsleBuilding.POST, 1).holder)
+        // friends: always at the island's edge, looking out to sea
+        for (l in 0..3) assertNotNull(StageScenes.of(IsleBuilding.LIGHTHOUSE, l).surface(StageScenes.Surface.SEA))
     }
 }

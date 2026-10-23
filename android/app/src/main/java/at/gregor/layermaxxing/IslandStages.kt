@@ -6,7 +6,7 @@ package at.gregor.layermaxxing
  * shelf always change together. Stage 0 is the natural starter (shown in the menu and as "vorher" in the
  * upgrade view; it does not stand on the island yet), stage 1 is what the build shelf places.
  * "Öffnen" always leads to the building's function ([function]); the stage changes look and name.
- * Only existing painted assets are used (docs/insel-ausbau.md lists the table and the asset gaps).
+ * 7.9.14: every stage has its own style E island picture ([Stage.art]) and painted place ([Stage.scene]).
  */
 internal object IslandStages {
     data class Stage(
@@ -15,6 +15,10 @@ internal object IslandStages {
         val name: String,
         /** What it looks like at this stage (upgrade comparison). */
         val look: String,
+        /**
+         * The 7.9.13 picture this stage had: kept ONLY for the grid_version 5 contract (server/app/geometry/island_masks.json
+         * was measured from these pictures; IslandMasksPixelTest) and for islands of servers that still run rule 5 or older.
+         */
         val res: Int, val accent: Int? = null,
         /** Line icon (menu entry, Öffnen button). */
         val icon: Int,
@@ -23,6 +27,10 @@ internal object IslandStages {
         val function: String get() = IslandStages.function(building)
         /** Menu subtitle: the function plus the stage. */
         val subtitle: String get() = if (level == 0) "$function · Start" else "$function · Stufe $level"
+        /** 7.9.14: the style E picture of this stage (island, header, upgrade preview, build shelf): [StyleEArt]. */
+        val art: Int get() = StyleEArt.of(building, level).res
+        /** 7.9.14: the stage's painted place ([StageScenes]). */
+        val scene: Int get() = StageScenes.of(building, level).picture
     }
 
     fun function(b: IsleBuilding) = when (b) {
@@ -34,42 +42,43 @@ internal object IslandStages {
         IsleBuilding.HARBOUR -> "Quests & Themen"
     }
 
+    /** 7.9.14: the approved stage stories (LAYERMAXXING-DESIGNVORGABEN-NEU.md, Nutzerfreigabe der Stil-E-Reihen). */
     private val table: Map<IsleBuilding, List<Stage>> = mapOf(
         IsleBuilding.POST to listOf(
-            Stage(IsleBuilding.POST, 0, "Briefbaum", "Briefe am Baumstamm angeschlagen", R.drawable.n_tree, R.drawable.p_env, R.drawable.ico_pin),
-            Stage(IsleBuilding.POST, 1, "Postkasten", "Ein Holzkasten mit Dach für deine Briefe", R.drawable.lm_post_ruin, null, R.drawable.ico_letter),
-            Stage(IsleBuilding.POST, 2, "Postfächer", "Kleine Poststube mit Fächern", R.drawable.lm_post, null, R.drawable.ico_letter_ready),
-            Stage(IsleBuilding.POST, 3, "Postamt", "Großes Postamt mit Fahne", R.drawable.b_post, null, R.drawable.ico_seal),
+            Stage(IsleBuilding.POST, 0, "Briefbaum", "Briefe an den Stamm der alten Buche genagelt", R.drawable.n_tree, R.drawable.p_env, R.drawable.ico_pin),
+            Stage(IsleBuilding.POST, 1, "Postkasten", "Kasten am Baum mit Briefschub und Markenbogen", R.drawable.lm_post_ruin, null, R.drawable.ico_letter),
+            Stage(IsleBuilding.POST, 2, "Briefstube", "Stube im Baum: Fächer für jeden Freund, Pult mit Schub", R.drawable.lm_post, null, R.drawable.ico_letter_ready),
+            Stage(IsleBuilding.POST, 3, "Postamt", "Postamt mit Schalter, Fächerwand und Fahne", R.drawable.b_post, null, R.drawable.ico_seal),
         ),
         IsleBuilding.LIGHTHOUSE to listOf(
-            Stage(IsleBuilding.LIGHTHOUSE, 0, "Aussichtspalme", "Von der Palme aus nach Freunden Ausschau halten", R.drawable.decor_palm, null, R.drawable.ico_friend),
-            Stage(IsleBuilding.LIGHTHOUSE, 1, "Ausguck", "Hölzerner Ausguck", R.drawable.fief_tower_small, null, R.drawable.ico_people),
-            Stage(IsleBuilding.LIGHTHOUSE, 2, "Leuchtfeuer", "Kleiner Leuchtturm auf den Felsen", R.drawable.lm_lighthouse, null, R.drawable.ico_lighthouse),
-            Stage(IsleBuilding.LIGHTHOUSE, 3, "Leuchtturm", "Großer Leuchtturm mit Fahne", R.drawable.b_lighthouse, null, R.drawable.ico_lighthouse),
+            Stage(IsleBuilding.LIGHTHOUSE, 0, "Aussichtspalme", "Von der Palme am Rand aufs Meer schauen", R.drawable.decor_palm, null, R.drawable.ico_friend),
+            Stage(IsleBuilding.LIGHTHOUSE, 1, "Ausguck", "Holzplattform mit Fernrohr an der Küste", R.drawable.fief_tower_small, null, R.drawable.ico_people),
+            Stage(IsleBuilding.LIGHTHOUSE, 2, "Signalstation", "Steinerne Station mit Signalmast und Flaggen", R.drawable.lm_lighthouse, null, R.drawable.ico_lighthouse),
+            Stage(IsleBuilding.LIGHTHOUSE, 3, "Leuchtturm", "Leuchtturm, dessen Licht alle Freunde erreicht", R.drawable.b_lighthouse, null, R.drawable.ico_lighthouse),
         ),
         IsleBuilding.LIBRARY to listOf(
-            Stage(IsleBuilding.LIBRARY, 0, "Wörter am Treibholz", "Ein Buch auf angeschwemmten Kisten", R.drawable.n_crates, R.drawable.p_book, R.drawable.ico_manual),
-            Stage(IsleBuilding.LIBRARY, 1, "Lesedach", "Ein Dach aus Zweigen über dem Bücherregal", R.drawable.lm_library_ruin, null, R.drawable.ico_glossary),
-            Stage(IsleBuilding.LIBRARY, 2, "Bücherstube", "Kleine Stube mit Regal und Lesesessel", R.drawable.lm_library, null, R.drawable.ico_glossary),
-            Stage(IsleBuilding.LIBRARY, 3, "Bibliothek", "Steinerne Bibliothek mit Turm und Fahne", R.drawable.b_library, null, R.drawable.ico_library),
+            Stage(IsleBuilding.LIBRARY, 0, "Schreibplatz", "Ein offenes Buch auf dem Baumstumpf", R.drawable.n_crates, R.drawable.p_book, R.drawable.ico_manual),
+            Stage(IsleBuilding.LIBRARY, 1, "Lesedach", "Schreibtisch unter einem Rindendach mit Laterne", R.drawable.lm_library_ruin, null, R.drawable.ico_glossary),
+            Stage(IsleBuilding.LIBRARY, 2, "Schreibstube", "Fachwerkstube mit Karteischrank am Fenster", R.drawable.lm_library, null, R.drawable.ico_glossary),
+            Stage(IsleBuilding.LIBRARY, 3, "Bibliothek", "Steinerne Bibliothek mit Kuppel und Bannern", R.drawable.b_library, null, R.drawable.ico_library),
         ),
         IsleBuilding.CAMPFIRE to listOf(
-            Stage(IsleBuilding.CAMPFIRE, 0, "Feuerkreis", "Steine um ein Lagerfeuer", R.drawable.lm_campfire, null, R.drawable.ico_campfire),
-            Stage(IsleBuilding.CAMPFIRE, 1, "Treffhütte", "Holzhütte für eure Treffen", R.drawable.b_workshop, null, R.drawable.ico_group),
-            Stage(IsleBuilding.CAMPFIRE, 2, "Gemeindehaus", "Weißes Gemeindehaus", R.drawable.b_hall, null, R.drawable.ico_groups),
-            Stage(IsleBuilding.CAMPFIRE, 3, "Festhalle", "Gemeindehaus mit Festfahne", R.drawable.b_hall, null, R.drawable.ico_groups),
+            Stage(IsleBuilding.CAMPFIRE, 0, "Lagerfeuer", "Feuer auf der Lichtung mit Stämmen und Wimpel", R.drawable.lm_campfire, null, R.drawable.ico_campfire),
+            Stage(IsleBuilding.CAMPFIRE, 1, "Treffplatz", "Offenes Dach über einem runden Tisch", R.drawable.b_workshop, null, R.drawable.ico_group),
+            Stage(IsleBuilding.CAMPFIRE, 2, "Versammlungshaus", "Holzhaus mit Kamin und runden Tischen", R.drawable.b_hall, null, R.drawable.ico_groups),
+            Stage(IsleBuilding.CAMPFIRE, 3, "Glashaus", "Glashaus um den Baum am ersten Feuer", R.drawable.b_hall, null, R.drawable.ico_groups),
         ),
         IsleBuilding.HARBOUR to listOf(
-            Stage(IsleBuilding.HARBOUR, 0, "Strandtreff", "Ruderboot mit Wimpel am Strand", R.drawable.n_rowboat, R.drawable.decor_flag, R.drawable.ico_boat),
-            Stage(IsleBuilding.HARBOUR, 1, "Bootssteg", "Einfacher Steg aus Treibholz", R.drawable.lm_jetty_ruin, null, R.drawable.ico_harbour),
-            Stage(IsleBuilding.HARBOUR, 2, "Anleger", "Fester Anleger mit Pollern", R.drawable.b_jetty, null, R.drawable.ico_harbour),
-            Stage(IsleBuilding.HARBOUR, 3, "Hafen", "Hafen mit Laterne und Fahne", R.drawable.lm_jetty, null, R.drawable.ico_compass),
+            Stage(IsleBuilding.HARBOUR, 0, "Anlegestelle", "Kurzer Steg vom Kiesufer ins Wasser", R.drawable.n_rowboat, R.drawable.decor_flag, R.drawable.ico_boat),
+            Stage(IsleBuilding.HARBOUR, 1, "Bootssteg", "Steg mit überdachter Anschlagtafel", R.drawable.lm_jetty_ruin, null, R.drawable.ico_harbour),
+            Stage(IsleBuilding.HARBOUR, 2, "Anleger", "Fester Anleger mit Schuppen und Laterne", R.drawable.b_jetty, null, R.drawable.ico_harbour),
+            Stage(IsleBuilding.HARBOUR, 3, "Hafen", "Steinkai mit Korktafel und Laternenpoller", R.drawable.lm_jetty, null, R.drawable.ico_compass),
         ),
         IsleBuilding.HOUSE to listOf(
-            Stage(IsleBuilding.HOUSE, 0, "Schlafplatz", "Eine Hängematte zwischen zwei Pfosten", R.drawable.decor_hammock, null, R.drawable.ico_home),
-            Stage(IsleBuilding.HOUSE, 1, "Holzhütte", "Kleine Blockhütte", R.drawable.fief_hut_stage1, null, R.drawable.ico_house),
-            Stage(IsleBuilding.HOUSE, 2, "Häuschen", "Häuschen mit rotem Dach", R.drawable.b_house, null, R.drawable.ico_house),
-            Stage(IsleBuilding.HOUSE, 3, "Landhaus", "Steinhaus mit Turm und Fahne", R.drawable.isle_manor, null, R.drawable.ico_home),
+            Stage(IsleBuilding.HOUSE, 0, "Nachtlager", "Decke, Tasche und Laterne unter der alten Buche", R.drawable.decor_hammock, null, R.drawable.ico_home),
+            Stage(IsleBuilding.HOUSE, 1, "Unterschlupf", "Schräge Stämme mit Dach an der Buche", R.drawable.fief_hut_stage1, null, R.drawable.ico_house),
+            Stage(IsleBuilding.HOUSE, 2, "Holzhütte", "Blockhütte mit Ofen an der Buche", R.drawable.b_house, null, R.drawable.ico_house),
+            Stage(IsleBuilding.HOUSE, 3, "Landhaus", "Fachwerkhaus mit Garten und Schreibtisch", R.drawable.isle_manor, null, R.drawable.ico_home),
         ),
     )
 

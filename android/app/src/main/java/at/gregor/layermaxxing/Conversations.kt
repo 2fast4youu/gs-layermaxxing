@@ -187,7 +187,7 @@ object Conversations {
         }
 
     fun letterState(message: ApiClient.Message, openedLocally: Boolean): LetterState = when {
-        message.unlocked && (openedLocally || message.incoming && message.readAt != null) -> LetterState.OPENED
+        message.unlocked && (openedLocally || message.incoming && message.readAt != null && !message.markedUnread) -> LetterState.OPENED
         message.unlocked && message.incoming -> LetterState.READY
         message.unlocked -> if (message.readAt != null) LetterState.READ else LetterState.DELIVERED
         message.mode == "manual" -> LetterState.LOCKED_MANUAL

@@ -21,38 +21,81 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.sin
 
 internal object IslandEvolution {
-    fun primitiveName(b: IsleBuilding) = when(b) {
-        IsleBuilding.HOUSE -> "Schlafplatz"
-        IsleBuilding.POST -> "Briefbaum"
-        IsleBuilding.LIGHTHOUSE -> "Aussichtspalme"
-        IsleBuilding.LIBRARY -> "Wörter am Treibholz"
-        IsleBuilding.CAMPFIRE -> "Feuerkreis"
-        IsleBuilding.HARBOUR -> "Strandtreff"
-    }
+    fun primitiveName(b: IsleBuilding) = IslandStages.of(b, 0).name
     fun levelName(b: IsleBuilding, level: Int, standing: Boolean = level > 0) = "${IslandStages.of(b, level).name} · " + if (!standing) "noch nicht gebaut" else IslandStages.stageLabel(level)
     fun allowed(c: ApiClient.IslandConstruction, cost: Int, days: Int) = c.mode == "creative" || c.available >= cost && c.ageDays >= days
 }
 
-/** Reuse Gregor's painted sprite family at EVERY stage, including the natural starter (table: [IslandStages]). */
+/**
+ * The picture of a building at a stage on an island: 7.9.14 the style E art ([IslandStages.Stage.art]) wherever the
+ * island follows the ground rule (grid_version 6, the art was fitted to its ground rectangles) or has no construction
+ * ledger; an island of a server that still runs rule 5 or older keeps the 7.9.13 picture its masks were measured from.
+ */
 internal object IslandArtwork {
-    fun resource(building: IsleBuilding, tier: Int): Int = IslandStages.of(building, tier).res
+    fun resource(building: IsleBuilding, tier: Int, c: ApiClient.IslandConstruction? = null): Int =
+        IslandStages.of(building, tier).let { if (c == null || IslandLayout.ground(c)) it.art else it.res }
     fun accent(building: IsleBuilding, tier: Int): Int? = IslandStages.of(building, tier).accent
 }
 
-/** Same production artwork for the island and its upgrade preview. */
-@Composable
-internal fun PaintedIslandPlace(building: IsleBuilding?, tier: Int, resource: Int, modifier: Modifier = Modifier, description: String? = null) {
-    Box(modifier, contentAlignment = Alignment.BottomCenter) {
-        Image(painterResource(resource), description, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit, alignment = Alignment.BottomCenter)
-        building?.let { IslandArtwork.accent(it, tier) }?.let { accent ->
-            Image(painterResource(accent), null, Modifier.fillMaxSize(.38f).align(if (building == IsleBuilding.LIBRARY) Alignment.TopCenter else Alignment.CenterEnd), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+/**
+ * 7.9.14: island sprites decoded once and shared by every place that shows them (the island, the header, the upgrade
+ * preview, the build shelf), in an LRU cache with a byte budget instead of painterResource (which decodes again per call
+ * site, on the main thread). The budget holds every standing building of an island and its previews (a style E sprite
+ * is at most 704 × 704 px = 1.98 MB as ARGB); older ones are dropped, so all 24 never stay in memory together.
+ */
+internal object IslandSprites {
+    const val BUDGET_BYTES = 16 * 1024 * 1024
+    private val cache = object : android.util.LruCache<Int, androidx.compose.ui.graphics.ImageBitmap>(BUDGET_BYTES) {
+        override fun sizeOf(key: Int, value: androidx.compose.ui.graphics.ImageBitmap): Int = value.width * value.height * 4
+    }
+    private val decoded = java.util.concurrent.atomic.AtomicInteger()
+    /** How many sprites were really decoded (tests). */
+    val decodes: Int get() = decoded.get()
+    /** Bytes the cache holds now (tests). */
+    val bytes: Int get() = cache.size()
+    fun of(res: android.content.res.Resources, id: Int): androidx.compose.ui.graphics.ImageBitmap =
+        cache.get(id) ?: synchronized(this) {
+            cache.get(id) ?: androidx.compose.ui.graphics.ImageBitmap.imageResource(res, id).also { decoded.incrementAndGet(); cache.put(id, it) }
         }
-        if (tier == 3 && building != null) Image(painterResource(R.drawable.decor_flag), null,
+    fun clear() = cache.evictAll()
+}
+
+@Composable
+internal fun islandSprite(id: Int): androidx.compose.ui.graphics.ImageBitmap {
+    val res = androidx.compose.ui.platform.LocalContext.current.resources
+    return remember(id, res) { IslandSprites.of(res, id) }
+}
+
+/**
+ * Same production artwork for the island and its upgrade preview. A style E sprite ([StyleEArt]) is a whole picture
+ * (no accent or flag added) whose canvas is [StyleEArt.Frame.scale] times the box: on the island ([onGround]) it is
+ * drawn that big with its bottom middle on the foot (crowns and roofs may reach over the box, the ground is the box's
+ * plate); anywhere else (header, preview, shelf) the canvas is fitted into the box.
+ */
+@Composable
+internal fun PaintedIslandPlace(building: IsleBuilding?, tier: Int, resource: Int, modifier: Modifier = Modifier, description: String? = null,
+                                onGround: Boolean = false) {
+    val frame = StyleEArt.byRes(resource)
+    Box(modifier, contentAlignment = Alignment.BottomCenter) {
+        if (frame != null) {
+            val bmp = islandSprite(resource)
+            if (onGround) BoxWithConstraints(Modifier.fillMaxSize()) {
+                Image(bmp, description, Modifier.align(Alignment.BottomCenter).wrapContentSize(Alignment.BottomCenter, unbounded = true)
+                    .size(maxWidth * frame.scale), contentScale = androidx.compose.ui.layout.ContentScale.FillBounds)
+            } else Image(bmp, description, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit, alignment = Alignment.BottomCenter)
+            return@Box
+        }
+        Image(islandSprite(resource), description, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit, alignment = Alignment.BottomCenter)
+        building?.let { IslandArtwork.accent(it, tier) }?.let { accent ->
+            Image(islandSprite(accent), null, Modifier.fillMaxSize(.38f).align(if (building == IsleBuilding.LIBRARY) Alignment.TopCenter else Alignment.CenterEnd), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+        }
+        if (tier == 3 && building != null) Image(islandSprite(R.drawable.decor_flag), null,
             Modifier.fillMaxSize(.30f).align(Alignment.TopEnd), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
     }
 }
@@ -266,7 +309,7 @@ private fun BuildingPreview(building: IsleBuilding, level: Int, modifier: Modifi
     PreviewFrame(modifier, next) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             Box(Modifier.fillMaxWidth().height(UpgradePreview.height(maxWidth)).background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(Color(0x557FA2A3), Color.Transparent))), Alignment.BottomCenter) {
-                PaintedIslandPlace(building, level, stage.res, Modifier.fillMaxSize(UpgradePreview.ART), description = "Ausbauvorschau: ${stage.name}")
+                PaintedIslandPlace(building, level, stage.art, Modifier.fillMaxSize(UpgradePreview.ART), description = "Ausbauvorschau: ${stage.name}")
             }
         }
         Text(stage.name, color = IslandWood.Ink, fontFamily = Kit.Display, fontSize = 16.sp, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)

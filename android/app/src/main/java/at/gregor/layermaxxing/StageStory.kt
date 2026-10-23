@@ -5,6 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 7.9.13: the stage stories of docs/insel-kueste-storyplan-7.9.13.md (matrix of 24), told by the place itself, not by
+ * 7.9.13 / 7.9.14: the stage stories (matrix of 24), told by the place itself, not by
  * text cards. Every building × stage has its story core and up to two painted things in the scene (left and right of
  * the golden action) that DO something the building already does: the name board opens the profile, the flap of the
  * mailbox the first unread letter, the spyglass the people search, the quill "add a word", the notice the open group
@@ -53,84 +56,88 @@ internal object StageStory {
     private val H = IsleBuilding.HOUSE; private val P = IsleBuilding.POST; private val L = IsleBuilding.LIGHTHOUSE
     private val B = IsleBuilding.LIBRARY; private val F = IsleBuilding.CAMPFIRE; private val R2 = IsleBuilding.HARBOUR
 
+    /**
+     * 7.9.14: the approved style E stories. The things are line icons on a brass disc (no old painted props beside the
+     * new pictures); each stage keeps the anchor of the stage before ([Item.key]).
+     */
     private val table: List<Chapter> = listOf(
-        c(H, 0, "Gestrandet: nur ein Ort zum Ausruhen",
-            Item("name", "Namensbrett am Pfosten – Profil", Act.PROFILE, R.drawable.p_sign),
-            Item("tools", "Treibgut ordnen – Insel bearbeiten", Act.EDIT, R.drawable.n_crates)),
-        c(H, 1, "Die erste Nacht unter einem Dach",
-            Item("name", "Namensbrett über der Tür – Profil", Act.PROFILE, R.drawable.p_sign),
-            Item("tools", "Werkbank – Insel bearbeiten", Act.EDIT, R.drawable.ico_build, painted = false)),
-        c(H, 2, "Man richtet sich ein und zeigt, was man gesammelt hat",
-            Item("name", "Türschild – Profil", Act.PROFILE, R.drawable.p_plate),
-            Item("tools", "Fensterbank umräumen – Insel bearbeiten", Act.EDIT, R.drawable.ico_build, painted = false)),
-        c(H, 3, "Ein Zuhause, das Gäste sehen",
-            Item("name", "Fahne in deiner Profilfarbe – Farbe ändern", Act.PROFILE, R.drawable.decor_flag),
-            Item("tools", "Landhaus umbauen – Insel bearbeiten", Act.EDIT, R.drawable.ico_build, painted = false)),
+        c(H, 0, "Ein Nachtlager unter der alten Buche: Decke, Tasche und Laterne",
+            Item("name", "Holzscheibe am Ast – Profil", Act.PROFILE, R.drawable.ico_friend, painted = false),
+            Item("tools", "Tasche packen – Insel bearbeiten", Act.EDIT, R.drawable.ico_build, painted = false)),
+        c(H, 1, "Schräge Stämme an der Buche werden ein Unterschlupf",
+            Item("name", "Scheibe unter dem Dach – Profil", Act.PROFILE, R.drawable.ico_friend, painted = false),
+            Item("tools", "Querbalken – Insel bearbeiten", Act.EDIT, R.drawable.ico_build, painted = false)),
+        c(H, 2, "Eine Holzhütte mit Ofen, das Bild hängt an der Wand",
+            Item("name", "Bild im Rahmen – Profil", Act.PROFILE, R.drawable.ico_friend, painted = false),
+            Item("tools", "Werkzeug am Ofen – Insel bearbeiten", Act.EDIT, R.drawable.ico_build, painted = false)),
+        c(H, 3, "Ein Landhaus mit Schreibtisch, an dem alles seinen Platz hat",
+            Item("name", "Fahne in deiner Profilfarbe – Profil", Act.PROFILE, R.drawable.ico_appearance, painted = false),
+            Item("tools", "Pläne auf dem Schreibtisch – Insel bearbeiten", Act.EDIT, R.drawable.ico_build, painted = false)),
 
-        c(P, 0, "Nachrichten werden an den Stamm geheftet",
-            Item("flap", "Nadel am Stamm – ungelesener Brief", Act.UNREAD, R.drawable.p_pin),
-            Item("seal", "Nebelbrief – noch gesperrt", Act.LOCKED, R.drawable.ico_lock, painted = false)),
-        c(P, 1, "Die Briefe bekommen ein trockenes Zuhause",
-            Item("flap", "Klappe des Postkastens – ungelesener Brief", Act.UNREAD, R.drawable.p_env_open),
+        c(P, 0, "Briefe werden an den Stamm der Buche genagelt",
+            Item("flap", "Nagel am Stamm – ungelesener Brief", Act.UNREAD, R.drawable.ico_pin, painted = false),
             Item("seal", "Versiegelter Brief – noch gesperrt", Act.LOCKED, R.drawable.ico_lock, painted = false)),
-        c(P, 2, "Jeder Freund hat sein eigenes Fach",
-            Item("flap", "Fach mit neuer Post – ungelesener Brief", Act.UNREAD, R.drawable.p_cubby),
-            Item("seal", "Verschlossenes Fach – gesperrte Briefe", Act.LOCKED, R.drawable.ico_lock, painted = false)),
-        c(P, 3, "Die Post der Insel läuft über einen Schalter",
-            Item("flap", "Eingang am Schalter – ungelesener Brief", Act.UNREAD, R.drawable.p_env_open),
+        c(P, 1, "Die Briefe bekommen einen Kasten mit Schub",
+            Item("flap", "Fahne am Kasten – ungelesener Brief", Act.UNREAD, R.drawable.ico_letter_ready, painted = false),
+            Item("seal", "Versiegelter Brief – noch gesperrt", Act.LOCKED, R.drawable.ico_lock, painted = false)),
+        c(P, 2, "Jeder Freund bekommt sein Fach in der Briefstube",
+            Item("flap", "Fach mit neuer Post – ungelesener Brief", Act.UNREAD, R.drawable.ico_letter_ready, painted = false),
+            Item("seal", "Siegelstempel – gesperrte Briefe", Act.LOCKED, R.drawable.ico_lock, painted = false)),
+        c(P, 3, "Die Post der Insel läuft über den Schalter",
+            Item("flap", "Klingel am Schalter – ungelesener Brief", Act.UNREAD, R.drawable.ico_bell, painted = false),
             Item("seal", "Siegel – gesperrte Briefe und Nachweis", Act.LOCKED, R.drawable.ico_seal, painted = false)),
 
-        c(L, 0, "Von der Palme aus Ausschau nach anderen halten",
+        c(L, 0, "Oben in der Palme am Rand nach anderen Ausschau halten",
             Item("spyglass", "Fernrohr – Leute suchen", Act.FIND, R.drawable.ico_search, painted = false),
-            Item("signal", "Flaschenpost – offene Anfragen", Act.REQUESTS, R.drawable.p_bottle)),
-        c(L, 1, "Ein fester Platz zum Ausschauhalten",
-            Item("spyglass", "Fernrohr am Geländer – Leute suchen", Act.FIND, R.drawable.ico_search, painted = false),
-            Item("signal", "Segel am Horizont – offene Anfragen", Act.REQUESTS, R.drawable.boat_sail)),
-        c(L, 2, "Ein Licht, damit Freunde den Weg finden",
-            Item("spyglass", "Fernrohr neben dem Feuer – Leute suchen", Act.FIND, R.drawable.ico_search, painted = false),
-            Item("signal", "Feuerkorb – der Lichtkegel zeigt die Anfragen", Act.REQUESTS, R.drawable.decor_campfire)),
-        c(L, 3, "Das Licht verbindet die Insel mit allen Freunden",
-            Item("signal", "Laterne – Freunde im Strahl weiterdrehen", Act.FRIENDS, R.drawable.decor_lantern),
-            Item("spyglass", "Fernrohr – Leute suchen", Act.FIND, R.drawable.ico_search, painted = false)),
+            Item("signal", "Flaschenpost – offene Anfragen", Act.REQUESTS, R.drawable.ico_letter, painted = false)),
+        c(L, 1, "Ein fester Ausguck mit Fernrohr an der Küste",
+            Item("spyglass", "Fernrohr auf dem Dreibein – Leute suchen", Act.FIND, R.drawable.ico_search, painted = false),
+            Item("signal", "Flaschenpost am Ufer – offene Anfragen", Act.REQUESTS, R.drawable.ico_letter, painted = false)),
+        c(L, 2, "Die Signalstation meldet, wer sich nähert",
+            Item("spyglass", "Fernrohr auf der Mauer – Leute suchen", Act.FIND, R.drawable.ico_search, painted = false),
+            Item("signal", "Flaggen am Mast – offene Anfragen", Act.REQUESTS, R.drawable.ico_bell, painted = false)),
+        c(L, 3, "Das Licht des Leuchtturms erreicht alle Freunde",
+            Item("signal", "Laterne – Freunde im Strahl weiterdrehen", Act.FRIENDS, R.drawable.ico_lighthouse, painted = false),
+            Item("spyglass", "Fernrohr am Geländer – Leute suchen", Act.FIND, R.drawable.ico_search, painted = false)),
 
-        c(B, 0, "Angeschwemmte Kisten, in einer liegt ein Buch",
+        c(B, 0, "Auf dem Baumstumpf liegt das erste Buch der Wörter",
             Item("lens", "Lupe – im Buch suchen", Act.SEARCH, R.drawable.ico_search, painted = false),
-            Item("quill", "Feder – Wort hinzufügen", Act.ADD_WORD, R.drawable.p_quill)),
-        c(B, 1, "Ein Dach schützt die Wörter vor Regen",
+            Item("quill", "Feder – Wort hinzufügen", Act.ADD_WORD, R.drawable.ico_edit, painted = false)),
+        c(B, 1, "Ein Dach schützt den Schreibplatz vor Regen",
             Item("lens", "Lupe – im Buch suchen", Act.SEARCH, R.drawable.ico_search, painted = false),
-            Item("quill", "Feder – Wort hinzufügen", Act.ADD_WORD, R.drawable.p_quill)),
-        c(B, 2, "Aus losen Wörtern wird eine Sammlung",
-            Item("books", "Bücher am Bord – nächste Kategorie", Act.CATEGORIES, R.drawable.p_books),
-            Item("quill", "Feder – Wort hinzufügen", Act.ADD_WORD, R.drawable.p_quill)),
-        c(B, 3, "Die Sprache der Insel ist bewahrt",
-            Item("books", "Ledereinbände – nächste Kategorie", Act.CATEGORIES, R.drawable.p_book),
-            Item("quill", "Feder – Wort hinzufügen", Act.ADD_WORD, R.drawable.p_quill)),
+            Item("quill", "Feder – Wort hinzufügen", Act.ADD_WORD, R.drawable.ico_edit, painted = false)),
+        c(B, 2, "In der Schreibstube bekommen die Wörter ihre Kartei",
+            Item("books", "Karteischubladen – nächste Kategorie", Act.CATEGORIES, R.drawable.ico_glossary, painted = false),
+            Item("quill", "Feder – Wort hinzufügen", Act.ADD_WORD, R.drawable.ico_edit, painted = false)),
+        c(B, 3, "Die Sprache der Insel ist in der Bibliothek bewahrt",
+            Item("books", "Banner – nächste Kategorie", Act.CATEGORIES, R.drawable.ico_library, painted = false),
+            Item("quill", "Feder – Wort hinzufügen", Act.ADD_WORD, R.drawable.ico_edit, painted = false)),
 
-        c(F, 0, "Wer sich trifft, sitzt ums Feuer",
-            Item("fire", "Feuer schüren – Plan für die Gruppe", Act.GROUP_QUEST, R.drawable.decor_campfire),
-            Item("notice", "Zettel am Stein – offene Gruppenpläne", Act.GROUP_PLANS, R.drawable.p_note)),
-        c(F, 1, "Die Runde zieht unter ein Dach",
-            Item("fire", "Kerze auf dem Tisch – Plan für die Gruppe", Act.GROUP_QUEST, R.drawable.decor_lantern),
-            Item("notice", "Aushang – offene Gruppenpläne", Act.GROUP_PLANS, R.drawable.p_note)),
-        c(F, 2, "Mehrere Gruppen haben einen gemeinsamen Raum",
-            Item("fire", "Haupttisch – Plan für die Gruppe", Act.GROUP_QUEST, R.drawable.p_table),
-            Item("notice", "Aushangbrett – offene Gruppenpläne", Act.GROUP_PLANS, R.drawable.p_sticky)),
-        c(F, 3, "Gemeinsam Erreichtes wird gefeiert",
-            Item("fire", "Festtisch – Plan für die Gruppe", Act.GROUP_QUEST, R.drawable.p_table),
-            Item("notice", "Wimpel – erledigte und offene Gruppenpläne", Act.GROUP_PLANS, R.drawable.decor_flag)),
+        c(F, 0, "Wer sich trifft, sitzt am Lagerfeuer",
+            Item("fire", "Feuer schüren – Plan für die Runde", Act.GROUP_QUEST, R.drawable.ico_campfire, painted = false),
+            Item("notice", "Wimpel – offene Gruppenpläne", Act.GROUP_PLANS, R.drawable.ico_rules, painted = false)),
+        c(F, 1, "Die Runde bekommt ein Dach, das Feuer brennt weiter",
+            Item("fire", "Laterne über dem Tisch – Plan für die Runde", Act.GROUP_QUEST, R.drawable.ico_campfire, painted = false),
+            Item("notice", "Zettel am Pfosten – offene Gruppenpläne", Act.GROUP_PLANS, R.drawable.ico_rules, painted = false)),
+        c(F, 2, "Im Versammlungshaus sitzt man am Kamin zusammen",
+            Item("fire", "Kamin – Plan für die Runde", Act.GROUP_QUEST, R.drawable.ico_campfire, painted = false),
+            Item("notice", "Zettel am Sims – offene Gruppenpläne", Act.GROUP_PLANS, R.drawable.ico_rules, painted = false)),
+        c(F, 3, "Das Glashaus wächst um den Baum am ersten Feuer",
+            Item("fire", "Ofen – Plan für die Runde", Act.GROUP_QUEST, R.drawable.ico_campfire, painted = false),
+            Item("notice", "Erledigte und offene Gruppenpläne", Act.GROUP_PLANS, R.drawable.ico_rules, painted = false)),
 
-        c(R2, 0, "Ein Boot am Strand, bereit für die erste Aufgabe",
-            Item("pennant", "Wimpel – Themen", Act.TOPICS, R.drawable.decor_flag),
-            Item("arrival", "Ruderboot – angekommene Briefe", Act.ARRIVALS, R.drawable.n_rowboat)),
-        c(R2, 1, "Vom Strand hinaus aufs Wasser",
-            Item("pennant", "Wimpel am Stegende – Themen", Act.TOPICS, R.drawable.decor_flag),
-            Item("arrival", "Boot am Steg – angekommene Briefe", Act.ARRIVALS, R.drawable.boat_row)),
-        c(R2, 2, "Mehrere Boote können festmachen",
-            Item("bollard", "Poller – offene Quests", Act.OPEN_QUESTS, R.drawable.p_stool),
-            Item("pennant", "Wimpel – Themen", Act.TOPICS, R.drawable.decor_flag)),
-        c(R2, 3, "Briefe und Aufgaben laufen hier ein und aus",
-            Item("pennant", "Kompass an der Laternenstange – Themen", Act.TOPICS, R.drawable.ico_compass, painted = false),
-            Item("arrival", "Laterne am Kai – angekommene Briefe", Act.ARRIVALS, R.drawable.decor_lantern)),
+        c(R2, 0, "Ein kurzer Steg vom Ufer: hier legen Briefboote an",
+            Item("pennant", "Treibholzbrett – Themen", Act.TOPICS, R.drawable.ico_topics, painted = false),
+            Item("arrival", "Briefboot am Steg – angekommene Briefe", Act.ARRIVALS, R.drawable.ico_letter_ready, painted = false)),
+        c(R2, 1, "Der Bootssteg bekommt eine Anschlagtafel",
+            Item("pennant", "Tafel unter dem Dach – Themen", Act.TOPICS, R.drawable.ico_topics, painted = false),
+            Item("arrival", "Briefboot am Stegende – angekommene Briefe", Act.ARRIVALS, R.drawable.ico_letter_ready, painted = false)),
+        c(R2, 2, "Am Anleger mit Schuppen machen mehrere Briefboote fest",
+            Item("bollard", "Poller – offene Quests", Act.OPEN_QUESTS, R.drawable.ico_q_star, painted = false),
+            Item("pennant", "Laterne am Schuppen – Themen", Act.TOPICS, R.drawable.ico_topics, painted = false)),
+        c(R2, 3, "Im Hafen laufen Briefe und Aufgaben zusammen",
+            Item("pennant", "Kompass am Kai – Themen", Act.TOPICS, R.drawable.ico_compass, painted = false),
+            Item("arrival", "Laternenpoller – angekommene Briefe", Act.ARRIVALS, R.drawable.ico_letter_ready, painted = false)),
     )
 
     fun of(b: IsleBuilding, level: Int): Chapter = table.single { it.building == b && it.level == level.coerceIn(0, 3) }
@@ -156,8 +163,9 @@ internal fun storyDescription(item: StageStory.Item, hook: StoryHook): String =
 @Composable
 internal fun StoryThing(item: StageStory.Item, hook: StoryHook, modifier: Modifier = Modifier) {
     val enabled = hook.onClick != null
-    Box(
-        modifier.size(56.dp).shadow(if (enabled) 6.dp else 0.dp, CircleShape)
+    // 7.9.14: the count badge sits on an outer box, so the round clip of the thing never cuts its digits
+    Box(modifier.size(60.dp)) { Box(
+        Modifier.align(Alignment.Center).size(56.dp).shadow(if (enabled) 6.dp else 0.dp, CircleShape)
             .background(Brush.radialGradient(listOf(Color(0xFFFFF6E5), Color(0xFFE9D3A6))), CircleShape)
             .border(if (hook.accent != null) 4.dp else 2.dp, hook.accent ?: Color(0xFF8A5A2B), CircleShape).clip(CircleShape)
             .clickable(enabled = enabled, onClickLabel = item.label) { hook.onClick?.invoke() }
@@ -172,11 +180,12 @@ internal fun StoryThing(item: StageStory.Item, hook: StoryHook, modifier: Modifi
     ) {
         if (item.painted) Image(painterResource(item.res), null, Modifier.size(42.dp), contentScale = ContentScale.Fit)
         else Image(painterResource(item.res), null, Modifier.size(28.dp), colorFilter = ColorFilter.tint(Color(0xFF5A3A12)))
+    }
         val n = hook.count
         if (n != null && n > 0) Box(
-            Modifier.align(Alignment.TopEnd).offset(x = (-2).dp, y = 2.dp).size(20.dp).background(Color(0xFFC94F3D), CircleShape)
-                .border(1.dp, Color(0xFFFFF6E5), CircleShape),
+            Modifier.align(Alignment.TopEnd).defaultMinSize(22.dp, 22.dp).background(Color(0xFFC94F3D), RoundedCornerShape(50))
+                .border(1.dp, Color(0xFFFFF6E5), RoundedCornerShape(50)).padding(horizontal = 4.dp).testTag("story-badge"),
             Alignment.Center,
-        ) { Text(if (n > 99) "99+" else "$n", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.padding(horizontal = 1.dp)) }
+        ) { Text(if (n > 99) "99+" else "$n", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false) }
     }
 }

@@ -483,7 +483,7 @@ internal fun IslandBuildBar(
                 val stage = IslandStages.of(b, if (standing) c.level(b) else 0)
                 BuildCard(stage.name, IslandBuild.price(c, b), IslandBuild.buildable(c, b),
                     b.label + if (!standing) " platzieren" else " auswählen", { onBuilding(b) }, built = standing) {
-                    PaintedIslandPlace(b, stage.level, stage.res, Modifier.fillMaxSize(.9f))
+                    PaintedIslandPlace(b, stage.level, stage.art, Modifier.fillMaxSize(.9f))
                 }
             }
             decorKeys.forEach { key ->
@@ -716,7 +716,7 @@ internal fun IslandMenuContent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Box(Modifier.size(70.dp).background(Brush.radialGradient(listOf(Color(0x447FA2A3), Color.Transparent)), CircleShape), Alignment.BottomCenter) {
-                            PaintedIslandPlace(b, level, stage.res, Modifier.fillMaxSize(.9f))
+                            PaintedIslandPlace(b, level, stage.art, Modifier.fillMaxSize(.9f))
                             AppIcon(stage.icon, "${stage.name} – ${stage.function}", Modifier.align(Alignment.TopEnd), tint = Isle.TealDark, size = 16.dp)
                         }
                         Text(stage.name, fontFamily = Kit.Display, fontSize = 13.sp, color = IslandWood.Ink, maxLines = 2, textAlign = TextAlign.Center)

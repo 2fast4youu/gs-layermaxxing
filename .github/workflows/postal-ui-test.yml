@@ -1,0 +1,157 @@
+name: Postal UI test APK (no deployment)
+
+on:
+  push:
+    branches: ['gerfried-post-preview-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postal-ui-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  backend:
+    name: Isolated backend regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: server/requirements-dev.txt
+      - name: Test dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r server/requirements-dev.txt
+      - name: Backend tests (runner-local fixtures only)
+        run: PYTHONPATH=server .venv/bin/pytest -q server/tests scripts/tests/test_gerfried_autoupdate.py
+
+  apk:
+    name: Focused UI gates and signed test APK
+    needs: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+      EXPECTED_SIGNER: dc86b5644a707b963ec94cc25d233f249cc8654716a6be666e88758ce9b9a0c7
+      LAYERMAXXING_GREGOR_TEST_URL: https://gs-layermaxxing.duckdns.org/test-gerfried/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore existing update-compatible signing key
+        shell: python
+        run: |
+          import base64, os
+          from pathlib import Path
+          value = os.environ.get('DEBUG_KEYSTORE_B64', '')
+          if not value:
+              raise SystemExit('Existing signing secret missing; refuse a different key or uninstall requirement')
+          p = Path.home() / '.android/debug.keystore'
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_bytes(base64.b64decode(''.join(value.split()), validate=True))
+          p.chmod(0o600)
+      - name: Focused postal tests, lint and APK on GitHub
+        working-directory: android
+        run: |
+          unset LAYERMAXXING_GREGOR_URL LAYERMAXXING_GERFRIED_URL
+          ./gradlew --no-daemon --max-workers=2 \
+            '-Dorg.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android \
+            testDebugUnitTest \
+            --tests '*PostalCanvasRegistrationTest' \
+            --tests '*PhysicalPostalGeometryTest' \
+            --tests '*PostalStorageProfileTest' \
+            --tests '*PostalStorageInteractionTest' \
+            lintDebug assembleDebug
+      - name: Verify APK signer and prepare artifact
+        shell: python
+        run: |
+          import hashlib, json, os, re, shutil, subprocess
+          from pathlib import Path
+          source = Path('android/app/build/outputs/apk/debug/app-debug.apk')
+          signer = Path(os.environ['ANDROID_HOME']) / 'build-tools/36.0.0/apksigner'
+          text = subprocess.check_output([str(signer), 'verify', '--print-certs', str(source)], text=True)
+          found = re.search(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]{64})', text)
+          if not found or found.group(1).lower() != os.environ['EXPECTED_SIGNER'].lower():
+              raise SystemExit('Unexpected APK signer; refuse delivery')
+          out = Path('dist'); out.mkdir()
+          target = out / 'GS-Layermaxxing-Gerfried-v7.9.14-post-test1.apk'
+          shutil.copy2(source, target)
+          manifest = {'commit': os.environ['GITHUB_SHA'], 'branch': os.environ['GITHUB_REF_NAME'],
+                      'file': target.name, 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
+                      'signer_sha256': found.group(1).lower(), 'bytes': target.stat().st_size,
+                      'application_id': 'at.gregor.layermaxxing.gerfried', 'version_code': 74,
+                      'version_name': '7.9.14-post-test1', 'test_candidate_only': True,
+                      'no_deployment': True, 'full_regression_status': 'separate hard-failing job'}
+          (out / 'BUILD-MANIFEST.json').write_text(json.dumps(manifest, indent=2))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('## Postal UI test candidate — NOT a release approval\n')
+              f.write('Backend gate and focused postal tests/lint required. Full Android regression is a separate unsuppressed job. No server deployment, no release creation.\n')
+              f.write('APK SHA256: `' + manifest['sha256'] + '`\n')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: postal-ui-test-apk
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save focused test/lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postal-ui-focused-reports
+          path: |
+            android/app/build/reports/
+            android/app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  full-regression:
+    name: Full Android regression (not suppressed)
+    needs: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      LAYERMAXXING_GREGOR_TEST_URL: https://gs-layermaxxing.duckdns.org/test-gerfried/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run all Android tests and lint without weakening tests
+        working-directory: android
+        run: |
+          unset LAYERMAXXING_GREGOR_URL LAYERMAXXING_GERFRIED_URL
+          ./gradlew --no-daemon --continue --max-workers=2 \
+            '-Dorg.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process testDebugUnitTest lintDebug
+      - name: Save complete regression reports even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postal-ui-full-regression-reports
+          path: |
+            android/app/build/reports/
+            android/app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14

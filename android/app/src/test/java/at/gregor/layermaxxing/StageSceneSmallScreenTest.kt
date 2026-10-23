@@ -15,6 +15,8 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -71,7 +73,59 @@ class StageSceneSmallScreenTest {
             assertTrue(msg, objects.isNotEmpty() || b == IsleBuilding.LIBRARY)
             for (i in objects.indices) for (j in i + 1 until objects.size)
                 assertTrue("$msg ${objects[i].first} / ${objects[j].first}", !objects[i].second.deflate(4 * density).overlaps(objects[j].second.deflate(4 * density)))
-            val action = StageFixtures.action(b)?.let { rule.onAllNodesWithText(it)[0].fetchSemanticsNode().boundsInRoot }
+            val action = StageFixtures.action(b, level)?.let { rule.onAllNodesWithText(it)[0].fetchSemanticsNode().boundsInRoot }
+            // 7.9.14 (pixel review 360 dp / 1.5×): the whole controls of the place – the post's four views with their
+            // counts, the person filter, the letters' area, the quest board, the register, the group pennants, the
+            // members – lie whole between the header and the bottom row (story things + golden action), never under it
+            val bottomRow = rule.onAllNodes(SemanticsMatcher("story") { it.config.getOrNull(SceneSlotKey)?.startsWith("story:") == true }, useUnmergedTree = true)
+                .fetchSemanticsNodes().map { it.boundsInRoot } + listOfNotNull(action)
+            val rowTop = bottomRow.minOfOrNull { it.top } ?: root.bottom
+            val controls = listOf("post-people", "post-letters", "harbour-board", "library-register").flatMap { tag ->
+                rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().map { tag to unclipped(it) } } +
+                PostViews.View.entries.flatMap { v -> rule.onAllNodesWithTag("post-view-${v.name}", useUnmergedTree = true).fetchSemanticsNodes().map { "view ${v.label}" to unclipped(it) } } +
+                slots("pennant:").map { it } + slots("member:").map { it } + slots("sign:").map { it }
+            for ((id, r) in controls) {
+                assertTrue("$msg $id $r reaches under the bottom row (top ${rowTop / density} dp)", r.bottom <= rowTop + 1)
+                assertTrue("$msg $id $r under the header", r.top >= 100 * density - 1)
+                assertTrue("$msg $id $r off screen", r.left >= -1 && r.right <= root.right + 1)
+            }
+            // the post's views show their label and count whole
+            // 1011: the post's views appear when its brass slider is touched: label and count whole, over the bottom row
+            if (b == IsleBuilding.POST && StageScenes.of(b, level).clean) {
+                // the letter tree: its brass belt touched, the four windows with their scratched labels on screen, labels whole
+                rule.onNodeWithTag("tree-belt", useUnmergedTree = true).performClick(); frames()
+                for (v in PostViews.View.entries) {
+                    val n = rule.onNodeWithTag("tree-window-${v.name}", useUnmergedTree = true).fetchSemanticsNode()
+                    val r = unclipped(n)
+                    assertTrue("$msg ${v.label} $r", r.width >= 48 * density - 1 && r.height >= 48 * density - 1 && r.left >= -1 && r.right <= root.right + 1 && r.bottom <= root.bottom)
+                }
+                rule.onAllNodesWithText("Ungelesen", useUnmergedTree = true).fetchSemanticsNodes().forEach { assertTrue("$msg Ungelesen cut", !overflows(it)) }
+                rule.activity.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames()
+            } else if (b == IsleBuilding.POST) {
+                rule.onNodeWithTag("post-hotspot-VIEW", useUnmergedTree = true).performClick(); frames()
+                for (v in PostViews.View.entries) {
+                    val n = rule.onNodeWithTag("post-view-${v.name}", useUnmergedTree = true).fetchSemanticsNode()
+                    assertTrue("$msg ${v.label} cut", !overflows(n))
+                    assertTrue("$msg ${v.label} under the bottom row", unclipped(n).bottom <= rowTop + 1 && unclipped(n).top >= 100 * density - 1)
+                }
+                rule.onNodeWithTag("post-back", useUnmergedTree = true).performClick(); frames()
+            }
+            // group pennants never lie on a member (their name included)
+            for ((p, pr) in slots("pennant:")) for ((m, mr) in slots("member:")) assertTrue("$msg $p $pr covers $m $mr", !pr.deflate(1f).overlaps(mr.deflate(1f)))
+            // every quest's title, partner, points and button lie ON its paper
+            if (b == IsleBuilding.HARBOUR) {
+                val papers = rule.onAllNodesWithTag("quest-paper", useUnmergedTree = true).fetchSemanticsNodes()
+                val notes = rule.onAllNodesWithTag("quest-note", useUnmergedTree = true).fetchSemanticsNodes()
+                assertEquals(msg, notes.size, papers.size)
+                for (k in notes.indices) {
+                    val frame = notes[k].layoutInfo.coordinates
+                    val paper = frame.localBoundingBoxOf(papers[k].layoutInfo.coordinates, clipBounds = false)
+                    for (tag in listOf("quest-title", "quest-partner", "quest-done")) {
+                        val r = frame.localBoundingBoxOf(rule.onAllNodesWithTag(tag, useUnmergedTree = true)[k].fetchSemanticsNode().layoutInfo.coordinates, clipBounds = false)
+                        assertTrue("$msg $tag $r not on its paper $paper", r.left >= paper.left - 1 && r.right <= paper.right + 1 && r.top >= paper.top - 1 && r.bottom <= paper.bottom + 1)
+                    }
+                }
+            }
             for ((id, r) in objects) {
                 assertTrue("$msg $id below the header ${r.top / density}", r.top >= 100 * density)
                 assertTrue("$msg $id $r on screen $root", r.left >= -2 * density && r.right <= root.right + 2 * density && r.bottom <= root.bottom)
@@ -128,40 +182,50 @@ class StageSceneSmallScreenTest {
                 val book = slots("book:").single().second
                 assertTrue(msg, book.height > 200 * density && book.bottom <= root.bottom + 2 * density)
                 rule.onAllNodesWithText("Wort oder Erklärung suchen", useUnmergedTree = true)[0].assertExists()
-                // 7.9.13 (renders Bücherstube / Bibliothek: "Sprüche" cut at the right): every category chip whole on the
-                // book's page, text not cut, a full touch target, and apart from the others
-                val chips = rule.onAllNodesWithTag("glossary-category", useUnmergedTree = true).fetchSemanticsNodes()
-                assertEquals(msg, GlossaryCategories.all.size + 1, chips.size)
-                val rects = chips.map { unclipped(it) }
+                // 7.9.14: the categories are the place's register (ribbons / card drawers / banners): Alle + four, every one
+                // whole on screen with its label not cut, a full touch target, apart from the others and off the book
+                val marks = rule.onAllNodesWithTag("library-register", useUnmergedTree = true).fetchSemanticsNodes()
+                assertEquals(msg, GlossaryCategories.all.size + 1, marks.size)
+                val rects = marks.map { unclipped(it) }
                 for ((k, r) in rects.withIndex()) {
-                    assertTrue("$msg chip $k $r outside the book $book", r.left >= book.left - 1 && r.right <= book.right + 1 && r.right <= root.right)
-                    assertTrue("$msg chip $k ${r.height}", r.height >= 48 * density - 1)
-                    for (j in k + 1 until rects.size) assertTrue("$msg chips $k/$j", !r.deflate(1f).overlaps(rects[j].deflate(1f)))
+                    assertTrue("$msg mark $k $r on screen", r.left >= -1 && r.right <= root.right + 1 && r.bottom <= root.bottom && r.top >= 100 * density)
+                    assertTrue("$msg mark $k ${r.height}", r.height >= 48 * density - 1 && r.width >= 48 * density - 1)
+                    assertTrue("$msg mark $k on the book", !r.deflate(1f).overlaps(book.deflate(1f)))
+                    for (j in k + 1 until rects.size) assertTrue("$msg marks $k/$j", !r.deflate(1f).overlaps(rects[j].deflate(1f)))
                 }
-                rule.onAllNodesWithText("Sprüche", useUnmergedTree = true).fetchSemanticsNodes().forEach { assertTrue("$msg Sprüche cut", !overflows(it)) }
+                rule.onAllNodesWithTag("library-register-label", useUnmergedTree = true).fetchSemanticsNodes().forEach { n ->
+                    val label = unclipped(n); val mark = rects.first { it.contains(label.center) }
+                    assertTrue("$msg label ${n.config[androidx.compose.ui.semantics.SemanticsProperties.Text]} cut: $label in $mark", label.left >= mark.left - 1 && label.right <= mark.right + 1)
+                    val res = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+                    n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action?.invoke(res)
+                    // the label's whole text width fits its mark (measured, not only the box it was given)
+                    assertTrue("$msg label cut ${layouts(n)} in $mark", !overflows(n) && res.all { it.multiParagraph.maxIntrinsicWidth <= mark.width })
+                }
             }
         }
     }
 
-    @Test fun manyFriendsBecomeScenicPagesOnTheLetterTreeAndEveryoneIsReachable() {
+    @Test fun manyPeopleAndLettersStayReachableOnTheLetterTree() {
+        // 13 friends with a letter each (more than the screen shows): every person can be reached by scrolling the
+        // person filter, every letter by scrolling the trunk; the search appears and finds one
+        val now = 1_790_000_000L
         val many = (0 until 13).map { ApiClient.UserSummary(100L + it, "Freund $it", "friends", "🐻", "#1565C0") }
+        val letters = many.map { f -> ApiClient.Message(f.id * 10, f.id, f.name, true, "Gruß ${f.name}", "", "none", now - f.id, "manual", null, null, null,
+            true, false, null, false, false, null, null, null, emptyList(), null, null, null) }
         rule.mainClock.autoAdvance = false
-        rule.setContent { VillageTheme(true) { PostOffice(many, emptyList(), emptyMap(), {}, {}, {}, {}, level = 0) } }
+        rule.setContent { VillageTheme(true) { PostOffice(many, letters, emptyMap(), {}, {}, {}, {}, level = 1) } }
         frames()
-        val perPage = StageScenes.of(IsleBuilding.POST, 0).slots.size
-        val seen = mutableSetOf<String>()
-        var pages = 0
-        while (true) {
-            val here = slots("friend:").map { it.first }
-            assertTrue(here.size in 1..perPage)
-            seen += here; pages++
-            val next = rule.onAllNodesWithContentDescription("Nächste Seite: Freunde")
-            if (next.fetchSemanticsNodes().isEmpty() || pages > 5) break
-            val enabled = next.fetchSemanticsNodes()[0].config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Disabled) == null
-            if (!enabled) break
-            next[0].performClick(); frames()
-        }
-        assertEquals(many.map { "friend:${it.id}" }.toSet(), seen)
-        assertEquals((many.size + perPage - 1) / perPage, pages)
+        val d = NativePostTestDriver(rule)
+        d.tap("tree-rope")
+        assertEquals((listOf("person:alle") + many.map { "person:${it.id}" }).toSet(), d.people())
+        d.back()
+        assertEquals(letters.map { "letter:${it.id}" }.toSet(), d.letters())
+        if (d.exists("tree-time-now")) d.tap("tree-time-now")
+        d.tap("tree-rope")
+        d.tag("post-search").performTextInput("Freund 12")
+        d.frames()
+        d.back()
+        assertEquals(setOf("letter:1120"), d.keys("letter:"))
+        assertTrue(d.description("tree-belt").contains("Alle, 1 Briefe"))
     }
 }

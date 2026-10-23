@@ -226,6 +226,11 @@ internal fun IslandWorld(
     onSettings: () -> Unit = { onPlace(IsleBuilding.HOUSE) },
     /** 7.9.13: server + account of [ownId]; with it the last real island is kept for navigation and rotation. */
     islandScope: String? = null,
+    /** 1074: the app's open request per letter (LetterOpener) – the tree shows "wird geöffnet" / "nicht geklappt" from it. */
+    openRequests: Map<Long, OpenRequest> = emptyMap(),
+    unreadMarker: UnreadMarker? = null,
+    /** 1074: writing on the letter tree's own paper (null: the pen hands over to [onComposeLetter]). */
+    letterWriter: LetterWriter? = null,
 ) {
     val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
@@ -411,7 +416,7 @@ internal fun IslandWorld(
     IsleTypography {
     val sea = rememberSeaBrush()
     Box(Modifier.fillMaxSize().background(sea)) {
-        AnimatedIslandSea(Modifier.fillMaxSize())
+        AnimatedIslandSea(Modifier.fillMaxSize().graphicsLayer())
         when {
             view == "home" -> {
                 val land = island?.construction?.land ?: 0
@@ -690,6 +695,7 @@ internal fun IslandWorld(
                 IsleBuilding.POST -> PostOffice(
                     pals = pals, letters = letters, opened = opened,
                     onOpen = onOpenLetter, onLocked = onLockedTap, onWrite = onComposeLetter, onClose = close, level = stageOf(IsleBuilding.POST),
+                    openRequests = openRequests, writer = letterWriter, unread = unreadMarker,
                 )
                 IsleBuilding.HARBOUR -> HarbourBoard(
                     quests = quests, topics = topics, onQuestDone = onQuestDone, onQuestDelete = onQuestDelete,
@@ -920,7 +926,8 @@ private fun IslandMap(
         val friendBerths = friendMoors.map { it.point }
         val repairs = (if (homeMoor.repair && HarbourRoute.hasHarbour(homeConstruction)) setOf(0L) else emptySet()) +
             ordered.filterIndexed { i, f -> friendMoors[i].repair && HarbourRoute.hasHarbour(infoById[f.id]?.island?.construction) }.map { it.id }
-        AnimatedIslandSea(Modifier.fillMaxSize(), oversized = true)
+        // 7.9.14: the moving sea in its own layer, so its every frame never redraws the map's islands, plates and lanes.
+        AnimatedIslandSea(Modifier.fillMaxSize().graphicsLayer(), oversized = true)
         // the map's own coordinates (same layer as islands and boats): name plates are measured in them
         var mapCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
         val plateBase = remember { androidx.compose.runtime.mutableStateMapOf<Long, androidx.compose.ui.geometry.Rect>() }
@@ -988,7 +995,10 @@ private fun IslandMap(
                 val ends = setOf(i, islands.lastIndex)
                 fun voyage(side: Float) = Voyage(friend, letter, laneCache.getOrPut(i to side) { SeaChart.lane(route, side, field, hull, keel) }, t, share, if (k == mine.lastIndex) extra else 0)
                 val candidates = IsleMotion.laneCandidates(lanes[k]).map { it * laneGap }.filter { kotlin.math.abs(it) <= laneGap * 2.2f }.ifEmpty { listOf(lanes[k] * laneGap) }
-                val best = candidates.map { voyage(it) }.let { list -> list.firstOrNull { clashes(it.boat, ends) == 0f } ?: list.minBy { clashes(it.boat, ends) } }
+                // 7.9.14: lanes are checked one after the other, the first free one ends the search (7.9.13 checked every
+                // candidate lane first); only with no free one all are compared, with the same choice as before.
+                val best = candidates.asSequence().map { voyage(it) }.firstOrNull { clashes(it.boat, ends) == 0f }
+                    ?: candidates.map { voyage(it) }.minBy { clashes(it.boat, ends) }
                 placed += best.boat
                 best
             }
@@ -1016,7 +1026,13 @@ private fun IslandMap(
         val plateShift = namePlates.associate { (id, r) -> id to settle(r, namePlates.filter { it.first != id }.map { it.second }, up = false) }
         val busy = voyages.map { it.friend.id }.toSet()
         val jettyW = with(density) { 7.dp.toPx() }
-        Canvas(Modifier.fillMaxSize().semantics {
+        // 7.9.14: the dotted lanes, wakes and open water ahead are cut once per routes and boat positions, never inside
+        // the draw pass (7.9.13 cut every boat's path anew whenever the map's layer was drawn again).
+        val seaLines = remember(routes, busy, voyages.map { listOf(it.path, it.t, it.share, it.letter.incoming) }, hull) {
+            seaLines(routes.mapIndexed { i, r -> r?.takeIf { ordered[i].id !in busy } }, voyages, hull)
+        }
+        // Its own layer: the map's moving sea and swaying islands never make it draw again.
+        Canvas(Modifier.fillMaxSize().graphicsLayer().semantics {
             set(MapRoutesKey, ordered.mapIndexedNotNull { i, f -> routes[i]?.let { MapRoute(f.id, null, it, null) } } + voyages.map { v -> MapRoute(v.friend.id, v.letter.id, v.path, v.boat, hullOf(v.boat)) })
             set(MapAreaKey, seaBounds)
             set(MapBerthsKey, listOf(0L to homeBerth) + ordered.mapIndexed { i, f -> f.id to friendBerths[i] })
@@ -1039,34 +1055,7 @@ private fun IslandMap(
                 if (!HarbourRoute.hasHarbour(c) || f.id in repairs) drawIslandJetty(friendBerths[i], HarbourRoute.onMap(friendBox[i].first, friendBox[i].second,
                     HarbourRoute.fallbackRoot((c?.land ?: 0).coerceIn(0, 5))), jettyW)
             }
-            fun line(points: List<Offset>) = androidx.compose.ui.graphics.Path().apply { moveTo(points[0].x, points[0].y); points.drop(1).forEach { lineTo(it.x, it.y) } }
-            val round = androidx.compose.ui.graphics.StrokeJoin.Round
-            // 7.9.13: calm sea lanes: a quiet dotted line where no boat sails, no progress "highways".
-            routes.forEachIndexed { i, r ->
-                if (r == null || ordered[i].id in busy) return@forEachIndexed
-                drawPath(line(r), Color.White.copy(alpha = .30f), style = Stroke(2.5f, cap = StrokeCap.Round, join = round,
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 15f), 0f)))
-            }
-            // Each boat: the water ahead faintly dotted, a short soft wake behind it (the real share decides where it is).
-            voyages.forEach { v ->
-                val dots = PathEffect.dashPathEffect(floatArrayOf(3f, 13f), 0f)
-                val ahead = if (v.letter.incoming) HarbourRoute.part(v.path, 0f, v.t) else HarbourRoute.part(v.path, v.t, 1f)
-                drawPath(line(ahead), Color.White.copy(alpha = .32f), style = Stroke(2.5f, cap = StrokeCap.Round, pathEffect = dots))
-                if (v.share != null) {
-                    // the wake: the last stretch behind the boat, fading out (sailed = sender's berth → boat)
-                    val len = HarbourRoute.length(v.path).coerceAtLeast(1f)
-                    val wake = (hull * 5f / len).coerceAtMost(.25f)
-                    val (w0, w1) = if (v.letter.incoming) v.t to (v.t + wake).coerceAtMost(1f) else (v.t - wake).coerceAtLeast(0f) to v.t
-                    for (k in 0 until 4) {
-                        val a = w0 + (w1 - w0) * k / 4f; val b = w0 + (w1 - w0) * (k + 1) / 4f
-                        val nearBoat = if (v.letter.incoming) 1f - k / 4f else (k + 1) / 4f
-                        drawPath(line(HarbourRoute.part(v.path, a, b, 6)), Color.White.copy(alpha = .10f + .32f * nearBoat),
-                            style = Stroke(1.5f + 2.5f * nearBoat, cap = StrokeCap.Round, join = round))
-                    }
-                } else drawPath(line(if (v.letter.incoming) HarbourRoute.part(v.path, v.t, 1f) else HarbourRoute.part(v.path, 0f, v.t)),
-                    Color.White.copy(alpha = .32f), style = Stroke(2.5f, cap = StrokeCap.Round, pathEffect = dots))
-                drawCircle(Color(0xB3E6D3A3), 4f, if (v.letter.incoming) v.path.first() else v.path.last())
-            }
+            seaLines.forEach { l -> if (l.path != null && l.stroke != null) drawPath(l.path, l.color, style = l.stroke) else if (l.dot != null) drawCircle(l.color, 4f, l.dot) }
         }
         // Home island.
         ordered.forEachIndexed { i, friend ->
@@ -1120,7 +1109,7 @@ private fun IslandMap(
             val p = v.boat
             val hull: @Composable () -> Unit = {
                 Box(Modifier.size(42.dp), Alignment.Center) {
-                    Image(painterResource(boat.res), null, Modifier.size(38.dp))
+                    Image(islandBitmap(boat.res), null, Modifier.size(38.dp))
                     Box(Modifier.align(Alignment.TopEnd).size(16.dp).background(Color(0xCC243A3F), CircleShape), Alignment.Center) {
                         AppIcon(boat.badge, null, tint = Color(0xFFFFF8E6), size = 11.dp)
                     }
@@ -1160,6 +1149,40 @@ private fun IslandMap(
     }
 }
 
+/** One prepared stroke of the map's sea lanes, or the dot at a boat's destination berth (see [seaLines]). */
+private class SeaLine(val path: androidx.compose.ui.graphics.Path?, val color: Color, val stroke: Stroke?, val dot: Offset? = null)
+
+/** The calm dotted [idle] routes, and for every boat the water ahead faintly dotted and a short soft wake behind it. */
+private fun seaLines(idle: List<List<Offset>?>, voyages: List<Voyage>, hull: Float): List<SeaLine> {
+    fun line(points: List<Offset>) = androidx.compose.ui.graphics.Path().apply { moveTo(points[0].x, points[0].y); for (i in 1 until points.size) lineTo(points[i].x, points[i].y) }
+    val round = androidx.compose.ui.graphics.StrokeJoin.Round
+    val out = mutableListOf<SeaLine>()
+    // 7.9.13: calm sea lanes: a quiet dotted line where no boat sails, no progress "highways".
+    idle.forEach { r -> if (r != null) out += SeaLine(line(r), Color.White.copy(alpha = .30f), Stroke(2.5f, cap = StrokeCap.Round, join = round,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 15f), 0f))) }
+    // Each boat: the water ahead faintly dotted, a short soft wake behind it (the real share decides where it is).
+    voyages.forEach { v ->
+        val dots = PathEffect.dashPathEffect(floatArrayOf(3f, 13f), 0f)
+        val ahead = if (v.letter.incoming) HarbourRoute.part(v.path, 0f, v.t) else HarbourRoute.part(v.path, v.t, 1f)
+        out += SeaLine(line(ahead), Color.White.copy(alpha = .32f), Stroke(2.5f, cap = StrokeCap.Round, pathEffect = dots))
+        if (v.share != null) {
+            // the wake: the last stretch behind the boat, fading out (sailed = sender's berth → boat)
+            val len = HarbourRoute.length(v.path).coerceAtLeast(1f)
+            val wake = (hull * 5f / len).coerceAtMost(.25f)
+            val (w0, w1) = if (v.letter.incoming) v.t to (v.t + wake).coerceAtMost(1f) else (v.t - wake).coerceAtLeast(0f) to v.t
+            for (k in 0 until 4) {
+                val a = w0 + (w1 - w0) * k / 4f; val b = w0 + (w1 - w0) * (k + 1) / 4f
+                val nearBoat = if (v.letter.incoming) 1f - k / 4f else (k + 1) / 4f
+                out += SeaLine(line(HarbourRoute.part(v.path, a, b, 6)), Color.White.copy(alpha = .10f + .32f * nearBoat),
+                    Stroke(1.5f + 2.5f * nearBoat, cap = StrokeCap.Round, join = round))
+            }
+        } else out += SeaLine(line(if (v.letter.incoming) HarbourRoute.part(v.path, v.t, 1f) else HarbourRoute.part(v.path, 0f, v.t)),
+            Color.White.copy(alpha = .32f), Stroke(2.5f, cap = StrokeCap.Round, pathEffect = dots))
+        out += SeaLine(null, Color(0xB3E6D3A3), null, if (v.letter.incoming) v.path.first() else v.path.last())
+    }
+    return out
+}
+
 /** One boat on its own lane: [path] = home berth → friend berth, [t] where it is now along it, [share] null = waiting in the roadstead. */
 private class Voyage(
     val friend: ApiClient.UserSummary, val letter: ApiClient.Message,
@@ -1167,7 +1190,7 @@ private class Voyage(
     /** Further boats on this route that did not get a lane of their own. */
     val more: Int = 0,
 ) {
-    val boat: Offset get() = HarbourRoute.at(path, t)
+    val boat: Offset = HarbourRoute.at(path, t)
 }
 
 /** 7.9.12: a route on the archipelago map in map px (for tests and a11y): idle routes have no letter and no boat. */

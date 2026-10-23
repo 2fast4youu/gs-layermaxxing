@@ -1,0 +1,2307 @@
+{
+ "generator": "scripts/style_e_assets.py",
+ "raw_dir_not_in_repo": "/home/veit/hermes-andrea-clean-20261016/workspace/layermaxxing-raster-7.9.14/style-e-preview/raw",
+ "scenes": {
+  "e_campfire_0_scene": {
+   "bytes": 204502,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "896b3d3412b4d1fe37c53b0eed1d062df7ad7131899f77f7e223465cf6d8bf2e",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "campfire-0-detail",
+   "source": "campfire-0-detail.png",
+   "source_sha256": "7ede92913dc5d3c1f093d815cd3208e53a7ef02ab65b22bc6cd7e20b815a27b3"
+  },
+  "e_campfire_1_scene": {
+   "bytes": 207560,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "c9a1fdf177d078cc48baa77af5e11a13fa07d6f4a493f69c03561c86edcabebf",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "campfire-1-detail",
+   "source": "campfire-1-detail.png",
+   "source_sha256": "a7e838d886c60bddd0e5b8859fe899a19420a7f93ae3ae19d9bab0651a6674f3"
+  },
+  "e_campfire_2_scene": {
+   "bytes": 192520,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "858129e87334bca7eb4570431ee7af1decf168273ff2314c9800e40bc716a30f",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "campfire-2-detail",
+   "source": "campfire-2-detail.png",
+   "source_sha256": "b38d7b3ef7f808b6e2f82468533ae61dc022a729ea4f139688be5436caae11ae"
+  },
+  "e_campfire_3_scene": {
+   "bytes": 210712,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "25e2017013284078c4c40d1963f2ab8f062007f4ad494a324c61c39e416abae9",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "campfire-3-detail",
+   "source": "campfire-3-detail.png",
+   "source_sha256": "b16629d109d5e45e207ff3579f9a8fe4b2f3a9d480fc91632b0055e2c2b4a825"
+  },
+  "e_harbour_0_scene": {
+   "bytes": 225600,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "cbd0cd143370bda498e7e103a22a483c286715af55868b0b4239737bf254860c",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "harbour-0-detail",
+   "source": "harbour-0-detail.png",
+   "source_sha256": "5f31d95e0c7b7218bb2e41a2304dd8124599e4b8e4f4255d719eebb1cf74f424"
+  },
+  "e_harbour_1_scene": {
+   "bytes": 236954,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "6823680f85b25371b06c6a66369ec734282a2a1c0e828dd14a861eef201950d2",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "harbour-1-detail",
+   "source": "harbour-1-detail.png",
+   "source_sha256": "c3e8847e5a3f65b842b7a902302da89af8eb895a8e547c0383a8661212e1de7e"
+  },
+  "e_harbour_2_scene": {
+   "bytes": 236272,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "b71ed6edb5c4fd877c89af2497b402a085a02c1a0b4c2daed3b8da3c3b3dcf95",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "harbour-2-detail",
+   "source": "harbour-2-detail.png",
+   "source_sha256": "3975618758a97be74d730bacbc6e070b444e225fa96b755f302d82bb27c2b112"
+  },
+  "e_harbour_3_scene": {
+   "bytes": 215758,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "a635e4202ad6489e1687861fc4e7ac1e3bce503bbf4db6954a802a99b52015e3",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "harbour-3-detail",
+   "source": "harbour-3-detail.png",
+   "source_sha256": "845e86dc7ef801a163206a4760295dd31c9d2e71330bd60e21c9c0787f31000e"
+  },
+  "e_house_0_scene": {
+   "bytes": 213990,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "d846024fff2733f5475ecbeb4a3b2d856ae0c0474bf8add2ec34c9eccda39f6f",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "house-0-detail",
+   "source": "house-0-detail.png",
+   "source_sha256": "e360737b50333c903949b3a08527f5129b353ab42a0f9f43e2416953933dee94"
+  },
+  "e_house_1_scene": {
+   "bytes": 200722,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "c0c7702f21dec2f87eab2fcd1e5eac8be17fb35038bf5da9d99591e4e028b239",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "house-1-detail",
+   "source": "house-1-detail.png",
+   "source_sha256": "d93136ea5df6b6a0f3e1695ed18be15695e0609a37f4b9eef7e2ca33f8c43faa"
+  },
+  "e_house_2_scene": {
+   "bytes": 175290,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "c2bfcf643c9ad4712fcdda9f7bc36b89626de5b8f9b9dde8bb4863e34010aa18",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "house-2-detail",
+   "source": "house-2-detail.png",
+   "source_sha256": "5504690d66140be7aece1a31f962b138b3794ad922fc0faa3b5839afc48d3ba7"
+  },
+  "e_house_3_scene": {
+   "bytes": 185710,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "fecf8f376a134157b65c4693a2e5bd9fcd745d9dd7ea94d26dfcc6e5622037c6",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "house-3-detail",
+   "source": "house-3-detail.png",
+   "source_sha256": "1ec627bf5244735256bb7be4dd2ec6785f462cc71dce2f80cb6791661218b7f1"
+  },
+  "e_library_0_scene": {
+   "bytes": 194276,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "386204360d23fa8cc1ece0e379a1f131ab3b558858cd24fb2d80b000e570ed56",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "library-0-detail",
+   "source": "library-0-detail.png",
+   "source_sha256": "d566509d0bbe01be5287e015001a5807557004f22fcf960d72bc7fd4938c28dc"
+  },
+  "e_library_1_scene": {
+   "bytes": 200736,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "410ee2ab53412d090d475b7bf5a79b832529152175ff209c8864ce9cefdb8a43",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "library-1-detail",
+   "source": "library-1-detail.png",
+   "source_sha256": "71413885aa5670693efbfdf1ea25e7e7f0ea0634421550168e6173b9c53f02e4"
+  },
+  "e_library_2_scene": {
+   "bytes": 185834,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "a342ce3b6f19985e3b21442582ce04df1e1f87ac971b6b10add79fcac10d7b32",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "library-2-detail",
+   "source": "library-2-detail.png",
+   "source_sha256": "a05231535f1a962dc4ac4220cb11b2ab8f9e5290625b6aed0799854a0a9b9114"
+  },
+  "e_library_3_scene": {
+   "bytes": 160030,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "ba7c6f52acf2b0e91a4d2d50621489dd525dedcc4bad59b9b7aa148254c9fcb0",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "library-3-detail",
+   "source": "library-3-detail.png",
+   "source_sha256": "21db0902049e3c4372e8f1802b7dfe01a3b42db4e54e6c2357cc3f3d49fe8d34"
+  },
+  "e_lighthouse_0_scene": {
+   "bytes": 225630,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "1d9c49ed8ec399f5ae8fefc49e04700802f41cb22c1239491ba43973df0fc8a5",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "lighthouse-0-detail",
+   "source": "lighthouse-0-detail.png",
+   "source_sha256": "7b2b7ea7a4eec54763ed9be45428ea629f689e3c2fed294b683b1399eac4994d"
+  },
+  "e_lighthouse_1_scene": {
+   "bytes": 187048,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "4a9acc1d179cc22755d4fcc3812d1ad967cb9cb0cbef9b55ded269f2690ede0f",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "lighthouse-1-detail",
+   "source": "lighthouse-1-detail.png",
+   "source_sha256": "66a4b974e65b35673cc4f86440dba57cfcd251721d7eb5b9623e7186e65203c5"
+  },
+  "e_lighthouse_2_scene": {
+   "bytes": 187786,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "7154d4dcfda986ca20813fc6754a646aa23b964a7ecca1b5e70ccb175b6a005a",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "lighthouse-2-detail",
+   "source": "lighthouse-2-detail.png",
+   "source_sha256": "f447aeb4becffbcaa2ccf35c72d6951adfda8b1dada70fd416f7d06f5e5bdd85"
+  },
+  "e_lighthouse_3_scene": {
+   "bytes": 170256,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "e2e4da8c1cb4deec49d66c15799d16d9f2dc5286fe804f613f232f146216de54",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "lighthouse-3-detail",
+   "source": "lighthouse-3-detail.png",
+   "source_sha256": "f69e4c88de063273f0dbed3402f3d9685071cde43ef4a0c1b74c733786e3424e"
+  },
+  "e_post_0_scene": {
+   "bytes": 226544,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "1d132a97ff41fb6c741ba170f65e34dcdf74fb4855c3840ce5781537d69f2f04",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "post-0-detail",
+   "source": "post-0-detail.png",
+   "source_sha256": "5a7dbbb72f1c93867d069470a7d6e93fe643f296de52daff2d089e7128dbd4dc"
+  },
+  "e_post_1_scene": {
+   "bytes": 203138,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "ebc06c301d6065adfe2f8a68149a3406129262facc95c1c27c0112fa46f09afb",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "post-1-detail",
+   "source": "post-1-detail.png",
+   "source_sha256": "699a3f924141f2fc0a58a1595827337000f0464a6f5c66a2a5e419b930d865d7"
+  },
+  "e_post_2_scene": {
+   "bytes": 143942,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "1dc5f0fbcf3decce4ceb245b173b059c4601b8170a8ef436e500896bbdd2e48a",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "post-2-detail",
+   "source": "post-2-detail.png",
+   "source_sha256": "0af49dae957c24a0f2e05a2a43783f724aaecd961bf811b196dc3260721703a3"
+  },
+  "e_post_3_scene": {
+   "bytes": 184112,
+   "decoded_argb_bytes": 4860000,
+   "decoded_rgb565_bytes": 2430000,
+   "prompt_sha256": "f9400ba17ea3de85bcd73278d46a01b24f1d0c113195f9185531290a7cc5d2d2",
+   "px": [
+    900,
+    1350
+   ],
+   "receipt_id": "post-3-detail",
+   "source": "post-3-detail.png",
+   "source_sha256": "b8f34a4beb86cd27ddfddb3c6cc51622242c48bb0cc263304b05bc5763dd54cc"
+  }
+ },
+ "sprites": {
+  "e_campfire_0": {
+   "art_width_of_box": 1.36,
+   "bytes": 112142,
+   "canvas_px": [
+    571,
+    571
+   ],
+   "cutout_px": [
+    1233,
+    1199
+   ],
+   "decoded_argb_bytes": 1304164,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:CAMPFIRE:0",
+   "prompt_sha256": "03906d57741f96fd8097116d94d0be0e642d824b66a6ad8be36d57b5e4a150b1",
+   "receipt_id": "campfire-0-exterior",
+   "scale_of_box": 1.428,
+   "shift_of_box": 0.02,
+   "source": "campfire-0-exterior.png",
+   "source_sha256": "0c0c29d28d1721115438e4071f4e58cd91f72ffe110904574f527ee2cd68584f",
+   "valid_scale_run": 28,
+   "visible_bounds_of_box": [
+    -0.159,
+    -0.323,
+    1.2015,
+    1.0
+   ]
+  },
+  "e_campfire_1": {
+   "art_width_of_box": 1.291,
+   "bytes": 101258,
+   "canvas_px": [
+    592,
+    592
+   ],
+   "cutout_px": [
+    1238,
+    1154
+   ],
+   "decoded_argb_bytes": 1401856,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:CAMPFIRE:1",
+   "prompt_sha256": "1b32941fff65ca30f9707e0202db5c30e59182090356bad278e82109726fd015",
+   "receipt_id": "campfire-1-exterior",
+   "scale_of_box": 1.48,
+   "shift_of_box": 0.08,
+   "source": "campfire-1-exterior.png",
+   "source_sha256": "879afb5142910c2e29c48daf98ff8521a92b8f676e5a664249b68eda12741bbd",
+   "valid_scale_run": 5,
+   "visible_bounds_of_box": [
+    -0.065,
+    -0.2025,
+    1.225,
+    1.0
+   ]
+  },
+  "e_campfire_2": {
+   "art_width_of_box": 1.4985,
+   "bytes": 128928,
+   "canvas_px": [
+    704,
+    704
+   ],
+   "cutout_px": [
+    1239,
+    1207
+   ],
+   "decoded_argb_bytes": 1982464,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:CAMPFIRE:2",
+   "prompt_sha256": "88a75dbd1ef46cf89dfd8bcf5419e0f9ae78c0b1d6dd3613d8546ae83a576c75",
+   "receipt_id": "campfire-2-exterior",
+   "scale_of_box": 1.8345,
+   "shift_of_box": -0.15,
+   "source": "campfire-2-exterior.png",
+   "source_sha256": "f113b66ac47d52f315ce10bba8fb42edb6a41f710fb989ceb12494d2493f047a",
+   "valid_scale_run": 10,
+   "visible_bounds_of_box": [
+    -0.399,
+    -0.4592,
+    1.0993,
+    1.0
+   ]
+  },
+  "e_campfire_3": {
+   "art_width_of_box": 1.06,
+   "bytes": 111108,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1207,
+    1165
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -2,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    }
+   ],
+   "key": "building:CAMPFIRE:3",
+   "prompt_sha256": "e56912ae1e8d2aaa210a0104c712dfd149c375f604453b8fe4ad8f86e59c2e06",
+   "receipt_id": "campfire-3-exterior",
+   "scale_of_box": 1.1016,
+   "shift_of_box": -0.01,
+   "source": "campfire-3-exterior.png",
+   "source_sha256": "afc8e8282dacc7cce428875db1acc2b9d4ba21332c9fee481eb5bbcb7e6d8f34",
+   "valid_scale_run": 39,
+   "visible_bounds_of_box": [
+    -0.04,
+    -0.0241,
+    1.0207,
+    1.0
+   ]
+  },
+  "e_harbour_0": {
+   "art_width_of_box": 0.974,
+   "bytes": 47550,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1221,
+    1000
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -2,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -2,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -2,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:HARBOUR:0",
+   "prompt_sha256": "766c2178457d32aa047ad445cb0286bdad174ccce649304c623f1d7ae5f91985",
+   "receipt_id": "harbour-0-exterior",
+   "scale_of_box": 1.0547,
+   "shift_of_box": -0.03,
+   "source": "harbour-0-exterior.png",
+   "source_sha256": "27b6a3537a7b700ae303d8f4f8bc78ff6f4894a5b39365e4d249573477d97727",
+   "valid_scale_run": 5,
+   "visible_bounds_of_box": [
+    -0.017,
+    0.2028,
+    0.9552,
+    1.0
+   ]
+  },
+  "e_harbour_1": {
+   "art_width_of_box": 1.0,
+   "bytes": 37388,
+   "canvas_px": [
+    704,
+    704
+   ],
+   "cutout_px": [
+    1209,
+    908
+   ],
+   "decoded_argb_bytes": 1982464,
+   "fit_mode": "pier-anchor",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      -1
+     ],
+     "sea": [
+      0,
+      0,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      -1
+     ],
+     "sea": [
+      0,
+      0,
+      1,
+      0
+     ]
+    }
+   ],
+   "key": "building:HARBOUR:1",
+   "prompt_sha256": "56f82f495846eb4a582db8b51396f97fb69862210f85692385c9f03abe3525a5",
+   "receipt_id": "harbour-1-exterior",
+   "scale_of_box": 1.7807,
+   "shift_of_box": -0.3729,
+   "source": "harbour-1-exterior.png",
+   "source_sha256": "b105dfdb82a6aceca5e263f39d92f5283aea7edab50dd6f3e6dd4d0cd053b381",
+   "valid_scale_run": 0,
+   "visible_bounds_of_box": [
+    -0.3727,
+    0.2412,
+    0.6341,
+    1.0
+   ]
+  },
+  "e_harbour_2": {
+   "art_width_of_box": 1.0,
+   "bytes": 77216,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1213,
+    1128
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      -1
+     ],
+     "sea": [
+      0,
+      0,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      -1
+     ],
+     "sea": [
+      0,
+      0,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      -1
+     ],
+     "sea": [
+      0,
+      0,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      -1
+     ],
+     "sea": [
+      0,
+      0,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      -1
+     ],
+     "sea": [
+      0,
+      0,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      -1
+     ],
+     "sea": [
+      0,
+      0,
+      1,
+      0
+     ]
+    }
+   ],
+   "key": "building:HARBOUR:2",
+   "prompt_sha256": "e73f4e83857d1c77943e8c1f683b927411ce55c600dca3a00cb778eb96f47901",
+   "receipt_id": "harbour-2-exterior",
+   "scale_of_box": 1.02,
+   "shift_of_box": 0.0,
+   "source": "harbour-2-exterior.png",
+   "source_sha256": "a529213364a12eb12c6d4a26d75ee4fc71a99cfe78282961dc2329da5d90efd4",
+   "valid_scale_run": 109,
+   "visible_bounds_of_box": [
+    -0.0,
+    0.0696,
+    1.0,
+    1.0
+   ]
+  },
+  "e_harbour_3": {
+   "art_width_of_box": 1.0,
+   "bytes": 46298,
+   "canvas_px": [
+    626,
+    626
+   ],
+   "cutout_px": [
+    1188,
+    1086
+   ],
+   "decoded_argb_bytes": 1567504,
+   "fit_mode": "pier-anchor",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -2,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -2,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      -1
+     ],
+     "sea": [
+      -1,
+      0,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:HARBOUR:3",
+   "prompt_sha256": "57a56fcd30b23cf33fb174a500d6d35674fcd514d4d9e4fed2e1f3c8fa467aa4",
+   "receipt_id": "harbour-3-exterior",
+   "scale_of_box": 1.5641,
+   "shift_of_box": -0.2667,
+   "source": "harbour-3-exterior.png",
+   "source_sha256": "71ec19618ad712445a7f0be3885681a4953e5fa5af9b7d267255da491724f153",
+   "valid_scale_run": 0,
+   "visible_bounds_of_box": [
+    -0.267,
+    0.0855,
+    0.7324,
+    1.0
+   ]
+  },
+  "e_house_0": {
+   "art_width_of_box": 0.7235,
+   "bytes": 64924,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1195,
+    1173
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      0,
+      0,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:HOUSE:0",
+   "prompt_sha256": "da5dbc637f1a981deb92f0e23b82e565ecefd78a35d964153dfd1a04e3d43e29",
+   "receipt_id": "house-0-exterior",
+   "scale_of_box": 1.0,
+   "shift_of_box": 0.05,
+   "source": "house-0-exterior.png",
+   "source_sha256": "0da507335fdb9d024d42c82c3f8f3938a8eac80b2c76b2fcca34fd14562e48bc",
+   "valid_scale_run": 2,
+   "visible_bounds_of_box": [
+    0.1895,
+    0.291,
+    0.9121,
+    1.0
+   ]
+  },
+  "e_house_1": {
+   "art_width_of_box": 1.0325,
+   "bytes": 74684,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1230,
+    1138
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:HOUSE:1",
+   "prompt_sha256": "0c1a987b8b0d25cfb73026cfcb51a217ba740573847892e56ed9a0750ccf4474",
+   "receipt_id": "house-1-exterior",
+   "scale_of_box": 1.2571,
+   "shift_of_box": 0.1,
+   "source": "house-1-exterior.png",
+   "source_sha256": "16c84317b23dd8450b571ad9535cceb8a389f41b15ffc4142488a45aba8a1885",
+   "valid_scale_run": 6,
+   "visible_bounds_of_box": [
+    0.085,
+    0.0449,
+    1.1163,
+    1.0
+   ]
+  },
+  "e_house_2": {
+   "art_width_of_box": 0.8925,
+   "bytes": 81452,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1204,
+    1151
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:HOUSE:2",
+   "prompt_sha256": "f019ba82d55d94b0e29d63cf0abf3647a6287b0131b4522fd6f14866b50da998",
+   "receipt_id": "house-2-exterior",
+   "scale_of_box": 1.0532,
+   "shift_of_box": -0.07,
+   "source": "house-2-exterior.png",
+   "source_sha256": "440c49699c1df0e87182672a0892c6caa4b681aa0b2a419a99a02d41d7337b50",
+   "valid_scale_run": 6,
+   "visible_bounds_of_box": [
+    -0.0163,
+    0.1464,
+    0.8764,
+    1.0
+   ]
+  },
+  "e_house_3": {
+   "art_width_of_box": 0.9515,
+   "bytes": 98308,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1235,
+    1181
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:HOUSE:3",
+   "prompt_sha256": "98391612454c472bb65a7723e6cbac3073fce77359cb2dd6e9264840125ba88e",
+   "receipt_id": "house-3-exterior",
+   "scale_of_box": 1.0,
+   "shift_of_box": -0.01,
+   "source": "house-3-exterior.png",
+   "source_sha256": "9fbad16b0058686f156341b53134ed1ffc9ab3a342b220295831401d79bd8655",
+   "valid_scale_run": 10,
+   "visible_bounds_of_box": [
+    0.0137,
+    0.0898,
+    0.9648,
+    1.0
+   ]
+  },
+  "e_library_0": {
+   "art_width_of_box": 1.665,
+   "bytes": 143580,
+   "canvas_px": [
+    687,
+    687
+   ],
+   "cutout_px": [
+    1202,
+    1154
+   ],
+   "decoded_argb_bytes": 1887876,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:LIBRARY:0",
+   "prompt_sha256": "d6d24da7a46fa6ea38eebdaa283e9ff5b7e3298b7883189b35f2a1a1cac6b192",
+   "receipt_id": "library-0-exterior",
+   "scale_of_box": 1.7187,
+   "shift_of_box": 0.01,
+   "source": "library-0-exterior.png",
+   "source_sha256": "65926b7eb8301f6364d60ca53d1e4b35ddb3ed27ccf1998148a66b6c4aa89f7f",
+   "valid_scale_run": 21,
+   "visible_bounds_of_box": [
+    -0.3243,
+    -0.5986,
+    1.3418,
+    1.0
+   ]
+  },
+  "e_library_1": {
+   "art_width_of_box": 1.2755,
+   "bytes": 87196,
+   "canvas_px": [
+    520,
+    520
+   ],
+   "cutout_px": [
+    1193,
+    1162
+   ],
+   "decoded_argb_bytes": 1081600,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:LIBRARY:1",
+   "prompt_sha256": "564780e72293075d728f4039b6a88fc540fba49eb0ee31c7290d4a7314a6b6c3",
+   "receipt_id": "library-1-exterior",
+   "scale_of_box": 1.301,
+   "shift_of_box": 0.0,
+   "source": "library-1-exterior.png",
+   "source_sha256": "5ced83d8ebf87bfdf3aac4f302639a66bdc615fe950961b34a4eef4349f26752",
+   "valid_scale_run": 18,
+   "visible_bounds_of_box": [
+    -0.138,
+    -0.2435,
+    1.138,
+    1.0
+   ]
+  },
+  "e_library_2": {
+   "art_width_of_box": 1.0,
+   "bytes": 77108,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1179,
+    1200
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:LIBRARY:2",
+   "prompt_sha256": "e968c3d4fefcf8dc90fc9368a1d3edcc97f9af95794d1208af8ec108a8f62260",
+   "receipt_id": "library-2-exterior",
+   "scale_of_box": 1.0608,
+   "shift_of_box": 0.02,
+   "source": "library-2-exterior.png",
+   "source_sha256": "26a3330addd207b8bd94bc6fcd67e82a30e9f4c77e132164774f9ab0eeecc96a",
+   "valid_scale_run": 5,
+   "visible_bounds_of_box": [
+    0.0193,
+    -0.0194,
+    1.02,
+    1.0
+   ]
+  },
+  "e_library_3": {
+   "art_width_of_box": 1.13,
+   "bytes": 81084,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1228,
+    1199
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -2,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    }
+   ],
+   "key": "building:LIBRARY:3",
+   "prompt_sha256": "23784c3e7555b0d10fdb3bc8824a72d4cdf10055be84b65d8153c9b41188c410",
+   "receipt_id": "library-3-exterior",
+   "scale_of_box": 1.1526,
+   "shift_of_box": 0.0,
+   "source": "library-3-exterior.png",
+   "source_sha256": "c820b3b806ce7f0dfedf7b88ff2642e408596de45b0ed2f13520ef142d2eec3c",
+   "valid_scale_run": 39,
+   "visible_bounds_of_box": [
+    -0.065,
+    -0.1031,
+    1.065,
+    1.0
+   ]
+  },
+  "e_lighthouse_0": {
+   "art_width_of_box": 0.685,
+   "bytes": 55712,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1051,
+    1203
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:LIGHTHOUSE:0",
+   "prompt_sha256": "04dd3fcb943aaa782e1d5308efffa946da2ebf05f554ea7d58e265f20e95ffe8",
+   "receipt_id": "lighthouse-0-exterior",
+   "scale_of_box": 1.0,
+   "shift_of_box": -0.01,
+   "source": "lighthouse-0-exterior.png",
+   "source_sha256": "8e455ce7d00e4de5f6270d8a8e921053edf4b2abd2a874b6cc3c2466e66ab795",
+   "valid_scale_run": 104,
+   "visible_bounds_of_box": [
+    0.1465,
+    0.2148,
+    0.832,
+    1.0
+   ]
+  },
+  "e_lighthouse_1": {
+   "art_width_of_box": 0.754,
+   "bytes": 69840,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1044,
+    1195
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:LIGHTHOUSE:1",
+   "prompt_sha256": "bdac76eae10f7aea37e15d3220baa39d9cd824e045f7a2e54ebf1b0a486cddcf",
+   "receipt_id": "lighthouse-1-exterior",
+   "scale_of_box": 1.0,
+   "shift_of_box": -0.04,
+   "source": "lighthouse-1-exterior.png",
+   "source_sha256": "7a90aec63c7d55ccd6e78bd111e74b12412b481d178dcd1bed7ea5ef5cd14fd2",
+   "valid_scale_run": 5,
+   "visible_bounds_of_box": [
+    0.084,
+    0.1367,
+    0.8379,
+    1.0
+   ]
+  },
+  "e_lighthouse_2": {
+   "art_width_of_box": 0.9545,
+   "bytes": 85020,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1146,
+    1188
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:LIGHTHOUSE:2",
+   "prompt_sha256": "8e15e77c4cce94edcc1e09afe2968acb818c8cd42860844a0f9c317f370b676d",
+   "receipt_id": "lighthouse-2-exterior",
+   "scale_of_box": 1.0348,
+   "shift_of_box": 0.03,
+   "source": "lighthouse-2-exterior.png",
+   "source_sha256": "d64afe29ec46979ae74f0af77130b44f5e8f72d110a4a8b0579a26108ea4b851",
+   "valid_scale_run": 8,
+   "visible_bounds_of_box": [
+    0.0533,
+    0.0117,
+    1.0073,
+    1.0
+   ]
+  },
+  "e_lighthouse_3": {
+   "art_width_of_box": 1.0,
+   "bytes": 80460,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1074,
+    1186
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -2,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    }
+   ],
+   "key": "building:LIGHTHOUSE:3",
+   "prompt_sha256": "f971b95427361f3090b2edbc420cd5dd9debecae40ed7db2cd5449ca4f96effe",
+   "receipt_id": "lighthouse-3-exterior",
+   "scale_of_box": 1.1264,
+   "shift_of_box": -0.02,
+   "source": "lighthouse-3-exterior.png",
+   "source_sha256": "0ec779a879aab397f4d91001ecd0dac8082fbffdb995704e9d08957a0260599b",
+   "valid_scale_run": 32,
+   "visible_bounds_of_box": [
+    -0.0214,
+    -0.1044,
+    0.9796,
+    1.0
+   ]
+  },
+  "e_post_0": {
+   "art_width_of_box": 0.74,
+   "bytes": 65278,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1172,
+    1214
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:POST:0",
+   "prompt_sha256": "3c383c0d3e5d69225ce34f7fbbf1cfbdc96d327532730efa5e1725d48a256ea4",
+   "receipt_id": "post-0-exterior",
+   "scale_of_box": 1.0,
+   "shift_of_box": 0.0,
+   "source": "post-0-exterior.png",
+   "source_sha256": "84c194cb09ac58ad552251d341ca149dca11b6fddda58b0a4c31454cf2b73492",
+   "valid_scale_run": 115,
+   "visible_bounds_of_box": [
+    0.1289,
+    0.2324,
+    0.8691,
+    1.0
+   ]
+  },
+  "e_post_1": {
+   "art_width_of_box": 1.3135,
+   "bytes": 115296,
+   "canvas_px": [
+    585,
+    585
+   ],
+   "cutout_px": [
+    1182,
+    1186
+   ],
+   "decoded_argb_bytes": 1368900,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      0,
+      -1,
+      0,
+      0
+     ]
+    }
+   ],
+   "key": "building:POST:1",
+   "prompt_sha256": "1343395b2548c893faa46f277b0683657dfe63fcc8ec4a0832bfe9926e606c40",
+   "receipt_id": "post-1-exterior",
+   "scale_of_box": 1.4622,
+   "shift_of_box": 0.06,
+   "source": "post-1-exterior.png",
+   "source_sha256": "dde14bf4a5d3e73015182bae9c2d67c3c396306d6c7c60f44f87007d0a099934",
+   "valid_scale_run": 10,
+   "visible_bounds_of_box": [
+    -0.0961,
+    -0.3172,
+    1.2161,
+    1.0
+   ]
+  },
+  "e_post_2": {
+   "art_width_of_box": 1.005,
+   "bytes": 103644,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1198,
+    1184
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -2,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    }
+   ],
+   "key": "building:POST:2",
+   "prompt_sha256": "edabb8bb13ca5b36489d018f35c95d66628445fb86848b7a9f3cb7a3ba852001",
+   "receipt_id": "post-2-exterior",
+   "scale_of_box": 1.0251,
+   "shift_of_box": 0.0,
+   "source": "post-2-exterior.png",
+   "source_sha256": "f7b80e47767c37b31e07a2176649089ce8cd763a2f5cd9eb689ae134f5a088c2",
+   "valid_scale_run": 36,
+   "visible_bounds_of_box": [
+    -0.0005,
+    0.0089,
+    1.0025,
+    1.0
+   ]
+  },
+  "e_post_3": {
+   "art_width_of_box": 1.0,
+   "bytes": 88166,
+   "canvas_px": [
+    512,
+    512
+   ],
+   "cutout_px": [
+    1177,
+    1165
+   ],
+   "decoded_argb_bytes": 1048576,
+   "fit_mode": "same-measurement",
+   "ground_v6": [
+    {
+     "ground": [
+      -1,
+      -2,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    },
+    {
+     "ground": [
+      -1,
+      -1,
+      1,
+      0
+     ]
+    }
+   ],
+   "key": "building:POST:3",
+   "prompt_sha256": "1055950299e5b7d431e68a7c1d7cb1dca6a873a7d1b89e52695ef7755112ae5a",
+   "receipt_id": "post-3-exterior",
+   "scale_of_box": 1.0812,
+   "shift_of_box": -0.03,
+   "source": "post-3-exterior.png",
+   "source_sha256": "b00dd46b49853a0126882217c48955b2b6f747b2dd4adbf7f9ceeb3e4ec79837",
+   "valid_scale_run": 26,
+   "visible_bounds_of_box": [
+    -0.03,
+    0.0096,
+    0.9709,
+    1.0
+   ]
+  }
+ },
+ "totals": {
+  "scene_bytes": 4774922,
+  "scene_decoded_each": 4860000,
+  "sprite_bytes": 2033640,
+  "sprite_decoded_all_24": 29354044,
+  "sprite_decoded_max": 1982464
+ }
+}
