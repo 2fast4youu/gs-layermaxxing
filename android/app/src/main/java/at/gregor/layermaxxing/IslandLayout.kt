@@ -68,6 +68,8 @@ internal object IslandFootprint {
  *  - 5 = 7.9.12 servers: the graphic masks ([IslandMasks]): a piece holds the cells its painted sprite covers;
  *  - 6 = 7.9.13 servers: the ground ([IslandGround]): a piece holds one rectangle, the plate it stands on, on the zone
  *    it belongs to (meadow; the harbour on the beach / at the water). Roofs may cover other pieces.
+ *  - 7 = rule 6 plus LIGHTHOUSE ground touching the open-sea coast ([IslandEdge]); an existing building
+ *    upgrading in its saved spot is checked for next-stage ground fit, with no new coast requirement.
  * The harbour stands on the coast with every rule (a v2 server accepts more, never less). 7.9.12: under the older
  * rules 2–4 the app additionally checks the graphic fit ([IslandLayout.fitProblem]), so even on an old server no
  * new sprite is built into another one (it offers a subset of what that server accepts, never more). A payload without the
@@ -83,8 +85,10 @@ internal object PlacementRule {
     const val MASKS = 5
     /** grid_version 6 (7.9.13): ground rectangles and terrain zones of [IslandGround], the same file as the server's. */
     const val GROUND = 6
-    const val CURRENT = GROUND
-    fun known(version: Int) = version == CIRCLES || version == DIAMONDS || version == COMPACT || version == MASKS || version == GROUND
+    /** Rule 7: rule 6 plus LIGHTHOUSE ground touching the open-sea coast. */
+    const val EDGE = 7
+    const val CURRENT = EDGE
+    fun known(version: Int) = version == CIRCLES || version == DIAMONDS || version == COMPACT || version == MASKS || version == GROUND || version == EDGE
     fun rings(version: Int): FootprintRings? = when (version) {
         DIAMONDS -> IslandFootprint.V3
         COMPACT -> IslandFootprint.V4
@@ -207,7 +211,7 @@ internal object IslandLayout {
     }
     /** [c] with [b] at its next stage (what an upgrade draft holds and the preview draws). */
     fun upgraded(c: ApiClient.IslandConstruction, b: IsleBuilding): ApiClient.IslandConstruction =
-        if (!c.standing(b) || c.level(b) >= 3) c else c.copy(buildings = c.buildings + (b.name to c.level(b) + 1), starters = c.starters - b.name)
+        if (c.level(b) >= 3) c else c.copy(buildings = c.buildings + (b.name to c.level(b) + 1), starters = c.starters - b.name)
     /** The island as an upgrade draft sees it: the held building already at its next stage. */
     fun editing(h: ApiClient.HomeIsland, draft: IslandDraft?): ApiClient.HomeIsland {
         val b = (draft?.target as? IslandTarget.Building)?.building
@@ -277,7 +281,7 @@ internal object IslandLayout {
     fun ruleProblem(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>): String? {
         PlacementRule.problem(c.gridVersion)?.let { return it }
         // rule 6: the ground on its zone (the harbour on the beach / at the water, outside the meadow grid) and no shared cell
-        if (ground(c)) return fitProblem(c, t, p)
+        if (ground(c)) return fitProblem(c, t, p) ?: IslandEdge.problem(c, t, p)
         if (!IslandGrid.buildable(p, c.land)) return "Außerhalb der Insel"
         if (t == IslandTarget.Building(IsleBuilding.HARBOUR) && !IslandGrid.coast(p, c.land)) return "Hafen nur an der Küste"
         if (c.gridVersion == PlacementRule.MASKS) return fitProblem(c, t, p)
@@ -301,13 +305,41 @@ internal object IslandLayout {
         is IslandTarget.Decor -> t.id != null && c.decor.none { it.id == t.id }
     }
     const val GONE = "Dieses Objekt wurde inzwischen entfernt – Verschieben beendet, Stand neu geladen"
-    /** Why the held piece cannot stand here (shown at the top while moving), null = it can. */
-    fun reason(h: ApiClient.HomeIsland, draft: IslandDraft): String? =
-        PlacementRule.problem(h.construction.gridVersion) ?: (if (gone(h.construction, draft)) GONE else null)
-            ?: problem(h.construction, draft.target, draft.position, draft.rejected)
-    /** The cells drawn for [draft]: none for a piece that is gone. */
-    fun targets(c: ApiClient.IslandConstruction, draft: IslandDraft): List<List<Int>> =
-        if (gone(c, draft)) emptyList() else targets(c, draft.target, draft.rejected)
+    // Draft APIs take the ORIGINAL ledger. Only geometry/rendering sees the next stage; positions
+    // in a preview must never become the authority for the same-position upgrade exception.
+    /** Original saved island + action-aware draft; null = green and confirmable. */
+    fun reason(h: ApiClient.HomeIsland, draft: IslandDraft): String? = draftProblem(h.construction, draft)
+    private fun draftProblem(c: ApiClient.IslandConstruction, draft: IslandDraft): String? {
+        PlacementRule.problem(c.gridVersion)?.let { return it }
+        if (gone(c, draft)) return GONE
+        val b = (draft.target as? IslandTarget.Building)?.building
+        val held = if (draft.upgrade && b != null) upgraded(c, b) else c
+        val sameUpgrade = draft.upgrade && b != null && c.standing(b) &&
+            draft.position == (c.positions[b.name] ?: defaultPosition(b))
+        val why = if (sameUpgrade && c.gridVersion == PlacementRule.EDGE) fitProblem(held, draft.target, draft.position)
+            else problem(held, draft.target, draft.position)
+        return why ?: if (draft.position in draft.rejected) REJECTED else null
+    }
+    /** The cells drawn for a draft, including ONLY a standing building's same-position upgrade exception. */
+    fun targets(c: ApiClient.IslandConstruction, draft: IslandDraft): List<List<Int>> {
+        val b = (draft.target as? IslandTarget.Building)?.building
+        val held = if (draft.upgrade && b != null) upgraded(c, b) else c
+        if (!PlacementRule.known(c.gridVersion) || gone(c, draft)) return emptyList()
+        return candidates(held, draft.target).filter { draftProblem(c, draft.copy(position = it)) == null }
+    }
+    /** Validate canonical actions too: a move even to its saved position is still a move. */
+    fun requestProblem(c: ApiClient.IslandConstruction, request: ApiClient.IslandRequest): String? {
+        val b = request.building?.let { name -> IsleBuilding.entries.firstOrNull { it.name == name } }
+        val t = when (request.action) {
+            "build", "move", "upgrade" -> b?.let { IslandTarget.Building(it) } ?: return "Ungültiger Bauplatz"
+            "decor_place" -> IslandTarget.Decor(request.item ?: "?")
+            "decor_move" -> c.decor.firstOrNull { it.id == request.decorId }?.let { IslandTarget.Decor(it.item, it.id) } ?: return GONE
+            else -> return null
+        }
+        val p = request.position ?: b?.let { c.positions[it.name] ?: defaultPosition(it) } ?: return "Ungültiger Bauplatz"
+        return draftProblem(c, IslandDraft(t, p, lifted = request.action == "move" || request.action == "decor_move",
+            upgrade = request.action == "upgrade"))
+    }
     const val REJECTED = "Server lehnt diesen Platz ab – Stand neu geladen"
     /**
      * Every cell the held piece may really stand on = exactly the cells the grid draws (7.9.11): for the harbour
@@ -362,7 +394,7 @@ internal object IslandLayout {
     fun upgradeStart(c: ApiClient.IslandConstruction, b: IsleBuilding): List<Int> {
         val next = upgraded(c, b)
         val here = c.positions[b.name] ?: defaultPosition(b)
-        if (valid(next, b, here)) return here
+        if (c.standing(b) && draftProblem(c, IslandDraft(IslandTarget.Building(b), here, upgrade = true)) == null) return here
         val spots = targets(next, IslandTarget.Building(b)).ifEmpty { return here }
         val (x, y) = IslandGrid.project(listOf(here[0].coerceIn(0, IslandGrid.STEPS), here[1].coerceIn(0, IslandGrid.STEPS)), land(c))
         return IslandGrid.nearestOf(spots, x, y, land(c))
@@ -372,11 +404,22 @@ internal object IslandLayout {
      * dragged, so it never hangs over the shore. The harbour: its pier spots ([harbourSpots]).
      */
     fun fitSpots(c: ApiClient.IslandConstruction, t: IslandTarget): List<List<Int>> {
+        if (!PlacementRule.known(c.gridVersion)) return emptyList()
         if (t == IslandTarget.Building(IsleBuilding.HARBOUR)) return harbourSpots(c)
         val held = if (t is IslandTarget.Building && !c.standing(t.building)) c.copy(starters = c.starters + t.building.name) else c
         val k = key(held, t)
-        if (ground(c)) return IslandGround.spots(land(c), false).filter { IslandGround.landProblem(k, land(c), it, harbour = false) == null }.ifEmpty { IslandGround.spots(land(c), false) }
+        if (ground(c)) return IslandGround.spots(land(c), false).filter {
+            IslandGround.landProblem(k, land(c), it, harbour = false) == null && IslandEdge.problem(held, t, it) == null
+        }
         return IslandGrid.buildableCells(land(c)).filter { IslandMasks.landProblem(k, land(c), it, harbour = false) == null }.ifEmpty { IslandGrid.buildableCells(land(c)) }
+    }
+    fun fitSpots(c: ApiClient.IslandConstruction, draft: IslandDraft): List<List<Int>> {
+        val b = (draft.target as? IslandTarget.Building)?.building
+        val held = if (draft.upgrade && b != null) upgraded(c, b) else c
+        val spots = fitSpots(held, draft.target)
+        if (!draft.upgrade || b == null || b != IsleBuilding.LIGHTHOUSE || !c.standing(b) || c.gridVersion != PlacementRule.EDGE) return spots
+        val here = c.positions[b.name] ?: defaultPosition(b)
+        return if (fitProblem(held, draft.target, here) == null) (spots + listOf(here)).distinct() else spots
     }
     /** The spots where the harbour (in its current stage) fits: where a held harbour snaps to (rule 6: beach / water). */
     fun harbourSpots(c: ApiClient.IslandConstruction): List<List<Int>> =

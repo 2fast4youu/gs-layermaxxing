@@ -182,6 +182,8 @@ internal fun HubIsland(
     obstacles: List<IslandLayout.Obstacle> = emptyList(),
     /** While a piece is held: the only cells drawn as usable, [IslandLayout.targets] (7.9.11). */
     placementTargets: List<List<Int>> = emptyList(),
+    /** Snap geometry computed from the saved ledger, before the rendered preview overrides positions. */
+    placementSnapSpots: List<List<Int>>? = null,
 ) {
     val liftedBuilding = (placement?.target as? IslandTarget.Building)?.building
     val liftedDecor = (placement?.target as? IslandTarget.Decor)?.let { it.id ?: IslandLayout.DRAFT_DECOR_ID }
@@ -203,7 +205,7 @@ internal fun HubIsland(
     // 7.9.12: the held piece's area = the tiles its painted sprite covers at the spot ([IslandMasks], like the server).
     val construction = life?.construction ?: ApiClient.IslandConstruction()
     val heldCells = placement?.let { IslandLayout.cellsAt(construction, it.target, it.position) }.orEmpty()
-    val snapSpots = androidx.compose.runtime.remember(construction, placement?.target) { placement?.let { IslandLayout.fitSpots(construction, it.target) } }
+    val snapSpots = placementSnapSpots ?: androidx.compose.runtime.remember(construction, placement?.target) { placement?.let { IslandLayout.fitSpots(construction, it.target) } }
     val heldReach = placement?.let { IslandMasks.shape(IslandLayout.key(construction, it.target), land).reach } ?: 0
     // 7.9.10: the held harbour only ever stands on (and is drawn over) the coast cells.
     val coastOnly = liftedBuilding == IsleBuilding.HARBOUR

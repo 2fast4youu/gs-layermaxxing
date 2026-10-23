@@ -74,6 +74,14 @@ jobs:
             -Pandroid.injected.signing.key.alias=androiddebugkey \
             -Pandroid.injected.signing.key.password=android \
             testDebugUnitTest \
+            --tests '*IslandEdge*Test' \
+            --tests '*IslandGroundTest' \
+            --tests '*IslandMasksTest' \
+            --tests '*IslandPlacementTest' \
+            --tests '*IslandRasterTest' \
+            --tests '*IslandRasterUiTest' \
+            --tests '*IslandPlacementUiTest' \
+            --tests '*IslandCocControlsTest' \
             --tests '*PostalArrivalModelTest' \
             --tests '*PostalPhoneFeedback*Test' \
             --tests '*CodexLetterMotionTest' \
@@ -86,22 +94,36 @@ jobs:
       - name: Verify APK signer and prepare artifact
         shell: python
         run: |
-          import hashlib, json, os, re, shutil, subprocess
+          import hashlib, json, os, re, shutil, subprocess, zipfile
           from pathlib import Path
           source = Path('android/app/build/outputs/apk/debug/app-debug.apk')
+          analyzer = Path(os.environ['ANDROID_HOME']) / 'cmdline-tools/latest/bin/apkanalyzer'
+          dex = subprocess.check_output([str(analyzer), 'dex', 'code', '--class', 'at.gregor.layermaxxing.PlacementRule', str(source)], text=True)
+          current_match = re.search(r'\.field public static final CURRENT:I = (0x[0-9a-fA-F]+|\d+)', dex)
+          expected_grid = json.loads(Path('server/app/geometry/island_edge.json').read_text())['version']
+          if not current_match or int(current_match.group(1), 0) != expected_grid:
+              raise SystemExit('Actual compiled client does not match server edge contract; refuse APK publication')
+          server_match = re.search(r'^GRID_VERSION\s*=\s*(\d+)', Path('server/app/main.py').read_text(), re.M)
+          if not server_match or int(server_match.group(1)) != expected_grid:
+              raise SystemExit('Server implementation and shared edge fixture disagree')
+          with zipfile.ZipFile(source) as apk:
+              for name in ('island_edge.json', 'island_ground.json'):
+                  if apk.read(name) != (Path('server/app/geometry') / name).read_bytes():
+                      raise SystemExit('Packaged geometry mismatch: ' + name)
           signer = Path(os.environ['ANDROID_HOME']) / 'build-tools/36.0.0/apksigner'
           text = subprocess.check_output([str(signer), 'verify', '--print-certs', str(source)], text=True)
           found = re.search(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]{64})', text)
           if not found or found.group(1).lower() != os.environ['EXPECTED_SIGNER'].lower():
               raise SystemExit('Unexpected APK signer; refuse delivery')
           out = Path('dist'); out.mkdir()
-          target = out / 'GS-Layermaxxing-Gerfried-v7.9.14-post-test2.apk'
+          target = out / 'GS-Layermaxxing-Gerfried-v7.9.14-post-test3.apk'
           shutil.copy2(source, target)
           manifest = {'commit': os.environ['GITHUB_SHA'], 'branch': os.environ['GITHUB_REF_NAME'],
                       'file': target.name, 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
                       'signer_sha256': found.group(1).lower(), 'bytes': target.stat().st_size,
-                      'application_id': 'at.gregor.layermaxxing.gerfried', 'version_code': 75,
-                      'version_name': '7.9.14-post-test2', 'test_candidate_only': True,
+                      'application_id': 'at.gregor.layermaxxing.gerfried', 'version_code': 76,
+                      'version_name': '7.9.14-post-test3', 'test_candidate_only': True,
+                      'client_grid_version': int(current_match.group(1), 0), 'server_grid_version': expected_grid,
                       'no_deployment': True, 'full_regression_status': 'separate hard-failing job'}
           (out / 'BUILD-MANIFEST.json').write_text(json.dumps(manifest, indent=2))
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:

@@ -526,6 +526,7 @@ class ApiClient(
     suspend fun islandAction(token: String, state: IslandConstruction, action: String, building: String?): HomeIsland =
         islandAction(token, state, IslandRequest(action, building))
     suspend fun islandAction(token: String, state: IslandConstruction, request: IslandRequest): HomeIsland = io {
+        IslandLayout.requestProblem(state, request)?.let { throw IllegalArgumentException(it) }
         val position = request.position ?: request.building?.let { state.positions[it] }
         parseHomeIsland(execute(authorized(token, "api/island/construction").post(
             JSONObject().put("mode", state.mode).put("action", request.action).put("building", request.building ?: JSONObject.NULL)

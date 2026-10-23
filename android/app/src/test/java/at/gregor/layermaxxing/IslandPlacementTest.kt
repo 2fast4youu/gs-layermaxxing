@@ -38,7 +38,7 @@ class IslandPlacementTest {
         // ground contract (geometry/island_ground.json); this fixture keeps the build grid and the rules up to 5.
         assertEquals(5, json.getInt("version"))
         assertEquals(PlacementRule.MASKS, json.getInt("version"))
-        assertEquals(PlacementRule.GROUND, PlacementRule.CURRENT)
+        assertEquals(PlacementRule.EDGE, PlacementRule.CURRENT)
         assertEquals(rings("big"), IslandFootprint.V4.big)
         assertEquals(rings("starter"), IslandFootprint.V4.starter)
         assertEquals(rings("decor"), IslandFootprint.V4.decor)

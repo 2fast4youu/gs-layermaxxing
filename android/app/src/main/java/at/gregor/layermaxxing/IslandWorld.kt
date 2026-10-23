@@ -333,6 +333,7 @@ internal fun IslandWorld(
         if (!original.construction.supported) { onError("Dieser Server kann Inselbauten noch nicht speichern."); return }
         // 7.9.11: a placement is only written under a rule the app knows (never guessed as the newest).
         if (request.position != null) PlacementRule.problem(original.construction.gridVersion)?.let { onError(it); return }
+        IslandLayout.requestProblem(original.construction, request)?.let { onError(it); return }
         constructionBusy = true
         scope.launch {
             try {
@@ -389,6 +390,7 @@ internal fun IslandWorld(
         val h = island ?: return
         // A moved piece that is not on the island any more is never written: no "build" instead of "move".
         if (IslandLayout.gone(h.construction, d)) { placement = null; shopDraft = false; onError(IslandLayout.GONE); return }
+        IslandLayout.reason(h, d)?.let { onError(it); return }
         val request = when (val t = d.target) {
             // 7.9.9: a new function is built for free at stage 0 ("build"); a standing one only moves.
             is IslandTarget.Building -> ApiClient.IslandRequest(if (d.upgrade) "upgrade" else if (h.construction.standing(t.building)) "move" else "build", t.building.name, position = d.position)
@@ -460,7 +462,7 @@ internal fun IslandWorld(
                             if (load.error != null && ownId != null) IslandRetryChip(island != null, load.error!!) { retry.trySend(Unit) }
                             }
                             // While the spot is impossible the hint says why and stays (e.g. "Hafen nur an der Küste").
-                            val reason = placement?.let { d -> island?.let { IslandLayout.reason(IslandLayout.editing(it, d), d) } }
+                            val reason = placement?.let { d -> island?.let { IslandLayout.reason(it, d) } }
                             val harbour = (placement?.target as? IslandTarget.Building)?.building == IsleBuilding.HARBOUR
                             androidx.compose.animation.AnimatedVisibility(placement != null && (placementHint || reason != null),
                                 enter = androidx.compose.animation.fadeIn(tween(200)) + androidx.compose.animation.slideInVertically(tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { -it / 2 },
@@ -509,14 +511,18 @@ internal fun IslandWorld(
                         onDecorLongPress = { d -> startDecor(d.item, d) },
                         // 7.9.13: an upgrade draft sees (and draws) the held building at its next stage
                         life = island?.let { IslandLayout.preview(IslandLayout.editing(it, placement), placement) },
-                        placementValid = placement?.let { d -> island?.let { IslandLayout.valid(IslandLayout.editing(it, d), d) } } ?: true,
+                        placementValid = placement?.let { d -> island?.let { IslandLayout.valid(it, d) } } ?: true,
                         // 7.9.10: every other piece is outlined in quiet red while one is held; never at rest.
                         obstacles = remember(island?.construction, placement?.target, placement?.upgrade) {
                             placement?.let { d -> island?.let { IslandLayout.obstacles(IslandLayout.editing(it, d).construction, d.target) } }.orEmpty()
                         },
                         // 7.9.11: only the cells where the held piece may really stand are drawn (same rule as ✓).
                         placementTargets = remember(island?.construction, placement?.target, placement?.rejected, placement?.upgrade) {
-                            placement?.let { d -> island?.let { IslandLayout.targets(IslandLayout.editing(it, d).construction, d) } }.orEmpty()
+                            placement?.let { d -> island?.let { IslandLayout.targets(it.construction, d) } }.orEmpty()
+                        },
+                        // Snap geometry uses the saved ledger too; only an in-place upgrade may include an inland saved spot.
+                        placementSnapSpots = remember(island?.construction, placement?.target, placement?.upgrade) {
+                            placement?.let { d -> island?.let { IslandLayout.fitSpots(it.construction, d) } }
                         },
                         showFigure = placement == null,
                         placement = placement, onPosition = { p -> if (!constructionBusy) placement = placement?.copy(position = p) },

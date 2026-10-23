@@ -34,7 +34,7 @@ class IslandMasksTest {
         assertEquals(IslandMasks.parse(serverFile.readText()), IslandMasks.parse(
             IslandMasks::class.java.classLoader!!.getResourceAsStream(IslandMasks.RESOURCE)!!.use { it.readBytes().toString(Charsets.UTF_8) }))
         assertEquals(5, IslandMasks.version())
-        assertEquals(PlacementRule.GROUND, PlacementRule.CURRENT)
+        assertEquals(PlacementRule.EDGE, PlacementRule.CURRENT)
         // island_grid.json pins the build grid and the rules up to 5; version 6's contract is geometry/island_ground.json
         assertEquals(grid.getInt("version"), PlacementRule.MASKS)
         assertEquals("geometry/island_masks.json", grid.getString("masks"))

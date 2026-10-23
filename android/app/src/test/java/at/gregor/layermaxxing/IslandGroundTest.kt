@@ -53,7 +53,7 @@ class IslandGroundTest {
         val packaged = IslandGround::class.java.classLoader!!.getResourceAsStream(IslandGround.RESOURCE)!!.use { it.readBytes() }
         assertTrue("packaged island_ground.json differs from the server's", packaged.contentEquals(serverFile.readBytes()))
         assertEquals(6, json.getInt("version")); assertEquals(PlacementRule.GROUND, IslandGround.version())
-        assertEquals(PlacementRule.GROUND, PlacementRule.CURRENT)
+        assertEquals(PlacementRule.EDGE, PlacementRule.CURRENT)
         assertEquals(json.getJSONObject("pieces").keys().asSequence().toSet(), IslandGround.keys())
         val keys = buildingKeys.map { (b, k) -> k to (b == IsleBuilding.HARBOUR) } + decorItems.map { IslandMasks.decorKey(it) to false }
         for ((key, isHarbour) in keys) for (land in 0..5) for (i in 0..20) for (j in 0..20) {
@@ -172,14 +172,14 @@ class IslandGroundTest {
         val draft = IslandDraft(harbour, start, upgrade = true)
         assertEquals(1, IslandLayout.editing(h, draft).construction.level(IsleBuilding.HARBOUR))
         assertEquals(0, h.construction.level(IsleBuilding.HARBOUR))
-        assertNull(IslandLayout.reason(IslandLayout.editing(h, draft), draft))
+        assertNull(IslandLayout.reason(h, draft))
         // a building whose next ground fits where it stands: nothing to say; fully built: nothing either
         assertNull(IslandLayout.upgradeProblem(v6(land, buildings = mapOf("HOUSE" to 1), positions = mapOf("HOUSE" to listOf(10, 9))), IsleBuilding.HOUSE))
         assertNull(IslandLayout.upgradeProblem(v6(land, buildings = mapOf("HOUSE" to 3)), IsleBuilding.HOUSE))
     }
 
     @Test fun unknownRulesFailClosedAndOlderRulesKeepTheirOwnGeometry() {
-        for (v in listOf(7, 8, 99)) {
+        for (v in listOf(8, 9, 99)) {
             val c = at(IsleBuilding.HOUSE, 1, 5).copy(gridVersion = v)
             assertTrue(IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.HOUSE)).isEmpty())
             assertNotNull(PlacementRule.problem(v))
