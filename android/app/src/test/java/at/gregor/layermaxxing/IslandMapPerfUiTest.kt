@@ -15,8 +15,8 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * 7.9.14 on the real archipelago map (Robolectric, JVM simulation, not a device; synthetic friends and letters only):
- * a full map of 12 v6 islands with 3 letter boats each opens with every island, route and boat, the painted terrain
- * under all 13 islands and the boats are decoded once (shared), not once per island or boat.
+ * a paged map of 12 v6 islands with 3 letter boats each opens a bounded page, with every boat on a navigable
+ * route shown or counted in +N. Terrain and boats are decoded once (shared), not once per island or boat.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -52,12 +52,12 @@ class IslandMapPerfUiTest {
         ) }
     }
 
-    @Test fun aFullMapOpensWithEveryBoatAndDecodesItsPicturesOnce() {
+    @Test fun aBoundedPageOpensWithEveryBoatAndDecodesItsPicturesOnce() {
         val before = IslandBitmaps.decodes
         val t0 = System.nanoTime()
         rule.setContent { World() }
         rule.mainClock.advanceTimeBy(1500); rule.waitForIdle()
-        println("PERF ui: full map (12 islands, 36 letters) composed in ${(System.nanoTime() - t0) / 1_000_000} ms (Robolectric)")
+        println("PERF ui: first page (12 total islands, 36 total letters) composed in ${(System.nanoTime() - t0) / 1_000_000} ms (Robolectric)")
         val routes = rule.onAllNodes(SemanticsMatcher("map routes") { it.config.getOrNull(MapRoutesKey) != null })[0].fetchSemanticsNode().config[MapRoutesKey]
         // every friend with a water way has its route; no boat is hidden: each letter at sea is a boat or counted in "+N"
         val boats = routes.filter { it.letterId != null }
@@ -66,9 +66,9 @@ class IslandMapPerfUiTest {
         val plus = rule.onAllNodes(SemanticsMatcher("+N") { n ->
             n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.any { it.text.startsWith("+") } == true
         }).fetchSemanticsNodes().sumOf { n -> n.config[androidx.compose.ui.semantics.SemanticsProperties.Text].first().text.drop(1).toInt() }
-        assertTrue("routes for ${friendsWithRoute.size} friends", friendsWithRoute.size >= 10)
+        assertTrue("routes for ${friendsWithRoute.size} friends", friendsWithRoute.size >= IslandMapPages.SIZE - 1)
         assertEquals("boats ${boats.size} + waiting $plus", atSea, boats.size + plus)
-        // the terrain under 13 islands and three boat types: at most one decode each
+        // the terrain shared by all islands and three boat types: at most one decode each
         assertTrue(IslandBitmaps.cached(R.drawable.terrain_home))
         assertTrue("decodes ${IslandBitmaps.decodes - before}", IslandBitmaps.decodes - before <= 4)
     }

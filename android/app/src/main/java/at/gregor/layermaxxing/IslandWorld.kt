@@ -234,6 +234,13 @@ internal fun IslandWorld(
 ) {
     val pals = remember(friends) { IsleLayout.friendsOnMap(friends) }
     val infoById = remember(islands) { islands?.friends?.associateBy { it.friendId }.orEmpty() }
+    var mapPage by rememberSaveable { mutableIntStateOf(0) }
+    var allMapFriends by remember { mutableStateOf(false) }
+    val mapFriends = remember(pals, infoById) {
+        pals.sortedWith(compareByDescending<ApiClient.UserSummary> { infoById[it.id]?.score ?: 0 }.thenBy { it.name }.thenBy { it.id })
+    }
+    val visiblePage = IslandMapPages.clamp(mapFriends.size, mapPage)
+    val visibleFriends = remember(mapFriends, visiblePage) { IslandMapPages.page(mapFriends, visiblePage) }
     var selectedFriend by rememberSaveable { mutableStateOf<Long?>(null) }
     var newQuestFor by remember { mutableStateOf<Pair<Long?, Long?>?>(null) }
     val openQuests = quests.count { it.completedAt == null }
@@ -542,7 +549,7 @@ internal fun IslandWorld(
                 }
             }
             else -> IslandMap(
-                ownName = ownName, pals = pals, infoById = infoById, letters = letters, homeDecor = home?.decor.orEmpty(), homeLife = home, labels = labels,
+                ownName = ownName, pals = visibleFriends, infoById = infoById, letters = letters, homeDecor = home?.decor.orEmpty(), homeLife = home, labels = labels,
                 onHome = { view = "home" }, onFriend = { selectedFriend = it }, ownSeed = ownId ?: 1L,
             )
         }
@@ -593,8 +600,22 @@ internal fun IslandWorld(
         }
         }
         // The overview is labelled as such, so it never reads like the own island.
-        if (view == "map" && place == null) WorldText("Übersicht · alle Inseln", 13.sp, display = false, fill = Color(0xFFE6D3A3),
+        if (view == "map" && place == null) WorldText("Übersicht · ${pals.size} Freunde", 13.sp, display = false, fill = Color(0xFFE6D3A3),
             modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 68.dp))
+        if (pals.isNotEmpty() && view == "map" && place == null) Row(
+            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 90.dp)
+                .background(Isle.Card, RoundedCornerShape(24.dp)).testTag("IslandMapPages"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = { mapPage = visiblePage - 1 }, enabled = visiblePage > 0,
+                modifier = Modifier.testTag("IslandMapPrevious").semantics { contentDescription = "Vorherige Inselseite" }) { Text("‹") }
+            Text("Seite ${visiblePage + 1}/${IslandMapPages.count(pals.size)}", color = Isle.Ink)
+            TextButton(onClick = { mapPage = visiblePage + 1 }, enabled = visiblePage + 1 < IslandMapPages.count(pals.size),
+                modifier = Modifier.testTag("IslandMapNext").semantics { contentDescription = "Nächste Inselseite" }) { Text("›") }
+            TextButton(onClick = { allMapFriends = true }, modifier = Modifier.testTag("IslandMapAllFriends")) {
+                Text("Alle ${pals.size} Freunde")
+            }
+        }
         if (pals.isEmpty() && view == "map") {
             Column(
                 Modifier.align(Alignment.Center).padding(24.dp).padding(top = 260.dp)
@@ -741,6 +762,23 @@ internal fun IslandWorld(
             // The switch acts at once and the menu closes, so the chip and the "gratis" prices are seen right away.
             onCreative = { on -> functionMenu = false; switchCreative(on) })
     }
+    if (allMapFriends) ModalBottomSheet(
+        onDismissRequest = { allMapFriends = false }, containerColor = Isle.Card,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Text("Alle ${pals.size} Freunde · alle Briefe bei der jeweiligen Insel", Modifier.padding(16.dp), color = Isle.Ink)
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp).testTag("IslandMapFriendList")) {
+            items(mapFriends, key = { it.id }) { friend ->
+                TextButton(onClick = {
+                    mapPage = mapFriends.indexOfFirst { it.id == friend.id } / IslandMapPages.SIZE
+                    allMapFriends = false
+                    selectedFriend = friend.id
+                }, modifier = Modifier.fillMaxWidth().testTag("IslandMapFriend-${friend.id}")) {
+                    Text(friend.name)
+                }
+            }
+        }
+    }
     selectedFriend?.let { id ->
         val friend = pals.firstOrNull { it.id == id }
         if (friend == null) selectedFriend = null else ModalBottomSheet(
@@ -748,20 +786,23 @@ internal fun IslandWorld(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = Isle.Card,
         ) {
-            FriendSheet(
-                friend = friend, info = infoById[id], label = labels[id], onLabel = { onLabel(id, it) },
-                letters = letters.filter { it.peerId == id && it.groupId == null }, opened = opened,
-                quests = quests.filter { it.targetType == "friend" && it.targetId == id },
-                topicCount = Conversations.topicsWith(id, friend.name, topics).count { it.completedAt == null },
-                onChat = { selectedFriend = null; onChat(id) },
-                onLetter = { selectedFriend = null; onComposeLetter(id) },
-                onOpenLetter = { selectedFriend = null; onOpenLetter(it) },
-                onLockedTap = onLockedTap,
-                onTopics = { selectedFriend = null; onTopics(id) },
-                onVisit = { selectedFriend = null; view = "visit:$id" },
-                onNewQuest = { newQuestFor = id to null },
-                onQuestDone = onQuestDone,
-            )
+            val friendLetters = letters.filter { it.peerId == id && it.groupId == null }
+            Box(Modifier.semantics { set(MapPeerLettersKey, friendLetters.map { it.id }) }) {
+                FriendSheet(
+                    friend = friend, info = infoById[id], label = labels[id], onLabel = { onLabel(id, it) },
+                    letters = friendLetters, opened = opened,
+                    quests = quests.filter { it.targetType == "friend" && it.targetId == id },
+                    topicCount = Conversations.topicsWith(id, friend.name, topics).count { it.completedAt == null },
+                    onChat = { selectedFriend = null; onChat(id) },
+                    onLetter = { selectedFriend = null; onComposeLetter(id) },
+                    onOpenLetter = { selectedFriend = null; onOpenLetter(it) },
+                    onLockedTap = onLockedTap,
+                    onTopics = { selectedFriend = null; onTopics(id) },
+                    onVisit = { selectedFriend = null; view = "visit:$id" },
+                    onNewQuest = { newQuestFor = id to null },
+                    onQuestDone = onQuestDone,
+                )
+            }
         }
     }
     if ((upgradePick != null || landPick) && island != null) {
@@ -823,7 +864,8 @@ private fun IslandMap(
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(60_000); nowSec = System.currentTimeMillis() / 1000 } }
     var boatSheet by remember { mutableStateOf<ApiClient.Message?>(null) }
     // Friends with the strongest friendship sit first on the inner ring.
-    val ordered = remember(pals, infoById) { pals.sortedWith(compareByDescending<ApiClient.UserSummary> { infoById[it.id]?.score ?: 0 }.thenBy { it.name }) }
+    val ordered = pals
+    require(ordered.size <= IslandMapPages.SIZE) { "IslandMap requires one bounded page" }
     val spots = remember(ordered.size) { IsleLayout.positions(ordered.size) }
     val transit = remember(letters) { letters.filter { !it.unlocked && it.groupId == null } }
     val scope = rememberCoroutineScope()
@@ -840,7 +882,8 @@ private fun IslandMap(
     }
 
     BoxWithConstraints(
-        Modifier.fillMaxSize()
+        // Reserve the fixed header/pager so the north island stays tappable beneath it.
+        Modifier.fillMaxSize().statusBarsPadding().padding(top = 142.dp).testTag("IslandMap")
             .onSizeChanged { viewport = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
             // Momentum: after a swipe the sea keeps gliding and eases out.
             .pointerInput(Unit) {
@@ -936,7 +979,7 @@ private fun IslandMap(
         AnimatedIslandSea(Modifier.fillMaxSize().graphicsLayer(), oversized = true)
         // the map's own coordinates (same layer as islands and boats): name plates are measured in them
         var mapCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
-        val plateBase = remember { androidx.compose.runtime.mutableStateMapOf<Long, androidx.compose.ui.geometry.Rect>() }
+        val plateBase = remember(ordered.map { it.id }) { androidx.compose.runtime.mutableStateMapOf<Long, androidx.compose.ui.geometry.Rect>() }
         Spacer(Modifier.fillMaxSize().onGloballyPositioned { mapCoords = it })
         // One lane per boat: each lane is the route shifted sideways in its open-water middle, so boats sail side by
         // side instead of stacking and still end at the berths.
@@ -1040,6 +1083,7 @@ private fun IslandMap(
         // Its own layer: the map's moving sea and swaying islands never make it draw again.
         Canvas(Modifier.fillMaxSize().graphicsLayer().semantics {
             set(MapRoutesKey, ordered.mapIndexedNotNull { i, f -> routes[i]?.let { MapRoute(f.id, null, it, null) } } + voyages.map { v -> MapRoute(v.friend.id, v.letter.id, v.path, v.boat, hullOf(v.boat)) })
+            set(MapPageFriendsKey, ordered.map { it.id })
             set(MapAreaKey, seaBounds)
             set(MapBerthsKey, listOf(0L to homeBerth) + ordered.mapIndexed { i, f -> f.id to friendBerths[i] })
             set(MapRepairKey, repairs)
@@ -1203,6 +1247,9 @@ private class Voyage(
 internal data class MapRoute(val friendId: Long, val letterId: Long?, val path: List<Offset>, val boat: Offset?,
     /** The boat's drawn box (hull, badge, "+N"), map px. */
     val hull: androidx.compose.ui.geometry.Rect? = null)
+/** Stable peer identities for the current bounded page and the selected peer's complete postal list. */
+internal val MapPageFriendsKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<Long>>("MapPageFriends")
+internal val MapPeerLettersKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<Long>>("MapPeerLetters")
 /** The map's drawing area, map px. */
 internal val MapAreaKey = androidx.compose.ui.semantics.SemanticsPropertyKey<androidx.compose.ui.geometry.Rect>("MapArea")
 internal val MapRoutesKey = androidx.compose.ui.semantics.SemanticsPropertyKey<List<MapRoute>>("MapRoutes")

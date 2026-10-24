@@ -74,6 +74,8 @@ jobs:
             -Pandroid.injected.signing.key.alias=androiddebugkey \
             -Pandroid.injected.signing.key.password=android \
             testDebugUnitTest \
+            --tests '*IslandMap*Test' \
+            --tests '*HarbourRouteTest' \
             --tests '*IslandEdge*Test' \
             --tests '*IslandGroundTest' \
             --tests '*IslandMasksTest' \
@@ -116,13 +118,13 @@ jobs:
           if not found or found.group(1).lower() != os.environ['EXPECTED_SIGNER'].lower():
               raise SystemExit('Unexpected APK signer; refuse delivery')
           out = Path('dist'); out.mkdir()
-          target = out / 'GS-Layermaxxing-Gerfried-v7.9.14-post-test3.apk'
+          target = out / 'GS-Layermaxxing-Gerfried-v7.9.14-insel-fix1.apk'
           shutil.copy2(source, target)
           manifest = {'commit': os.environ['GITHUB_SHA'], 'branch': os.environ['GITHUB_REF_NAME'],
                       'file': target.name, 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
                       'signer_sha256': found.group(1).lower(), 'bytes': target.stat().st_size,
-                      'application_id': 'at.gregor.layermaxxing.gerfried', 'version_code': 76,
-                      'version_name': '7.9.14-post-test3', 'test_candidate_only': True,
+                      'application_id': 'at.gregor.layermaxxing.gerfried', 'version_code': 77,
+                      'version_name': '7.9.14-insel-fix1', 'test_candidate_only': True,
                       'client_grid_version': int(current_match.group(1), 0), 'server_grid_version': expected_grid,
                       'no_deployment': True, 'full_regression_status': 'separate hard-failing job'}
           (out / 'BUILD-MANIFEST.json').write_text(json.dumps(manifest, indent=2))
