@@ -21,7 +21,10 @@ internal object CrashDiagnostics {
     private lateinit var metadata: CrashMetadata
 
     @Synchronized fun install(context: Context) {
-        if (handler != null) return
+        val current = Thread.getDefaultUncaughtExceptionHandler()
+        // A new Application/test sandbox or another library may replace the process-global
+        // handler. Do not mistake a stale local reference for a currently installed handler.
+        if (handler != null && current === handler) return
         // Construct private storage and static metadata before installing; no SessionStore/API access.
         val store = CrashStorage(File(context.filesDir, "crash-diagnostics"))
         metadata = CrashMetadata(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.BUILD_TYPE, Build.VERSION.SDK_INT, Build.MODEL)
@@ -29,7 +32,7 @@ internal object CrashDiagnostics {
         // Prebuilt fallback avoids traversing stacks/causes when the VM is out of heap.
         val emergency = CrashFormatter.header(metadata, CrashMemory(0, 0, 0, 0, 0), System.currentTimeMillis()) +
             "Java crash: java.lang.OutOfMemoryError; emergency metadata captured at startup; memory unavailable.\n"
-        val installed = CrashUncaughtHandler(Thread.getDefaultUncaughtExceptionHandler(), { error ->
+        val installed = CrashUncaughtHandler(current, { error ->
             if (error is OutOfMemoryError) store.save(emergency)
             else store.save(CrashFormatter.report(error, metadata, memory(), store.events(), System.currentTimeMillis()))
         }, {
