@@ -76,7 +76,7 @@ import kotlinx.coroutines.launch
 class MainActivity : FragmentActivity() {
     override fun onPostResume() {
         super.onPostResume()
-        if (Build.VERSION.SDK_INT < 33) return
+        if (CrashDiagnostics.pending() || Build.VERSION.SDK_INT < 33) return
         val permissionPrefs = getSharedPreferences("layermaxxing_permissions", MODE_PRIVATE)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
             !permissionPrefs.getBoolean("notifications_asked", false)) {
@@ -92,6 +92,7 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            CrashDiagnosticsStartup {
             val store = remember { SessionStore(this) }
             var theme by remember { mutableStateOf(store.theme) }
             remember { DebugMode.hitboxes.value = store.debugHitboxes; true }
@@ -209,6 +210,7 @@ class MainActivity : FragmentActivity() {
                     }
                 }
             } }
+            }
         }
     }
 }

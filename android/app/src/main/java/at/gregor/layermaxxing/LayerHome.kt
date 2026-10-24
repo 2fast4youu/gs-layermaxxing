@@ -374,6 +374,8 @@ fun LayerHome(
         friendLabels = friendLabels.toMutableMap().apply { if (label == null) remove(id) else put(id, label) }
         FriendLabels.save(context, labelAccount, friendLabels)
     }
+    // Synchronous and deduplicated: survives even a first child-composition crash.
+    CrashDiagnostics.tab(tab)
     val fullScreenPlace = tab == MainTab.CASTLES || openThreadFriend != null || peopleOpen || sparksOpen || hub != null || topicScope != null
     // The valley is a painted world, so it runs under the system bars instead of
     // sitting in a window of app background: a letterboxed plate inside inset
@@ -416,6 +418,7 @@ fun LayerHome(
             else Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
         ) {
             if (tab == MainTab.CASTLES) { villageStateHolder.SaveableStateProvider("isles_${store.serverProfile.key}_${store.name}") {
+                CrashDiagnosticsIslandEntry(friends.size, messages.size + outbox.size, PlacementRule.CURRENT) {
                 IslandWorld(
                     labels = friendLabels,
                     onLabel = { id, label -> saveFriendLabel(id, label) },
@@ -475,6 +478,7 @@ fun LayerHome(
                         }
                     },
                 )
+                }
             } }
             val roomPlace = when {
                 hub == "conversations" || openThreadFriend != null -> ValleyDestination.CONVERSATIONS

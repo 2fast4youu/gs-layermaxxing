@@ -94,7 +94,7 @@ class IslandStartUiTest {
         assertTrue("top left: $b", b.left.value < root.right.value * .3f && b.top.value < root.bottom.value * .15f)
         rule.onAllNodesWithText("Übersicht")[0].assertExists()
         plate.performClick(); tick(900)
-        rule.onAllNodesWithText("Übersicht · alle Inseln")[0].assertExists()
+        rule.onAllNodesWithText("Übersicht · 0 Freunde")[0].assertExists()
         rule.onAllNodesWithContentDescription("Ansicht: Meine Insel").assertCountEquals(0)
     }
 
@@ -102,7 +102,7 @@ class IslandStartUiTest {
         start(built(1))
         rule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         tick(900)
-        rule.onAllNodesWithText("Übersicht · alle Inseln")[0].assertExists()
+        rule.onAllNodesWithText("Übersicht · 0 Freunde")[0].assertExists()
     }
 
     // 3) + 4) empty island: stage 0 free, grey reasons, no section names in the strip --------------------

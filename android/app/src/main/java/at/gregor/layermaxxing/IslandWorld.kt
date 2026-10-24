@@ -251,6 +251,13 @@ internal fun IslandWorld(
     val owner = ownId?.let { id -> islandScope?.let { IslandOwner(it, id) } }
     // 7.9.13: the last island the server really sent for exactly this server/account/user shows at once.
     var home by remember { mutableStateOf(IslandCache.get(owner)) }
+    // Raw view may contain a peer ID. Only the coarse fixed enum leaves this scope.
+    CrashDiagnostics.island(when {
+        place != null -> CrashIslandView.PLACE
+        view == "map" -> CrashIslandView.MAP
+        view == "home" -> CrashIslandView.HOME
+        else -> CrashIslandView.VISIT
+    }, friends.size, letters.size, home?.construction?.gridVersion ?: PlacementRule.CURRENT)
     var load by remember { mutableStateOf(IslandLoad(loading = ownId != null)) }
     val retry = remember { kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED) }
     var visited by remember { mutableStateOf<ApiClient.HomeIsland?>(null) }

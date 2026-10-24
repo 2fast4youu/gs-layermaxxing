@@ -213,6 +213,7 @@ private fun MoreHub(
         item { HorizontalDivider(Modifier.padding(vertical = 6.dp)) }
         item { MenuRow(R.drawable.ico_appearance, "Darstellung", "Modus, Design, App-Sperre") { onDest(MoreDest.APPEARANCE) } }
         item { MenuRow(R.drawable.ico_security, "Konto & Sicherheit", "Passwort, Geräte, Blockierungen") { onDest(MoreDest.ACCOUNT) } }
+        item { CrashDiagnosticsEntry() }
         item { MenuRow(R.drawable.ico_about, "Über die App", "Server und Version") { onDest(MoreDest.ABOUT) } }
         item { Spacer(Modifier.height(12.dp)) }
         item { OutlinedButton(onClick = onLogout, Modifier.fillMaxWidth().height(48.dp)) { Text("Auf diesem Gerät abmelden") } }
