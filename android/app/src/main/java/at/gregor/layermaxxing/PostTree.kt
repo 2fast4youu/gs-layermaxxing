@@ -486,7 +486,8 @@ internal fun LetterTreePlace(
                     }
                     if (idle && level == 0) {
                         val tag = g.box(LetterTree.Box(.24f, .135f, .44f, .18f))
-                        RopeFilterTag(tag, person != null || view != PostViews.View.ALL || query.isNotBlank()) { focus = TreeFocus.FILTER }
+                        val clearTag = tag.copy(top = minOf(tag.top, g.box(anchors.belt).top - 52.dp))
+                        RopeFilterTag(clearTag, person != null || view != PostViews.View.ALL || query.isNotBlank()) { focus = TreeFocus.FILTER }
                         val strap = g.box(anchors.belt)
                         PostalTimeRail(page, pages, true, modifier = Modifier.offset(strap.left, strap.top).size(strap.w, maxOf(48.dp, strap.h)),
                             summary = timeSummary(page, pages, onPage).replace(Regex("\\.\\d{4}"), ""), painted = true, onScrubbing = { timeScrubbing = it }) { page = it }
@@ -1000,7 +1001,7 @@ private fun WaxDrop(r: DpRect) {
 @Composable
 private fun WaxWritingCue(bucket: DpRect, viewportWidth: Dp, onClick: () -> Unit) {
     val sheet = EnvelopeArt.of(LocalContext.current.resources).sheet
-    val width = maxOf(bucket.w, 96.dp).coerceAtMost(viewportWidth - 16.dp)
+    val width = 80.dp.coerceAtMost(viewportWidth - 16.dp)
     val left = (bucket.left + (bucket.w - width) / 2).coerceIn(8.dp, viewportWidth - 8.dp - width)
     val attachment = bucket.left + bucket.w / 2 - left
     Box(Modifier.offset(left, bucket.bottom - 32.dp)
@@ -1012,7 +1013,7 @@ private fun WaxWritingCue(bucket: DpRect, viewportWidth: Dp, onClick: () -> Unit
                 srcSize = IntSize((sheet.width * .8f).toInt(), (sheet.height * .12f).toInt()),
                 dstSize = IntSize(size.width.toInt(), size.height.toInt()), colorFilter = EnvelopeArt.sheetLight)
         }, Alignment.Center) {
-            Text("Schreiben", style = ink(12f).copy(fontWeight = FontWeight.SemiBold), maxLines = 1, textAlign = TextAlign.Center,
+            Text("Schreiben", style = ink(10f).copy(fontWeight = FontWeight.SemiBold), maxLines = 1, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 3.dp).testTag("tree-wax-writing-cue"))
         }
     }
