@@ -484,7 +484,11 @@ internal fun LetterTreePlace(
                     if (idle) {
                         val tag = g.box(anchors.filterTag)
                         val clearTag = if (level == 0) tag.copy(top = minOf(tag.top, g.box(anchors.belt).top - 52.dp)) else tag
-                        val strap = g.box(if (level == 0) anchors.belt else anchors.timeRail)
+                        val registeredStrap = g.box(if (level == 0) anchors.belt else anchors.timeRail)
+                        // Keep POST3 Filter clear of the counter letters. Move only the rail down
+                        // on the apron, leaving 4dp after RopeFilterTag's entire expanded target.
+                        val strap = if (level == 3) registeredStrap.copy(top = maxOf(registeredStrap.top,
+                            clearTag.top + maxOf(48.dp, clearTag.h) + 4.dp)) else registeredStrap
                         PostalTimeRail(page, pages, true, modifier = Modifier.offset(strap.left, strap.top).size(strap.w, maxOf(48.dp, strap.h)),
                             summary = timeSummary(page, pages, onPage).replace(Regex("\\.\\d{4}"), ""), painted = level == 0,
                             furniture = level > 0, onScrubbing = { timeScrubbing = it }) { page = it }

@@ -58,6 +58,10 @@ open class PostalPhoneRepairTest {
         markedUnread = false, oneTime = false, createdAt = 2000000000L - it * 3600L) }
     private fun node(tag: String) = rule.onNodeWithTag(tag, useUnmergedTree = true)
     private fun exists(tag: String) = rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    // Source-art knob travel, also exercised by PostAllStagesProductionTest. The rail's
+    // padded width is not the handle's travel; keep this oracle independent of production input.
+    private fun timeRailX(fraction: Float, width: Int): Float = if (level == 0)
+        width * (70.5f + 120f * fraction) / 261f else width * (28f + 554f * fraction) / 610f
     private fun phase() = ScenePhase.entries.first { exists("tree-scene-${it.name}") }
     private fun frames(n: Int = 3) {
         repeat(n) {
@@ -278,6 +282,16 @@ open class PostalPhoneRepairTest {
         val rail = node("post-time-rail").fetchSemanticsNode().boundsInRoot
         val density = rule.activity.resources.displayMetrics.density
         assertTrue(rail.height >= 48 * density - 1)
+        if (level == 3) {
+            val filterNode = node("post-filter").fetchSemanticsNode()
+            val filter = filterNode.boundsInRoot
+            assertTrue("Full 48dp Filter layout", filterNode.size.width >= 48*density-1 && filterNode.size.height >= 48*density-1)
+            assertTrue("Full 48dp rail layout", node("post-time-rail").fetchSemanticsNode().size.height >= 48*density-1)
+            assertFalse("Full Filter and rail targets must be disjoint: $filter / $rail", filter.overlaps(rail))
+            assertTrue("4dp between full POST3 targets", rail.top-filter.bottom >= 4*density-1)
+            assertTrue("Full Filter inside root", root.contains(filter.topLeft) && filter.right <= root.right && filter.bottom <= root.bottom)
+            assertTrue("Full rail inside root", root.contains(rail.topLeft) && rail.right <= root.right && rail.bottom <= root.bottom)
+        }
         if (level == 0) {
             assertTrue("Rail must be on upper wood strap: $rail", rail.bottom < root.center.y)
             assertEquals(9, node("tree-scene-REST").fetchSemanticsNode().config[PostalVisibleMailIdsKey].size)
@@ -289,15 +303,17 @@ open class PostalPhoneRepairTest {
         val pages = (mail.size + perPage - 1) / perPage
         if (level == 0) assertEquals(14, pages)
         for (page in 0 until pages) {
-            val fraction = PostalStorageMotion.fractionAt(page, pages)
+            val fraction = 1f - page.toFloat() / (pages - 1)
+            val knob = node("post-time-knob").fetchSemanticsNode().boundsInRoot
+            assertTrue("Physical knob must be on the rail: $knob in $rail", rail.contains(knob.center))
+            val start = knob.center - rail.topLeft
             node("post-time-rail").performTouchInput {
-                down(center)
-                val x = if (level == 0) width * (70.5f + 120f * fraction) / 261f else width * fraction
-                moveTo(Offset(x.coerceIn(1f, width - 1f), height / 2f), 300)
+                down(start)
+                moveTo(Offset(timeRailX(fraction, width), start.y), 300)
                 up()
             }; frames(20)
             val scene = node("tree-scene-REST").fetchSemanticsNode().config
-            assertEquals(page, scene[PostalTimePageKey])
+            assertEquals("POST$level physical knob must reach page $page", page, scene[PostalTimePageKey])
             val faces = scene[PostalVisibleMailIdsKey]
             assertEquals(PostalMailGroups.faces(TreeOrder.page(ordered, page, perPage), level).map { it.id }, faces)
             // POST3 exposes all tray members through the real mail selector.

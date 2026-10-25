@@ -184,8 +184,27 @@ open class PostalPhoneFeedbackTest {
     }
     @Test fun realTimeDragSlidesMailAndRemovesStaleTapTargets() {
         val h = CodexMotionHarness(rule); h.start(letters = PostPilotFixtures.letters, level = level, fontScale = fontScale)
+        // Match the physical sprite travel used by PostAllStagesProductionTest, not the
+        // generic swipe inset (which can stop short of the present-day knob position).
+        fun fractionX(fraction: Float, width: Int): Float = if (level == 0)
+            width * (70.5f + 120f * fraction) / 261f else width * (28f + 554f * fraction) / 610f
+        fun dragKnob(fraction: Float) {
+            val rail = h.tag("post-time-rail").fetchSemanticsNode().boundsInRoot
+            val knob = h.tag("post-time-knob").fetchSemanticsNode().boundsInRoot
+            assertTrue("Physical knob must be on the rail: $knob in $rail", rail.contains(knob.center))
+            val start = knob.center - rail.topLeft
+            h.tag("post-time-rail").performTouchInput {
+                down(start)
+                moveTo(Offset(fractionX(fraction, width), start.y), 350)
+                up()
+            }
+        }
+        fun page() = h.tag("tree-scene-REST").fetchSemanticsNode().config[PostalTimePageKey]
+        val capacity = listOf(9, 4, 6, 6)[level]
+        val lastPage = (PostPilotFixtures.letters.size - 1) / capacity
+        assertEquals(0, page())
         assertTrue(h.exists("tree-letter-1"))
-        h.tag("post-time-rail").performTouchInput { swipeLeft(durationMillis = 350) }
+        dragKnob(0f)
         rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
         h.frames(3)
         assertFalse(h.exists("tree-letter-1"))
@@ -194,11 +213,13 @@ open class PostalPhoneFeedbackTest {
         assertTrue("a real mail slide, not a number-only change", envelopes.any { it.config[PostalPageSlideKey] > 0f })
         assertEquals(0, h.calls)
         h.frames(20)
+        assertEquals("Left knob endpoint must reach oldest page", lastPage, page())
         val settled = rule.onAllNodes(SemanticsMatcher("mail motion") { it.config.getOrNull(PostalPageSlideKey) != null }, useUnmergedTree = true).fetchSemanticsNodes()
         assertTrue(settled.all { it.config[PostalPageSlideKey] == 0f })
-        h.tag("post-time-rail").performTouchInput { swipeRight(durationMillis = 350) }
+        dragKnob(1f)
         rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
         h.frames(20)
+        assertEquals("Right knob endpoint must return to first page", 0, page())
         assertTrue(h.exists("tree-letter-1")); assertEquals(0, h.calls)
     }
     @Test fun emptyMailHasHonestDisabledTime() {

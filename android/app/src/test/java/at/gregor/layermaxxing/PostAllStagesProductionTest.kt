@@ -164,6 +164,7 @@ class PostAllStagesProductionTest {
     @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun post1Compact360() = pilot(1, 1.5f)
     @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun post2Compact360() = pilot(2, 1.5f)
     @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun post3Compact360() = pilot(3, 1.5f)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun post3Compact320() = pilot(3, 1.5f)
 
     private fun ids() = node("tree-scene-REST").fetchSemanticsNode().config[PostalVisibleMailIdsKey]
     private fun page() = node("tree-scene-REST").fetchSemanticsNode().config[PostalTimePageKey]
@@ -230,8 +231,36 @@ class PostAllStagesProductionTest {
         actualFaces(mail.take(capacity).map { it.id })
         for (tag in listOf("post-filter", "post-time-rail")) {
             contained(tag)
-            val r = node(tag).fetchSemanticsNode().boundsInRoot
+            val control = node(tag).fetchSemanticsNode()
+            val r = control.boundsInRoot
             assertTrue("48dp control $tag", r.width >= 48*density-1 && r.height >= 48*density-1)
+            assertTrue("48dp actual layout $tag", control.size.width >= 48*density-1 && control.size.height >= 48*density-1)
+            assertEquals("Unclipped target width $tag", control.size.width.toFloat(), r.width, 1f)
+            assertEquals("Unclipped target height $tag", control.size.height.toFloat(), r.height, 1f)
+        }
+        if (level == 3) {
+            val filter = node("post-filter").fetchSemanticsNode().boundsInRoot
+            val rail = node("post-time-rail").fetchSemanticsNode().boundsInRoot
+            assertFalse("Full POST3 Filter and rail targets must be disjoint: $filter / $rail", filter.overlaps(rail))
+            assertTrue("4dp between full POST3 targets: $filter / $rail", rail.top - filter.bottom >= 4*density-1)
+            mail.take(capacity).forEach { m ->
+                val env = node("tree-env-${m.id}").fetchSemanticsNode()
+                val frame = env.config[StorageFrameKey]
+                // SceneEnvelope projects its nominal landscape box into these physical corners.
+                val scale = env.boundsInRoot.width / frame.slot.width
+                val corners = frame.corners.map { p -> env.boundsInRoot.topLeft +
+                    Offset(p.x-frame.slot.left, p.y-frame.slot.top-frame.dy) * scale }
+                val envelope = androidx.compose.ui.geometry.Rect(corners.minOf { it.x }, corners.minOf { it.y },
+                    corners.maxOf { it.x }, corners.maxOf { it.y })
+                assertFalse("POST3 Filter clear of envelope ${m.id}: $filter / $envelope", filter.overlaps(envelope))
+                assertFalse("POST3 rail clear of envelope ${m.id}: $rail / $envelope", rail.overlaps(envelope))
+                val hit = node("tree-letter-${m.id}").fetchSemanticsNode().boundsInRoot
+                assertFalse("POST3 Filter clear of letter target ${m.id}", filter.overlaps(hit))
+                assertFalse("POST3 rail clear of letter target ${m.id}", rail.overlaps(hit))
+            }
+            println("POST3 actual root=$root density=$density filter=$filter rail=$rail " +
+                "ink=${node("post-filter-ink").fetchSemanticsNode().boundsInRoot} " +
+                "knob=${node("post-time-knob").fetchSemanticsNode().boundsInRoot}")
         }
         node("post-controls").assertDoesNotExist(); node("tree-belt").assertDoesNotExist(); node("tree-rope").assertDoesNotExist()
         capture("rest120")
@@ -281,7 +310,7 @@ class PostAllStagesProductionTest {
             width * (70.5f + 120f * fraction) / 261f else width * (28f + 554f * fraction) / 610f
         node("post-time-rail").performTouchInput {
             down(knob.center - rail.topLeft)
-            moveTo(Offset(fractionX(0f,width),height/2f),300)
+            moveTo(Offset(fractionX(0f,width),knob.center.y-rail.top),300)
         }; frames(3)
         assertEquals(pages - 1, page())
         // The rail owns the held gesture; mail targets are intentionally disabled until release.
@@ -292,8 +321,12 @@ class PostAllStagesProductionTest {
         assertEquals(pages - 1, page())
         actualFaces(mail.drop((pages-1)*capacity).map { it.id })
         restore.emulateSavedInstanceStateRestore(); frames(40); assertEquals(pages-1,page())
+        val restoredRail = node("post-time-rail").fetchSemanticsNode().boundsInRoot
+        val restoredKnob = node("post-time-knob").fetchSemanticsNode().boundsInRoot
+        assertTrue(restoredRail.contains(restoredKnob.center))
         node("post-time-rail").performTouchInput {
-            down(center); moveTo(Offset(fractionX(1f,width),height/2f),300); up()
+            down(restoredKnob.center - restoredRail.topLeft)
+            moveTo(Offset(fractionX(1f,width),restoredKnob.center.y-restoredRail.top),300); up()
         }; frames(40)
         assertEquals(0,page()); actualFaces(mail.take(capacity).map { it.id })
         select(); capture("selectedsealed"); release = true
