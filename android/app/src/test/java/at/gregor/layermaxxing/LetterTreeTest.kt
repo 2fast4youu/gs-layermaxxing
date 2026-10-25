@@ -164,7 +164,7 @@ class LetterTreeTest {
         assertEquals(listOf(1L, 14), onTrunk())
         tap("post-status")
         val counts = PostViews.counts(letters, emptyMap<Long, Any>(), 40, "")
-        for (v in PostViews.View.entries) assertEquals("${v.label}: ${counts[v]}", desc("tree-window-${v.name}"))
+        for (v in PostViews.View.entries) assertEquals("${v.label}: ${counts[v]} Briefe", desc("tree-window-${v.name}"))
     }
 
     @Test fun theFountainPenWritesANewLetter() {
@@ -329,11 +329,10 @@ class LetterTreeTest {
     @Test fun pixelReview1074NamesStatesCountsAndTheArrowAreWholeOnASmallPhoneWithALargeFont() {
         start()
         captureInkFixture("compact360-font1.5-current")
-        // Every native identity fits its paper; state remains in each letter accessibility label.
-        val identityNodes = rule.onAllNodes(SemanticsMatcher("native identity") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("post-identity-") == true }, useUnmergedTree = true).fetchSemanticsNodes()
-        val ink = identityNodes.flatMap { wholeTexts(it.config[SemanticsProperties.TestTag]) }
+        // Restore the original envelope's name AND state ink contract, not the rejected paper-card identities.
+        val ink = wholeTexts("tree-ink")
         val shown = onTrunk()
-        assertEquals("identity on each of ${shown.size} letters", shown.size, ink.size)
+        assertEquals("name + state on each of ${shown.size} letters", shown.size * 2, ink.size)
         // all ink lines lie on their envelope / sheet: inside the letter's touch area (= the painted thing)
         // (the painted thing: the envelope sprite where one hangs, else the sheet)
         val things = rule.onAllNodes(SemanticsMatcher("e") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("tree-env-") == true }, useUnmergedTree = true).fetchSemanticsNodes().map { it.boundsInRoot } +
@@ -349,7 +348,7 @@ class LetterTreeTest {
             assertTrue("$r on the paper of $e", r.bottom <= e.top + e.height * .95f + 1 * density && r.left >= e.left && r.right <= e.right)
         }
         // names have a readable size: no name drawn more than a third smaller than the largest one
-        val names = ink.map { it.size.height }
+        val names = ink.filterIndexed { k, _ -> k % 2 == 0 }.map { it.size.height }
         assertTrue("$names", names.min() >= names.max() * .66f)
         // (4) counts belong to labelled controls, never detached ink over the furniture.
         tap("post-filter"); assertTrue(wholeTexts("post-status").isNotEmpty())
@@ -371,6 +370,6 @@ class LetterTreeTest {
         // (3) the older page: "offen" / "gesendet" whole on the opened envelopes
         tap("tree-time-back")
         captureInkFixture("compact360-font1.5-older")
-        assertEquals(5, rule.onAllNodes(SemanticsMatcher("older native identities") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("post-identity-") == true }, useUnmergedTree = true).fetchSemanticsNodes().flatMap { wholeTexts(it.config[SemanticsProperties.TestTag]) }.size)
+        assertEquals(10, wholeTexts("tree-ink").size)
     }
 }

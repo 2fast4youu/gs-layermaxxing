@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 
@@ -111,7 +112,7 @@ internal fun PostalFilterRow(label: String, tag: String, value: String? = null, 
         .background(if (chosen == true) Color(0xFFEDE9E0) else Color.Transparent,
             androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
         .clickable(onClickLabel = label, onClick = onClick)
-        .semantics { role = if (chosen == null) Role.Button else Role.RadioButton; chosen?.let { selected = it }; slot?.let { set(SceneSlotKey, it) } }
+        .semantics { role = if (chosen == null) Role.Button else Role.RadioButton; contentDescription = if (value == null) label else "$label: $value"; chosen?.let { selected = it }; slot?.let { set(SceneSlotKey, it) } }
         .testTag(tag).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 20.sp,

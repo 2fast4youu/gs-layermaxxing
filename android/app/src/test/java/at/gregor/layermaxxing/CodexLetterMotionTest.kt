@@ -64,8 +64,11 @@ internal class CodexMotionHarness(
     fun phase() = ScenePhase.entries.first { exists("tree-scene-${it.name}") }
     fun sample() = tag("tree-scene-${phase().name}").fetchSemanticsNode().config[LetterMotionKey]
     fun frames(n: Int = 3) {
-        repeat(n) { rule.mainClock.advanceTimeByFrame() }
-        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        repeat(n) {
+            rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
+            rule.mainClock.advanceTimeByFrame()
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        }
         rule.waitForIdle()
     }
     fun until(target: ScenePhase, limit: Int = 320) {
@@ -74,7 +77,7 @@ internal class CodexMotionHarness(
     }
     fun touch(name: String) {
         if (name in listOf("post-person", "post-status", "post-mail") && !exists(name) && exists("post-filter")) { tag("post-filter").performTouchInput { click(center) }; frames() }
-        tag(name).performTouchInput { click(center) }; rule.waitForIdle() }
+        tag(name).performTouchInput { click(center) }; frames() }
     fun flushPointerState() {
         rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
     }

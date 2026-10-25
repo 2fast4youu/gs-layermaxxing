@@ -145,17 +145,28 @@ open class PostalPhoneFeedbackTest {
         h.until(ScenePhase.READING)
         // Real drags, with observable progress and no unbounded performScrollTo loop under
         // the paused clock. Long letters can require several gestures before the footer appears.
-        while (h.tag("tree-letter-unread").fetchSemanticsNode().boundsInRoot.isEmpty) {
+        while (true) {
+            val unread = h.tag("tree-letter-unread").fetchSemanticsNode()
+            val needed = minOf(48f * rule.activity.resources.displayMetrics.density, unread.size.height.toFloat())
+            if (!unread.boundsInRoot.isEmpty && unread.boundsInRoot.height >= needed - 1f) break
             val range = h.tag("tree-page").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange]
             val before = range.value()
-            h.tag("tree-page").performTouchInput { swipeUp() }
+            h.tag("tree-page").performTouchInput {
+                down(Offset(width * .5f, height * .78f))
+                moveTo(Offset(width * .5f, height * .20f), 600)
+                // Stop before lifting: the following physical tap is not a fling-cancel gesture.
+                advanceEventTime(150)
+                up()
+            }
             rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
             h.frames(20)
             val after = h.tag("tree-page").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange].value()
             assertTrue("Paper must make real scroll progress toward unread action: $before -> $after", after > before)
         }
         h.tag("tree-letter-unread").assertIsDisplayed()
+        println("Unread before physical tap: phase=${h.phase()} marks=${h.marks} rect=${h.tag("tree-letter-unread").fetchSemanticsNode().boundsInRoot}")
         h.touch("tree-letter-unread")
+        println("Unread after physical tap: phase=${h.phase()} marks=${h.marks}")
         h.until(ScenePhase.RESEALING); h.frames(5); blankTap(); h.frames()
         assertEquals(ScenePhase.SEALED, h.phase()); assertEquals(1, h.marks); assertEquals(0, h.calls)
     }
@@ -223,7 +234,7 @@ class PostalPhoneFeedbackSmall0Test : PostalPhoneFeedbackTest() {
     @Test fun restingMailInkIsNotHiddenBehindControls() {
         val h = CodexMotionHarness(rule)
         h.start(letters = PostPilotFixtures.letters, level = level, fontScale = fontScale)
-        val controls = h.tag("post-controls").fetchSemanticsNode().boundsInRoot
+        val controls = h.tag("post-filter").fetchSemanticsNode().boundsInRoot
         val ink = rule.onAllNodesWithTag("tree-ink", useUnmergedTree = true).fetchSemanticsNodes()
         assertTrue(ink.isNotEmpty())
         ink.forEach { node ->
