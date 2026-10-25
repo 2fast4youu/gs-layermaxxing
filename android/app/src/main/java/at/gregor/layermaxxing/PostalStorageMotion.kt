@@ -64,7 +64,7 @@ internal object PostalStorageMotion {
 /** A native brass runner, drawn on the furniture rather than a Material slider panel. Uses actual paging. */
 @Composable
 internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: Modifier = Modifier,
-                            summary: String = "", painted: Boolean = false,
+                            summary: String = "", painted: Boolean = false, furniture: Boolean = false,
                             onScrubbing: (Boolean) -> Unit = {}, onPage: (Int) -> Unit) {
     val last = (pages - 1).coerceAtLeast(0)
     var dragging by remember { mutableStateOf(false) }
@@ -82,17 +82,35 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
     // Pointer and moving photographed brass share the exact same source-art transform.
     fun fractionAtX(x: Float, width: Int): Float = if (painted)
         ((x / width * 261f - 70.5f) / 120f).coerceIn(0f, 1f)
+        else if (furniture) ((x / width * 610f - 28f) / 554f).coerceIn(0f, 1f)
         else (x / width).coerceIn(0f, 1f)
     val ink = Color(0xFF27180C)
     Column(modifier.graphicsLayer { alpha = if (active) 1f else .6f }) {
-        if (!painted) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        if (!painted && !furniture) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("← früher", color = ink, fontFamily = Kit.Display, fontSize = 11.sp, lineHeight = 14.sp)
             Text("◷", color = ink, fontFamily = Kit.Display, fontSize = 13.sp, lineHeight = 16.sp)
             Text("jetzt →", color = ink, fontFamily = Kit.Display, fontSize = 11.sp, lineHeight = 14.sp)
         }
-        if (!painted) Text(if (summary.isNotBlank()) summary else if (active) "Zeit ziehen · ${page + 1}/${last + 1}" else "Keine älteren Seiten", color = ink,
+        if (!painted && !furniture) Text(if (summary.isNotBlank()) summary else if (active) "Zeit ziehen · ${page + 1}/${last + 1}" else "Keine älteren Seiten", color = ink,
             fontFamily = Kit.Display, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth().testTag("post-time-label"))
-        BoxWithConstraints(if (painted) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(48.dp)) {
+        BoxWithConstraints(if (painted || furniture) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(48.dp)) {
+            if (furniture) {
+                val scale = maxWidth / 610f
+                val density = LocalDensity.current
+                Image(painterResource(R.drawable.post_time_track), contentDescription = null,
+                    modifier = Modifier.offset(y = scale * 24f).fillMaxWidth().height(scale * 56f))
+                Image(painterResource(R.drawable.post_time_handle), contentDescription = null,
+                    modifier = Modifier.offset {
+                        with(density) { IntOffset((scale * (28f + 554f * value - 24.5f)).roundToPx(),
+                            (scale * 27f).roundToPx()) }
+                    }.size(scale * 49f).testTag("post-time-knob"))
+                Box(Modifier.align(Alignment.TopEnd).offset(y = (-22).dp).fillMaxWidth(.64f), Alignment.Center) {
+                    Text(summary, color = Color(0xFFFFEBC5), fontFamily = Kit.Display, fontSize = 12.sp, lineHeight = 15.sp,
+                        style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xFF27180D), Offset(1f, 1f), 1f)),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp).testTag("post-time-label"))
+                }
+            }
             if (painted) {
                 val scale = maxWidth / 261f
                 val density = LocalDensity.current
@@ -109,7 +127,7 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                     modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(top = maxWidth / 261f * 23f)
                         .testTag("post-time-label"))
             }
-            Canvas(Modifier.fillMaxSize().then(if (painted) Modifier else Modifier.padding(horizontal = 22.dp)).testTag("post-time-rail")
+            Canvas(Modifier.fillMaxSize().then(if (painted || furniture) Modifier else Modifier.padding(horizontal = 22.dp)).testTag("post-time-rail")
                 .semantics {
                     contentDescription = "Briefzeit ziehen: links ältere Briefe, rechts Gegenwart. Seite ${page + 1} von ${last + 1}"
                     stateDescription = if (active) "Zeitreise verfügbar" else "Keine weitere Zeitseite verfügbar"
@@ -159,6 +177,7 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                     }
                     return@Canvas // One photographed moving knob, no floating second cursor.
                 }
+                if (furniture) return@Canvas // The scene brass supplies track and exactly one moving handle.
                 val y = size.height * .50f
                 drawLine(Color(0xF018100A), Offset(0f, y + 1.dp.toPx()), Offset(size.width, y + 1.dp.toPx()), 9.dp.toPx())
                 drawLine(Color(0xFFCBA55A), Offset(0f, y), Offset(size.width, y), 3.dp.toPx())
@@ -173,13 +192,13 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                     16.dp.toPx(), Offset(x, y))
                 for (dx in listOf(-5f, 0f, 5f)) drawLine(Color(0xFF54391F), Offset(x + dx.dp.toPx(), y - 7.dp.toPx()), Offset(x + dx.dp.toPx(), y + 7.dp.toPx()), 2.dp.toPx())
             }
-            if (active && page < last) Text(if (painted) "" else "‹", fontSize = 25.sp, color = ink,
+            if (active && page < last) Text(if (painted || furniture) "" else "‹", fontSize = 25.sp, color = ink,
                 modifier = Modifier.align(Alignment.CenterStart).size(48.dp).testTag("tree-time-back")
-                    .then(if (painted) Modifier.semantics { role = Role.Button; onClick("Ältere Briefe") { onPage((page + 1).coerceAtMost(last)); true } }
+                    .then(if (painted || furniture) Modifier.semantics { role = Role.Button; onClick("Ältere Briefe") { onPage((page + 1).coerceAtMost(last)); true } }
                         else Modifier.clickable(onClickLabel = "Ältere Briefe") { onPage((page + 1).coerceAtMost(last)) }))
-            if (active && page > 0) Text(if (painted) "" else "›", fontSize = 25.sp, color = ink,
+            if (active && page > 0) Text(if (painted || furniture) "" else "›", fontSize = 25.sp, color = ink,
                 modifier = Modifier.align(Alignment.CenterEnd).size(48.dp).testTag("tree-time-now")
-                    .then(if (painted) Modifier.semantics { role = Role.Button; onClick("Zurück zur Gegenwart") { onPage(0); true } }
+                    .then(if (painted || furniture) Modifier.semantics { role = Role.Button; onClick("Zurück zur Gegenwart") { onPage(0); true } }
                         else Modifier.clickable(onClickLabel = "Zurück zur Gegenwart") { onPage(0) }))
         }
     }

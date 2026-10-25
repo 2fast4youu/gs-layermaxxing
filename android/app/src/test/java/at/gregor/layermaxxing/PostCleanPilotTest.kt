@@ -47,7 +47,7 @@ class PostCleanPilotTest {
             d.frames(40)
             val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
             val px = rule.activity.resources.displayMetrics.density
-            for (name in listOf("post-person", "post-status", "post-mail", "post-time-rail")) {
+            for (name in listOf("post-filter", "post-time-rail")) {
                 val r = d.tag(name).fetchSemanticsNode().boundsInRoot
                 assertTrue("$l $name actual clickable size $r", r.width >= 48 * px - 1 && r.height >= 48 * px - 1)
                 assertTrue("$l $name contained $r", r.left >= 0 && r.right <= root.right && r.top >= 64 * px && r.bottom <= root.bottom)
@@ -60,10 +60,13 @@ class PostCleanPilotTest {
                 file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
             }
             if (tapPickers) {
+                d.tag("post-filter").performTouchInput { click(center) }; d.frames()
                 d.tag("post-person").performTouchInput { click(center) }; d.frames()
                 assertTrue("$l person picker opens", d.exists("post-person-search")); d.tag("post-selector-close").performTouchInput { click(center) }; d.frames()
+                d.tag("post-filter").performTouchInput { click(center) }; d.frames()
                 d.tag("post-status").performTouchInput { click(center) }; d.frames()
                 assertTrue("$l status picker opens", d.exists("tree-window-UNREAD")); d.tag("post-selector-close").performTouchInput { click(center) }; d.frames()
+                d.tag("post-filter").performTouchInput { click(center) }; d.frames()
                 d.tag("post-mail").performTouchInput { click(center) }; d.frames()
                 assertTrue("$l mail picker opens", d.exists("post-search")); d.tag("post-selector-close").performTouchInput { click(center) }; d.frames()
             }
@@ -83,9 +86,11 @@ class PostCleanPilotTest {
             rule.runOnIdle { level = l; androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
             org.robolectric.shadows.ShadowLooper.idleMainLooper()
             d.frames()
+            val rail = d.description("post-time-rail")
+            d.tap("post-filter")
             val person = d.description("post-person")
             val status = d.description("post-status")
-            val rail = d.description("post-time-rail")
+            d.back()
             for (picker in listOf("post-mail", "post-person", "post-status")) {
                 d.tap(picker)
                 assertTrue("POST$l $picker opened", d.exists("post-selector"))
@@ -93,9 +98,11 @@ class PostCleanPilotTest {
                 assertFalse("POST$l $picker dismissed by one Back", d.exists("post-selector"))
                 assertTrue("POST$l remains at rest", d.exists("tree-scene-REST"))
                 assertFalse(rule.activity.isFinishing)
+                assertEquals(rail, d.description("post-time-rail"))
+                d.tap("post-filter")
                 assertEquals(person, d.description("post-person"))
                 assertEquals(status, d.description("post-status"))
-                assertEquals(rail, d.description("post-time-rail"))
+                d.back()
             }
         }
     }
@@ -122,7 +129,7 @@ class PostCleanPilotTest {
             val px = rule.activity.resources.displayMetrics.density
             assertFalse("no generic modal or function wall", d.exists("post-letters") || d.exists("post-people") || d.exists("tree-page"))
             assertTrue(d.keys("person:").isEmpty())
-            for (name in listOf("post-person", "post-status", "post-mail", "post-time-rail")) {
+            for (name in listOf("post-filter", "post-time-rail")) {
                 val r = d.tag(name).fetchSemanticsNode().boundsInRoot
                 assertTrue("$l $name $r", r.width >= 48 * px - 1 && r.height >= 48 * px - 1)
                 assertTrue("$l $name visible", r.left >= -1 && r.right <= root.right + 1 && r.top >= 64 * px - 1 && r.bottom <= root.bottom + 1)
@@ -140,7 +147,7 @@ class PostCleanPilotTest {
             val counts = PostViews.counts(letters, emptyMap<Long, Any>(), 40, "")
             for (v in PostViews.View.entries) {
                 d.scrollTo("tree-window-${v.name}")
-                assertEquals("${v.label}: ${counts[v]}", d.description("tree-window-${v.name}"))
+                assertEquals("${v.label}: ${counts[v]} Briefe", d.description("tree-window-${v.name}"))
                 val r = d.tag("tree-window-${v.name}").fetchSemanticsNode().boundsInRoot
                 assertTrue("$l ${v.label} visible $r", r.left >= -1 && r.right <= root.right + 1 && r.top >= 64 * px - 1 && r.bottom <= root.bottom + 1)
             }
@@ -149,7 +156,9 @@ class PostCleanPilotTest {
             val both = PostViews.shown(letters, emptyMap<Long, Any>(), PostViews.View.UNREAD, 40, "")
             assertTrue(both.isNotEmpty())
             assertEquals(both.map { "letter:${it.id}" }.toSet(), d.letters())
+            d.tap("post-filter")
             assertTrue(d.description("post-person").contains("Mira"))
+            d.back()
             val first = both.first()
             d.letter(first.id)
             val state = Conversations.letterState(first, false)
@@ -165,9 +174,11 @@ class PostCleanPilotTest {
             d.tap("post-person"); assertTrue(d.keys("person:").isNotEmpty()); d.back()
             assertTrue(d.keys("person:").isEmpty())
             d.tap("post-status")
-            assertEquals("Ungelesen: ${counts[PostViews.View.UNREAD]}", d.description("tree-window-UNREAD"))
+            assertEquals("Ungelesen: ${counts[PostViews.View.UNREAD]} Briefe", d.description("tree-window-UNREAD"))
             d.back()
+            d.tap("post-filter")
             assertTrue(d.description("post-person").contains("Mira"))
+            d.back()
         }
     }
 }

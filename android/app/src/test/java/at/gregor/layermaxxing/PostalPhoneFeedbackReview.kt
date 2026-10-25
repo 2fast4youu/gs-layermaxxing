@@ -43,7 +43,7 @@ class PostalPhoneFeedbackReview {
         try {
             h.start(letters = PostPilotFixtures.letters, level = level, fontScale = if (small) 1.5f else 1f)
             val ordered = TreeOrder.order(PostPilotFixtures.letters, h.opened)
-            val pageSize = if (level == 3) 9 else PostRegistration.of(level).sheets.size
+            val pageSize = PostRegistration.of(level).sheets.size
             fun expected(page: Int) = PostalMailGroups.faces(TreeOrder.page(ordered, page, pageSize), level).map { it.id }
             check(h.timePage() == 0 && h.visibleMailIds() == expected(0))
             val currentIds = h.visibleMailIds()
@@ -77,11 +77,11 @@ class PostalPhoneFeedbackReview {
             save("inside-paper-stays-reading")
             h.outside(); h.flushPointerState(); h.until(ScenePhase.REST); h.frames(20)
             check(h.timePage() == 0 && h.calls == 2 && h.locked.isEmpty())
-            h.tag("post-controls").assertIsDisplayed(); h.tag("tree-lifted").assertDoesNotExist()
+            h.tag("post-filter").assertIsDisplayed(); h.tag("tree-lifted").assertDoesNotExist()
             save("outside-paper-full-rest")
         } finally {
             File(out, "frames.csv").writeText(csv.toString())
-            File(out, "metadata.txt").writeText("Production PostOffice / LetterTreePlace; synthetic PostPilotFixtures. level=$level; fontScale=${if (small) 1.5 else 1.0}. CSV time_page is the actual zero-based page; visible_real_ids are the displayed envelope representatives (not every member accessible in the selector). Actual Compose mainClock times at native draw, no relabelled or generated frames. Partial sequences remain partial if a test fails. No backend traffic.")
+            File(out, "metadata.txt").writeText("Production PostOffice / LetterTreePlace; synthetic PostPilotFixtures. level=$level; fontScale=${if (small) 1.5 else 1.0}. CSV time_page is the actual zero-based page; visible_real_ids are the distinct displayed native envelope IDs (one per registered physical slot). Actual Compose mainClock times at native draw, no relabelled or generated frames. Partial sequences remain partial if a test fails. No backend traffic.")
         }
     }
     @Test fun post0() = record(0)

@@ -80,13 +80,19 @@ class StageSceneAnchorTest {
             val left = StageScenes.panLeft(StageScenes.of(IsleBuilding.POST, level), root.width, iw, 8 * density)
             val top = (root.height - ih) / 2
             fun mapped(box: LetterTree.Box) = Rect(left + iw * box.l, top + ih * box.t, left + iw * box.r, top + ih * box.b)
-            for ((tag, at) in listOf("tree-rope" to anchors.rope, "tree-belt" to anchors.belt, "tree-pen" to anchors.pen, "tree-padlock" to anchors.padlock)) {
+            for ((tag, at) in listOf("post-filter" to anchors.filterTag, "post-time-rail" to anchors.timeRail, "tree-pen" to anchors.pen, "tree-padlock" to anchors.padlock)) {
                 val r = d.tag(tag).fetchSemanticsNode().boundsInRoot
                 assertTrue("$level $tag on its measured painted object", r.center.near(mapped(at), density))
                 assertTrue("$level $tag touch area", r.width >= 48 * density - 1 && r.height >= 48 * density - 1)
             }
             val shown = d.slots("letter:")
-            assertEquals(minOf(StageFixtures.letters.size, anchors.sheets.size), shown.size)
+            // Every registered face owns one independently selectable real letter.
+            val ordered = TreeOrder.order(StageFixtures.letters, emptyMap<Long, String>())
+            val page = ordered.take(anchors.sheets.size)
+            val fronts = page
+            assertEquals("POST$level occupied physical faces", fronts.size, shown.size)
+            assertEquals("POST$level exact front letters in holder order",
+                fronts.map { "letter:${it.id}" }, shown.map { it.config[SceneSlotKey] })
             shown.forEachIndexed { i, node ->
                 val r = node.boundsInRoot
                 assertTrue("$level letter $i on its actual holder", r.center.near(mapped(anchors.sheets[i]), density))
@@ -94,7 +100,7 @@ class StageSceneAnchorTest {
             }
             assertEquals(StageFixtures.letters.map { "letter:${it.id}" }.toSet(), d.letters())
             assertTrue(d.keys("person:").isEmpty())
-            d.tap("tree-rope")
+            d.tap("post-person")
             assertTrue(d.keys("person:").isNotEmpty())
             d.back()
             assertTrue(d.keys("person:").isEmpty())

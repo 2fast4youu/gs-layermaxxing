@@ -31,16 +31,19 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 
-/** Three real tray groups, up to three letters per tray on each time page.
- * The representative can change to any selected member without changing the registered geometry. */
+/** Real faces and actual page state; every displayed ID owns its own native envelope. */
+internal val PostalSelectedMailIdKey = SemanticsPropertyKey<Long>("Actual selected postal mail ID")
 internal val PostalTimePageKey = SemanticsPropertyKey<Int>("Actual postal time page")
 internal val PostalVisibleMailIdsKey = SemanticsPropertyKey<List<Long>>("Displayed real postal mail IDs")
 internal val PostalPageSlideKey = SemanticsPropertyKey<Float>("Postal page slide inside registered face")
 internal val PostalMenuMaterialKey = SemanticsPropertyKey<String>("Actual painted postal menu material")
 
 internal object PostalMailGroups {
-    fun faces(page: List<ApiClient.Message>, level: Int, selected: Long? = null): List<ApiClient.Message> =
-        if (level != 3) page else page.chunked(3).map { group -> group.firstOrNull { it.id == selected } ?: group.first() }
+    fun faces(page: List<ApiClient.Message>, level: Int, selected: Long? = null): List<ApiClient.Message> {
+        require(level in 0..3)
+        require(selected == null || page.any { it.id == selected })
+        return page
+    }
 }
 
 /** Observe only taps that children did not use. Scrolling, links, buttons and drags retain ownership. */
@@ -85,14 +88,14 @@ internal fun PostalSelector(onDismiss: () -> Unit, clean: Boolean = false, title
             val panel = if (clean) Modifier.postalPaperSurface()
                 else Modifier.background(Color(0xFFF0D9A9)).border(2.dp, Color(0xFF392313))
             Column(Modifier.widthIn(max = 360.dp).fillMaxWidth().heightIn(max = minOf(maxHeight, if (clean) 520.dp else 440.dp))
-                .then(panel).clickable(onClickLabel = "Auswahl") { }.padding(12.dp).testTag("post-selector")) {
+                .then(panel).clickable(onClickLabel = "Auswahl") { }.padding(start = 12.dp, end = 12.dp, top = 28.dp, bottom = 12.dp).testTag("post-selector")) {
                 if (clean) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(title, fontFamily = Kit.Display, fontSize = 21.sp,
                         color = Color(0xFF382616),
                         modifier = Modifier.weight(1f).padding(start = 8.dp))
                     Box(Modifier.size(48.dp).clickable(onClickLabel = "Auswahl schließen", onClick = onDismiss)
                         .semantics { role = Role.Button }.testTag("post-selector-close"), Alignment.Center) {
-                        Text("×", fontFamily = Kit.Body, fontSize = 27.sp, color = Color(0xFF745637))
+                        Text("×", fontFamily = Kit.Display, fontSize = 27.sp, color = Color(0xFF745637))
                     }
                 } else Box(Modifier.align(Alignment.End).heightIn(min = 48.dp)
                     .border(2.dp, Color(0xFF392313))
@@ -113,8 +116,8 @@ internal fun PostalSelector(onDismiss: () -> Unit, clean: Boolean = false, title
 
 @Composable
 internal fun PostalFilterSearch(value: String, onValueChange: (String) -> Unit, label: String, tag: String) {
-    androidx.compose.material3.OutlinedTextField(value, onValueChange, label = { Text(label, fontFamily = Kit.Body) }, singleLine = true,
-        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = Kit.Body, fontSize = 16.sp),
+    androidx.compose.material3.OutlinedTextField(value, onValueChange, label = { Text(label, fontFamily = Kit.Display) }, singleLine = true,
+        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = Kit.Display, fontSize = 16.sp),
         colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
             focusedTextColor = Color(0xFF382616), unfocusedTextColor = Color(0xFF382616), cursorColor = Color(0xFF745637),
             focusedBorderColor = Color(0xFF80613F), unfocusedBorderColor = Color(0xFFA88D66),
@@ -134,14 +137,15 @@ internal fun PostalFilterRow(label: String, tag: String, value: String? = null, 
         .semantics { role = if (chosen == null) Role.Button else Role.RadioButton; contentDescription = if (value == null) label else "$label: $value"; chosen?.let { selected = it }; slot?.let { set(SceneSlotKey, it) } }
         .testTag(tag).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(label, fontFamily = Kit.Body, fontSize = 16.sp, lineHeight = 20.sp,
-                color = Color(0xFF382616), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-            value?.takeIf { chosen == null }?.let { Text(it, fontFamily = Kit.Body, fontSize = 14.sp, lineHeight = 18.sp,
+            Text(label, fontFamily = Kit.Display, fontSize = 16.sp, lineHeight = 20.sp,
+                color = Color(0xFF382616), fontWeight = androidx.compose.ui.text.font.FontWeight.Normal)
+            value?.takeIf { chosen == null }?.let { Text(it, fontFamily = Kit.Display, fontSize = 14.sp, lineHeight = 18.sp,
+                style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xFFF6E5BE), androidx.compose.ui.geometry.Offset.Zero, 2f)),
                 color = Color(0xFF745637), modifier = Modifier.padding(top = 3.dp)) }
         }
-        if (chosen != null && value != null) Text(value, fontFamily = Kit.Body,
+        if (chosen != null && value != null) Text(value, fontFamily = Kit.Display,
             fontSize = 14.sp, lineHeight = 18.sp, color = Color(0xFF745637), modifier = Modifier.padding(start = 8.dp))
-        Text(if (chosen == true) "✓" else if (chosen == false) "" else if (value != null) "⌄" else "›", fontFamily = Kit.Body, fontSize = 20.sp, lineHeight = 24.sp,
+        Text(if (chosen == true) "✓" else if (chosen == false) "" else if (value != null) "⌄" else "›", fontFamily = Kit.Display, fontSize = 20.sp, lineHeight = 24.sp,
             color = if (chosen == true) Color(0xFF7D3828) else Color(0xFF745637), modifier = Modifier.padding(start = 10.dp))
     }
 }

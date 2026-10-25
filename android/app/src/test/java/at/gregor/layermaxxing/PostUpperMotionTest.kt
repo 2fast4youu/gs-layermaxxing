@@ -32,8 +32,19 @@ abstract class PostUpperMotionContract {
         h.touch("tree-letter-1"); h.frames(12)
         assertEquals(ScenePhase.APPROACH, h.phase())
         assertTrue(h.sample().camera > 0f && h.sample().camera < 1f)
-        assertTrue(h.tag("tree-env-1").fetchSemanticsNode().boundsInRoot.width > rest.width)
+        // Upper-stage envelopes clear their wooden lip before camera zoom begins.
+        // Raw approach time is not the delayed physical-camera progress.
+        val early = h.tag("tree-env-1").fetchSemanticsNode()
+        val storage = early.config[StorageFrameKey]
+        assertTrue("the envelope must lift out of its registered cavity", storage.dy < 0f)
+        assertEquals(0f, storage.turn, 0f)
+        assertEquals(0f, PostalStorageMotion.camera(h.sample().camera), 0f)
+        assertEquals("no early zoom through the wooden lip", rest.width, early.boundsInRoot.width, 1f)
+        assertEquals(0, h.calls)
         h.until(ScenePhase.SEALED)
+        assertEquals(1f, h.sample().camera, 0f)
+        assertTrue("the camera widens the envelope after clearance",
+            h.tag("tree-env-1").fetchSemanticsNode().boundsInRoot.width > rest.width)
         assertEquals(0, h.calls)
         repeat(3) { h.tag("tree-envelope").performClick() }; h.frames()
         assertEquals(1, h.calls); assertEquals(ScenePhase.WAITING, h.phase())
@@ -94,14 +105,38 @@ abstract class PostUpperMotionContract {
     @Test fun registrationsAreDifferentBoundedAndContainNoOverlappingLetterSlots() {
         val registrations = (1..3).map(PostRegistration::of)
         assertEquals(3, registrations.map { it.sheets }.distinct().size)
-        assertEquals(3, registrations.map { it.holderTravel }.distinct().size)
+        // Original furniture stays registered; distinctness belongs to the traced
+        // mail faces and their lift paths, not artificial movement of the wood.
+        assertEquals(listOf(0f, 0f, 0f), registrations.map { it.holderTravel })
+        assertEquals(3, (1..3).map { stage -> PhysicalPostalStorage.slots(stage).map { it.lift } }.distinct().size)
         val a = PostRegistration.of(level)
         for (b in a.sheets + a.people + a.windows + listOf(a.pen, a.padlock)) {
             assertTrue(b.l >= 0f && b.r <= 1f && b.t >= 0f && b.b <= 1f && b.l < b.r && b.t < b.b)
         }
+        fun overlaps(b: LetterTree.Box, c: LetterTree.Box) =
+            b.l < c.r && b.r > c.l && b.t < c.b && b.b > c.t
         for (i in a.sheets.indices) for (j in i + 1 until a.sheets.size) {
-            val b = a.sheets[i]; val c = a.sheets[j]
-            assertFalse(b.l < c.r && b.r > c.l && b.t < c.b && b.b > c.t)
+            assertFalse("POST$level physical faces $i/$j must be disjoint", overlaps(a.sheets[i], a.sheets[j]))
+        }
+        // Actual click regions must remain disjoint even where the source faces
+        // overlap. Cover every occupancy, not only one fully populated page.
+        for (occupied in 1..a.sheets.size) {
+            val hits = (0 until occupied).map { PhysicalPostalStorage.hitBox(level, it, occupied) }
+            for (i in hits.indices) {
+                val b = hits[i]
+                assertTrue(b.l >= 0f && b.r <= 1f && b.t >= 0f && b.b <= 1f && b.l < b.r && b.t < b.b)
+                for (fx in listOf(.05f, .5f, .95f)) for (fy in listOf(.05f, .5f, .95f)) {
+                    val point = androidx.compose.ui.geometry.Offset((b.l + (b.r - b.l) * fx) * 1024f,
+                        (b.t + (b.b - b.t) * fy) * 1536f)
+                    assertTrue("POST$level occupied=$occupied slot=$i must hit exposed mail",
+                        PhysicalPostalStorage.visible(level, i, occupied, point))
+                    for (j in 0 until occupied) if (j != i) {
+                        assertFalse("POST$level slot=$i must never choose neighbour=$j",
+                            PhysicalPostalStorage.visible(level, j, occupied, point))
+                    }
+                }
+                for (j in i + 1 until hits.size) assertFalse("POST$level click regions $i/$j overlap", overlaps(b, hits[j]))
+            }
         }
     }
 }

@@ -37,10 +37,17 @@ internal data class PostRegistration(
     val letterTravel: Float,
     val label: String,
 ) {
+    // Bounds measured on the production physical layers, in their common 2:3 canvas.
+    val filterTag get() = when (level) {
+        1 -> LetterTree.Box(.21f, .625f, .40f, .660f) // ink on the chest front, left of the time caption
+        2 -> LetterTree.Box(.32f, .525f, .55f, .560f) // desk, below cubbies
+        3 -> LetterTree.Box(.20f, .733f, .40f, .768f) // ink on the counter apron, not floating above the trays
+        else -> LetterTree.Box(.24f, .135f, .44f, .18f)
+    }
     val timeRail get() = when (level) {
-        1 -> LetterTree.Box(.24f, .753f, .78f, .784f)
-        2 -> LetterTree.Box(.21f, .553f, .78f, .594f)
-        else -> LetterTree.Box(.22f, .680f, .78f, .725f)
+        1 -> LetterTree.Box(.21f, .686f, .80f, .734f) // chest brass band
+        2 -> LetterTree.Box(.22f, .657f, .78f, .725f) // drawer front
+        else -> LetterTree.Box(.20f, .770f, .80f, .833f) // counter apron
     }
     val tilts get() = if (level == 0) LetterTree.tilts else List(sheets.size) { if (level == 2) 0f else (it % 3 - 1) * 1.2f }
     val knotLeft get() = if (level == 0) LetterTree.knotLeft else LetterTree.Box(rope.l, rope.b + .01f, rope.l + .08f, rope.b + .06f)
@@ -60,19 +67,19 @@ internal data class PostRegistration(
                 PhysicalPostalStorage.slots(1).map { it.box },
                 strip(.222f, .720f, .158f, .063f, .020f, 4), b(.20f, .690f, .80f, .749f),
                 strip(.23f, .642f, .21f, .14f, .032f, 3), b(.20f, .632f, .80f, .683f),
-                b(.85f, .56f, .94f, .64f), b(.83f, .65f, .89f, .74f),
+                b(.85f, .56f, .94f, .64f), b(.80f, .65f, .88f, .74f),
                 b(.20f, .84f, .26f, .89f), b(.74f, .84f, .80f, .89f), .18f, 0f, 0f, "Postkasten")
             2 -> PostRegistration(2,
                 PhysicalPostalStorage.slots(2).map { it.box },
                 strip(.26f, .730f, .133f, .076f, .020f, 4), b(.215f, .706f, .785f, .756f),
                 strip(.23f, .466f, .21f, .14f, .032f, 3), b(.20f, .455f, .80f, .508f),
-                b(.83f, .64f, .91f, .71f), b(.85f, .53f, .91f, .63f),
+                b(.83f, .64f, .91f, .71f), b(.17f, .48f, .29f, .55f),
                 b(.20f, .76f, .26f, .81f), b(.74f, .76f, .80f, .81f), .18f, 0f, 0f, "Briefstube")
             else -> PostRegistration(3,
                 PhysicalPostalStorage.slots(3).map { it.box },
                 strip(.23f, .790f, .14f, .07f, .018f, 4), b(.20f, .765f, .80f, .815f),
                 strip(.23f, .636f, .21f, .14f, .028f, 3), b(.20f, .628f, .80f, .670f),
-                b(.85f, .64f, .93f, .71f), b(.13f, .57f, .20f, .66f),
+                b(.85f, .64f, .93f, .71f), b(.20f, .34f, .29f, .41f),
                 b(.20f, .80f, .26f, .85f), b(.74f, .80f, .80f, .85f), .20f, 0f, 0f, "Postamt")
         }
     }

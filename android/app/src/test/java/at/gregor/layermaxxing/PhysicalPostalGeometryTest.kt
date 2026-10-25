@@ -6,7 +6,7 @@ import org.junit.Test
 
 class PhysicalPostalGeometryTest {
     @Test fun sourceFacesAndWoodMasksUseTheSameOriginalCanvas() {
-        assertEquals(listOf(3, 6, 3), (1..3).map { PhysicalPostalStorage.slots(it).size })
+        assertEquals(listOf(4, 6, 6), (1..3).map { PhysicalPostalStorage.slots(it).size })
         for (level in 1..3) for (slot in PhysicalPostalStorage.slots(level)) {
             assertEquals(4, slot.face.size); assertTrue(slot.lip.size >= 4)
             for (p in slot.face + slot.lip) assertTrue(p.x in 0f..1024f && p.y in 0f..1536f)

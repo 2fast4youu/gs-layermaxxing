@@ -285,7 +285,7 @@ open class PostalPhoneRepairTest {
             assertTrue(patches.all { it.boundsInRoot.top >= rail.bottom - 1 })
         }
         val ordered = TreeOrder.order(mail, opened)
-        val perPage = if (level == 3) 9 else PostRegistration.of(level).sheets.size
+        val perPage = PostRegistration.of(level).sheets.size
         val pages = (mail.size + perPage - 1) / perPage
         if (level == 0) assertEquals(14, pages)
         for (page in 0 until pages) {

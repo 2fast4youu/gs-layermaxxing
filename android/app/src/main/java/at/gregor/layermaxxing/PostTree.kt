@@ -260,7 +260,7 @@ internal fun LetterTreePlace(
     val q = query
     val counts = PostViews.counts(all, opened, person, q)
     val ordered = TreeOrder.order(PostViews.shown(all, opened, view, person, q), opened)
-    val perPage = if (level == 3) 9 else anchors.sheets.size
+    val perPage = anchors.sheets.size
     val pages = maxOf(1, (ordered.size + perPage - 1) / perPage)
     if (page >= pages) page = pages - 1
     val onPage = frozen?.takeIf { !scene.atRest }?.mapNotNull { id -> direct.firstOrNull { it.id == id } } ?: PostalMailGroups.faces(TreeOrder.page(ordered, page, perPage), level)
@@ -473,10 +473,7 @@ internal fun LetterTreePlace(
                     if (focus == TreeFocus.REST || writing) StagePen(g.box(anchors.pen), context, level, enabled = idle) { focus = if (writer?.draft != null) TreeFocus.WRITE else TreeFocus.NEW }
                     // Counts live only in the labelled phone controls / status picker.
                     // The former source-window ink painted detached numbers over the furniture.
-                    if (idle && level > 0) Zone(g.box(anchors.belt), "Ansicht wählen: jetzt ${view.label}, ${counts[view] ?: 0} Briefe", "tree-belt") { focus = TreeFocus.BELT }
                     if (idle) {
-                        if (level > 0) Zone(g.box(anchors.rope), "Nach Person filtern: ${people.size} Personen" + (who?.let { ", jetzt ${it.name}" } ?: ""), "tree-rope") { focus = TreeFocus.ROPE }
-                        who?.takeIf { level > 0 }?.let { p -> StageNameTag(g, anchors, p.name, label = "Nur Briefe mit ${p.name} – alle Personen zeigen") { person = null; page = 0 } }
                         if (level == 0) {
                             val beginWrite = { focus = if (writer?.draft != null) TreeFocus.WRITE else TreeFocus.NEW }
                             Zone(g.box(LetterTree.waxBucket), "Mit rotem Wachs einen Brief schreiben", "tree-wax-bucket", onClick = beginWrite)
@@ -484,13 +481,14 @@ internal fun LetterTreePlace(
                         } else Zone(g.box(anchors.padlock), if (locked.isEmpty()) "Kein Brief unterwegs" else "Briefe unterwegs: ${locked.size}, den ältesten zeigen", "tree-padlock",
                             enabled = locked.isNotEmpty()) { locked.firstOrNull()?.let(::lockedTap) }
                     }
-                    if (idle && level == 0) {
-                        val tag = g.box(LetterTree.Box(.24f, .135f, .44f, .18f))
-                        val clearTag = tag.copy(top = minOf(tag.top, g.box(anchors.belt).top - 52.dp))
-                        RopeFilterTag(clearTag, person != null || view != PostViews.View.ALL || query.isNotBlank()) { focus = TreeFocus.FILTER }
-                        val strap = g.box(anchors.belt)
+                    if (idle) {
+                        val tag = g.box(anchors.filterTag)
+                        val clearTag = if (level == 0) tag.copy(top = minOf(tag.top, g.box(anchors.belt).top - 52.dp)) else tag
+                        val strap = g.box(if (level == 0) anchors.belt else anchors.timeRail)
                         PostalTimeRail(page, pages, true, modifier = Modifier.offset(strap.left, strap.top).size(strap.w, maxOf(48.dp, strap.h)),
-                            summary = timeSummary(page, pages, onPage).replace(Regex("\\.\\d{4}"), ""), painted = true, onScrubbing = { timeScrubbing = it }) { page = it }
+                            summary = timeSummary(page, pages, onPage).replace(Regex("\\.\\d{4}"), ""), painted = level == 0,
+                            furniture = level > 0, onScrubbing = { timeScrubbing = it }) { page = it }
+                        RopeFilterTag(clearTag, person != null || view != PostViews.View.ALL || query.isNotBlank(), furniture = level > 0) { focus = TreeFocus.FILTER }
                     }
                 }
                 if (level > 0 && idle) {
@@ -553,7 +551,8 @@ internal fun LetterTreePlace(
             Box(Modifier.offset(y = with(density) { env.bottom.toDp() } + 12.dp).fillMaxWidth()
                 .graphicsLayer { alpha = if (scene.phase == ScenePhase.APPROACH) ((cam.value - .6f) / .4f).coerceIn(0f, 1f) else 1f }, Alignment.TopCenter) {
                 PaperSlip(Modifier.padding(horizontal = 28.dp)) {
-                    Text((if (current.incoming) "von " else "an ") + current.peerName, style = ink(19f, bold = true))
+                    Text((if (current.incoming) "von " else "an ") + current.peerName, style = ink(19f, bold = true),
+                        modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                     // what the envelope itself says (title / public cover text) – nothing when it says nothing
                     current.title.ifBlank { current.coverNote }.takeIf { it.isNotBlank() }?.let {
                         Text(it, style = ink(14f, color = RedInk), maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
@@ -599,19 +598,8 @@ internal fun LetterTreePlace(
                 }
             }
         }
-        if (idle && level > 0) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)
-            .background(Color(0xF2E2CCA0)).border(1.dp, Ink).padding(6.dp).testTag("post-controls")) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.weight(1f)) { StampButton("Person: ${who?.name ?: "Alle"} ▾", "post-person", compact = true) { focus = TreeFocus.ROPE } }
-                Box(Modifier.weight(1f)) { StampButton("Status: ${view.label} (${counts[view] ?: 0}) ▾", "post-status", compact = true) { focus = TreeFocus.BELT } }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(.32f)) { StampButton("Briefe: ${ordered.size} ▾", "post-mail", compact = true) { focus = TreeFocus.MAIL } }
-                PostalTimeRail(page, pages, true, modifier = Modifier.weight(.68f), summary = timeSummary(page, pages, onPage), onScrubbing = { timeScrubbing = it }) { page = it }
-            }
-        }
         if (scene.atRest && focus in listOf(TreeFocus.FILTER, TreeFocus.ROPE, TreeFocus.BELT, TreeFocus.MAIL)) {
-            PostalSelector(onDismiss = { focus = TreeFocus.REST }, clean = level == 0,
+            PostalSelector(onDismiss = { focus = TreeFocus.REST }, clean = true,
                 title = when (focus) { TreeFocus.FILTER -> "Filter"; TreeFocus.ROPE -> "Person"; TreeFocus.BELT -> "Status"; else -> "Briefe" }) {
                 when (focus) {
                     TreeFocus.FILTER -> {
@@ -646,29 +634,27 @@ internal fun LetterTreePlace(
                     }
                     TreeFocus.ROPE -> {
                         if (level > 0) Text("Person auswählen", style = ink(20f, bold = true))
-                        if (level == 0) PostalFilterSearch(peopleSearch, { peopleSearch = it }, "Person suchen", "post-person-search")
-                        else androidx.compose.material3.OutlinedTextField(peopleSearch, { peopleSearch = it }, label = { Text("Person suchen") }, modifier = Modifier.fillMaxWidth().testTag("post-person-search"))
-                        PostalPickerButton("Alle Personen", "tree-strip-alle", slot = "person:alle", clean = level == 0) { person = null; page = 0; focus = TreeFocus.REST }
+                        PostalFilterSearch(peopleSearch, { peopleSearch = it }, "Person suchen", "post-person-search")
+                        PostalPickerButton("Alle Personen", "tree-strip-alle", slot = "person:alle", clean = true) { person = null; page = 0; focus = TreeFocus.REST }
                         val pc = PostViews.personCounts(all, opened, view, q)
                         people.filter { it.name.contains(peopleSearch, true) }.forEach { p ->
-                            PostalPickerButton("${p.name} · ${pc[p.id] ?: 0}", "tree-strip-${p.id}", chosen = p.id == person, slot = "person:${p.id}", clean = level == 0) { person = p.id; page = 0; focus = TreeFocus.REST }
+                            PostalPickerButton("${p.name} · ${pc[p.id] ?: 0}", "tree-strip-${p.id}", chosen = p.id == person, slot = "person:${p.id}", clean = true) { person = p.id; page = 0; focus = TreeFocus.REST }
                         }
                     }
                     TreeFocus.BELT -> {
                         if (level > 0) Text("Briefstatus auswählen", style = ink(20f, bold = true))
                         PostViews.View.entries.forEach { v ->
-                            PostalPickerButton("${v.label}: ${counts[v] ?: 0}", "tree-window-${v.name}", chosen = view == v, clean = level == 0) { view = v; page = 0; focus = TreeFocus.REST }
+                            PostalPickerButton("${v.label}: ${counts[v] ?: 0}", "tree-window-${v.name}", chosen = view == v, clean = true) { view = v; page = 0; focus = TreeFocus.REST }
                         }
                     }
                     TreeFocus.MAIL -> {
-                        if (level > 0) Text(if (level == 3) "Briefe in den drei Ablagen" else "Briefe auswählen", style = ink(20f, bold = true))
-                        if (level == 0) PostalFilterSearch(query, { query = it; page = 0 }, "Briefe suchen", "post-search")
-                        else androidx.compose.material3.OutlinedTextField(query, { query = it; page = 0 }, label = { Text("Name oder Kuvert suchen") }, modifier = Modifier.fillMaxWidth().testTag("post-search"))
+                        if (level > 0) Text(if (level == 3) "Briefe in Ablagen und auf dem Tisch" else "Briefe auswählen", style = ink(20f, bold = true))
+                        PostalFilterSearch(query, { query = it; page = 0 }, "Briefe suchen", "post-search")
                         if (ordered.isEmpty()) Text("Keine Briefe in dieser Auswahl", style = ink(16f))
                         ordered.forEachIndexed { index, m ->
-                            if (level == 3 && index % 3 == 0) Text("Zeitseite ${index / perPage + 1} · Ablage ${(index % perPage) / 3 + 1}: ${minOf(3, ordered.size - index)} Briefe", style = ink(16f, bold = true))
-                            val tray = if (level == 3) "Ablage ${(index % perPage) / 3 + 1} · " else ""
-                            PostalPickerButton("$tray${if (m.incoming) "von" else "an"} ${m.peerName}\n${PostViews.viewOf(m, opened[m.id] != null).label} · ${PostViews.availability(m, Conversations.letterState(m, opened[m.id] != null))}\n${m.title.ifBlank { m.coverNote }}", "post-select-${m.id}", slot = "letter:${m.id}", clean = level == 0) {
+                            if (level == 3 && index % 2 == 0) Text("Zeitseite ${index / perPage + 1} · Ablage & Tisch ${(index % perPage) / 2 + 1}: ${minOf(2, ordered.size - index)} Briefe", style = ink(16f, bold = true))
+                            val tray = if (level == 3) "${if (index % 2 == 0) "Ablage" else "Tisch"} ${(index % perPage) / 2 + 1} · " else ""
+                            PostalPickerButton("$tray${if (m.incoming) "von" else "an"} ${m.peerName}\n${PostViews.viewOf(m, opened[m.id] != null).label} · ${PostViews.availability(m, Conversations.letterState(m, opened[m.id] != null))}\n${m.title.ifBlank { m.coverNote }}", "post-select-${m.id}", slot = "letter:${m.id}", clean = true) {
                                 focus = TreeFocus.REST
                                 if (Conversations.letterState(m, opened[m.id] != null).locked) lockedTap(m) else approach(m, readable(m))
                             }
@@ -699,6 +685,7 @@ internal fun LetterTreePlace(
         Box(Modifier.size(1.dp).semantics {
             contentDescription = "Briefszene: ${scene.phase.name}"
             this[PostObjectMotionKey] = PostObjectSample(level, if (materialReady) anchors.holderTravel * cam.value else 0f, anchors.letterTravel * cam.value, materialReady)
+            current?.let { this[PostalSelectedMailIdKey] = it.id }
             this[PostalTimePageKey] = page
             this[PostalVisibleMailIdsKey] = onPage.map { it.id }
             this[LetterMotionKey] = LetterMotionSample(cam.value, LetterMotion.seal(crack.value), flap, rise, lift)
@@ -954,22 +941,37 @@ private fun Ink(r: DpRect, tilt: Float, tag: String? = null, top: Float = .2f, b
 private fun InkFit(text: String, maxSp: Float, minSp: Float, color: Color, bold: Boolean = false, optional: Boolean = false, fallback: String? = null, tight: Boolean = false,
                    modifier: Modifier = Modifier) {
     val measurer = rememberTextMeasurer()
-    fun style(size: Float) = ink(size, bold, color).copy(textAlign = TextAlign.Center).let { if (tight) it.copy(lineHeight = (size * 1.02f).sp,
+    val inheritedStyle = androidx.compose.material3.LocalTextStyle.current
+    // The artwork has finite room: keep the minimum physical ink size, rather than multiplying
+    // that floor by the accessibility scale and clipping names. Larger type still wins if it fits;
+    // full accessible descriptions and the separate close-view identity retain the user's scale.
+    val fontScale = LocalDensity.current.fontScale
+    val floorSp = minSp.coerceAtMost(8.5f) / fontScale.coerceAtLeast(1f)
+    fun style(size: Float) = inheritedStyle.merge(ink(size, bold, color)).copy(textAlign = TextAlign.Center, letterSpacing = 0.sp).let { if (tight) it.copy(lineHeight = (size * 1.02f).sp,
         lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both)) else it }
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth(), Alignment.Center) {
         val px = constraints.maxWidth
         val ph = if (constraints.hasBoundedHeight) constraints.maxHeight else Int.MAX_VALUE
         // width AND height of the room this line has (pixel review 1074: a line taller than its room was cut)
-        fun fit(t: String) = generateSequence(maxSp) { it - .5f }.takeWhile { it >= minSp }
-            .firstOrNull { measurer.measure(t, style(it), maxLines = 1, softWrap = false).let { l -> l.size.width <= px && l.size.height <= ph } }
+        fun measured(t: String, size: Float) = measurer.measure(t, style(size), maxLines = 1, softWrap = false,
+            constraints = androidx.compose.ui.unit.Constraints(maxWidth = px, maxHeight = ph))
+        fun fit(t: String) = generateSequence(maxSp) { it - .5f }.takeWhile { it >= floorSp }.plus(sequenceOf(floorSp))
+            .firstOrNull { measured(t, it).let { layout -> !layout.didOverflowWidth &&
+                !layout.multiParagraph.didExceedMaxLines && kotlin.math.ceil(layout.multiParagraph.height) + 2 <= ph } }
         // the text, else its short [fallback], at the largest size that fits
-        val (shown, sp) = remember(text, fallback, px, ph, maxSp, minSp) {
+        val (shown, sp) = remember(text, fallback, px, ph, maxSp, floorSp, fontScale) {
             fit(text)?.let { text to it } ?: fallback?.let { f -> fit(f)?.let { f to it } } ?: ((fallback ?: text) to -1f)
         }
         // a second line that does not fit even at [minSp] is left out (the sheet's close look and TalkBack say it whole)
         if (sp < 0f && optional) return@BoxWithConstraints
-        val size = if (sp < 0f) minSp else sp
-        Text(shown, style = style(size), maxLines = 1, softWrap = false, overflow = TextOverflow.Clip, modifier = Modifier.testTag("tree-ink"))
+        val size = if (sp < 0f) floorSp else sp
+        // Native paragraph height can be fractional while Text's intrinsic height rounds down.
+        // Reserve its ceiling explicitly so the final descender pixel is not clipped.
+        val linePixels = (kotlin.math.ceil(measured(shown, size).multiParagraph.height).toInt() + 2).coerceAtMost(ph)
+        val lineHeight = with(LocalDensity.current) { linePixels.toDp() }
+        Text(shown, style = style(size), maxLines = 1, softWrap = false,
+            overflow = if (sp < 0f) TextOverflow.Ellipsis else TextOverflow.Visible,
+            modifier = Modifier.fillMaxWidth().height(lineHeight).testTag("tree-ink"))
     }
 }
 
@@ -1418,17 +1420,19 @@ private fun timeSummary(page: Int, pages: Int, mail: List<ApiClient.Message>): S
 
 /** A quiet label in the scene's own paper and ink; no floating white Material card. */
 @Composable
-private fun RopeFilterTag(r: DpRect, active: Boolean, action: () -> Unit) {
+private fun RopeFilterTag(r: DpRect, active: Boolean, furniture: Boolean = false, action: () -> Unit) {
     Box(Modifier.offset(r.left, r.top).size(maxOf(96.dp, r.w), maxOf(48.dp, r.h))
         .clickable(onClickLabel = "Person, Status und Briefe filtern", onClick = action)
         .semantics { contentDescription = "Filter"; role = Role.Button; stateDescription = if (active) "Auswahl aktiv" else "Alle Briefe" }
         .testTag("post-filter"), Alignment.TopCenter) {
         Box(Modifier.fillMaxWidth().heightIn(min = 40.dp)
             .testTag("post-filter-surface")
-            .postalPaperSurface(strip = true)
+            .then(if (furniture) Modifier else Modifier.postalPaperSurface(strip = true))
             .padding(horizontal = 8.dp, vertical = 8.dp), Alignment.Center) {
-            Text(if (active) "Filter • ▾" else "Filter ▾", fontFamily = Kit.Body,
-                fontSize = 13.sp, lineHeight = 17.sp, letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF382616), maxLines = 1,
+            Text(if (active) "Filter • ▾" else "Filter ▾", fontFamily = if (furniture) Kit.Display else Kit.Body,
+                fontSize = 13.sp, lineHeight = 17.sp, letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold,
+                color = if (furniture) Color(0xFFFFEBC5) else Color(0xFF382616), maxLines = 1,
+                style = TextStyle(shadow = if (furniture) androidx.compose.ui.graphics.Shadow(Color(0xFF27180D), Offset(1f, 1f), 1f) else null),
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().testTag("post-filter-ink"))
         }
     }

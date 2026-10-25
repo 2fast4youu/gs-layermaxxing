@@ -53,7 +53,7 @@ class Post1011PilotReview {
         }
         frames()
     }
-    private fun tap(tag: String) { rule.onNodeWithTag(tag, useUnmergedTree = true).performClick(); frames() }
+    private fun tap(tag: String) { NativePostTestDriver(rule).tap(tag); frames() }
     private fun tapSlot(key: String) {
         rule.onNode(SemanticsMatcher(key) { it.config.getOrNull(SceneSlotKey) == key }, useUnmergedTree = true).performClick(); frames()
     }
@@ -63,20 +63,20 @@ class Post1011PilotReview {
     @Test fun rest2() { open(2); save("p1011-post2-ruhe") }
     @Test fun rest3() { open(3); save("p1011-post3-ruhe") }
     @Test fun drawer1() { open(1); tap("tree-letter-1"); save("p1011-post1-schub-offen") }
-    @Test fun stamps1() { open(1); tap("tree-rope"); save("p1011-post1-markenbogen") }
-    @Test fun slider1() { open(1); tap("tree-belt"); save("p1011-post1-messingschieber") }
+    @Test fun stamps1() { open(1); tap("post-person"); save("p1011-post1-markenbogen") }
+    @Test fun slider1() { open(1); tap("post-status"); save("p1011-post1-messingschieber") }
     @Test fun stampThenDrawer1() {
         // tap the stamp sheet, then Mira's stamp: the drawer opens with Mira's letters; then the slider: Ungelesen
-        open(1); tap("tree-rope"); tapSlot("person:40"); save("p1011-post1-mira-im-schub")
-        tap("tree-belt"); rule.onNodeWithTag("tree-window-UNREAD", useUnmergedTree = true).performClick(); frames()
+        open(1); tap("post-person"); tapSlot("person:40"); save("p1011-post1-mira-im-schub")
+        tap("post-status"); rule.onNodeWithTag("tree-window-UNREAD", useUnmergedTree = true).performClick(); frames()
         save("p1011-post1-mira-ungelesen")
     }
     @Test fun drawer3() { open(3); tap("tree-letter-1"); save("p1011-post3-ablage-offen") }
     @Test fun drawer0() { open(0); tap("tree-letter-1"); save("p1011-post0-stamm-nah") }
     @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun rest1Small() { open(1, small = true); save("p1011-post1-ruhe-klein-font15") }
     @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun drawer1Small() { open(1, small = true); tap("tree-letter-1"); save("p1011-post1-schub-offen-klein-font15") }
-    @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun stamps1Small() { open(1, small = true); tap("tree-rope"); save("p1011-post1-markenbogen-klein-font15") }
-    @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun slider2Small() { open(2, small = true); tap("tree-belt"); save("p1011-post2-messingschieber-klein-font15") }
+    @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun stamps1Small() { open(1, small = true); tap("post-person"); save("p1011-post1-markenbogen-klein-font15") }
+    @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun slider2Small() { open(2, small = true); tap("post-status"); save("p1011-post2-messingschieber-klein-font15") }
 }
 
 /**

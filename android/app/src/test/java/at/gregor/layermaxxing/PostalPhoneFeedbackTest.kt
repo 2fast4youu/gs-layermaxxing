@@ -30,7 +30,8 @@ class PostalArrivalModelTest {
         for (n in 0..9) {
             val mail = (1..n).map { m.copy(id = it.toLong()) }
             val faces = PostalMailGroups.faces(mail, 3)
-            assertEquals((n + 2) / 3, faces.size)
+            assertEquals(n, faces.size)
+            assertEquals(mail.map { it.id }, faces.map { it.id })
             mail.forEach { selected ->
                 val selection = PostalMailGroups.faces(mail, 3, selected.id)
                 assertTrue(selection.any { it.id == selected.id })
@@ -82,7 +83,7 @@ open class PostalPhoneFeedbackTest {
         h.tag("tree-lifted").performTouchInput { click(Offset(width - 6f, 10f)) }; h.frames()
         assertEquals(ScenePhase.READING, h.phase())
         h.outside(); h.until(ScenePhase.REST)
-        assertTrue(h.exists(if (level == 0) "post-filter" else "post-controls")); assertFalse(h.exists("tree-lifted"))
+        assertTrue(h.exists("post-filter")); assertFalse(h.exists("tree-lifted"))
     }
     @Test fun menusDismissOnBackdropAndKeepRealNamedSelection() {
         val h = CodexMotionHarness(rule); h.start(letters = PostPilotFixtures.letters, level = level, fontScale = fontScale)
@@ -96,11 +97,11 @@ open class PostalPhoneFeedbackTest {
         h.touch("post-person"); h.frames()
         h.tag("post-person-search").performTextInput("Mira"); h.frames()
         h.scrollSelectorTo("tree-strip-40"); h.touch("tree-strip-40"); h.frames()
-        if (level == 0) h.touch("post-filter")
+        h.touch("post-filter")
         h.tag("post-person").assertContentDescriptionContains("Mira", substring = true)
         h.touch("post-status"); h.frames()
         h.scrollSelectorTo("tree-window-TRAVEL"); h.touch("tree-window-TRAVEL"); h.frames()
-        if (level == 0) h.touch("post-filter")
+        h.touch("post-filter")
         h.tag("post-status").assertContentDescriptionContains("Unterwegs", substring = true)
         h.touch("post-status"); h.frames()
         for (v in PostViews.View.entries) h.tag("tree-count-${v.name}").assertDoesNotExist()
@@ -212,16 +213,16 @@ class PostalPhoneFeedbackPost1Test : PostalPhoneFeedbackTest() { override val le
 class PostalPhoneFeedbackPost2Test : PostalPhoneFeedbackTest() { override val level = 2 }
 class PostalPhoneFeedbackPost3Test : PostalPhoneFeedbackTest() {
     override val level = 3
-    @Test fun allNineRealLettersCanBeSelectedFromTheirExistingTray() {
+    @Test fun allNineRealLettersCanBeSelectedFromTheirOwnSlotAcrossPages() {
         val letters = (1..9).map { index -> PostPilotFixtures.letters.first().copy(id = index.toLong(), readAt = null, unlocked = true) }
         val h = CodexMotionHarness(rule); h.start(letters = letters, level = 3)
         for (m in letters) {
             h.touch("post-mail"); h.frames()
             h.scrollSelectorTo("post-select-${m.id}"); h.touch("post-select-${m.id}"); h.until(ScenePhase.SEALED)
             assertTrue(h.exists("tree-env-${m.id}")); assertEquals(0, h.calls)
-            val sourceTray = TreeOrder.order(letters, emptyMap<Long, OpenedMessage>()).indexOfFirst { it.id == m.id } / 3
+            val sourceSlot = TreeOrder.order(letters, emptyMap<Long, OpenedMessage>()).indexOfFirst { it.id == m.id } % PostRegistration.of(3).sheets.size
             val source = h.tag("tree-env-${m.id}").fetchSemanticsNode().config[StorageFrameKey]
-            assertEquals("Selected real member must rise from its own source tray", PhysicalPostalStorage.slots(3)[sourceTray], source.slot)
+            assertEquals("Selected real member must rise from its own source tray", PhysicalPostalStorage.slots(3)[sourceSlot], source.slot)
             h.back(); h.until(ScenePhase.REST); h.frames(20)
         }
     }

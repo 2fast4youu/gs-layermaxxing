@@ -28,14 +28,14 @@ internal val StorageFrameKey = SemanticsPropertyKey<StorageFrame>("Registered po
 internal object PhysicalPostalStorage {
     private fun points(vararg xy: Int) = xy.toList().chunked(2).map { Offset(it[0].toFloat(), it[1].toFloat()) }
     private fun slot(face: List<Offset>, lip: List<Offset>, lift: Float, light: Float) = PostalSlot(face, lip, lift, light)
-    // Chest: back, middle, front on the recessed floor. The front rail and sloping side walls
-    // are traced from the original, not rectangular overlays painted over arbitrary wood.
+    // Four disjoint faces on the recessed floor, two rows; all clear of the real side walls.
     private val chestLip = points(112,933, 201,930, 262,675, 278,660, 218,932, 775,937,
         752,668, 780,650, 882,937, 917,950, 911,1200, 115,1200)
     private val chest = listOf(
-        slot(points(423,733, 660,729, 680,817, 414,823), chestLip, 52f, .68f),
-        slot(points(330,781, 581,776, 608,886, 308,901), chestLip, 56f, .64f),
-        slot(points(294,874, 599,879, 626,960, 276,950), chestLip, 48f, .61f))
+        slot(points(305,742, 499,739, 502,813, 285,817), chestLip, 52f, .68f),
+        slot(points(525,739, 716,742, 735,817, 521,813), chestLip, 52f, .68f),
+        slot(points(280,835, 500,832, 500,918, 253,921), chestLip, 48f, .64f),
+        slot(points(525,832, 739,835, 765,921, 523,918), chestLip, 48f, .64f))
     private fun cubby(l: Int, t: Int, r: Int, bottom: Int, lip: List<Offset>) =
         slot(points(l,t, r,t+8, r+9,bottom, l-9,bottom-5), lip, 24f, .62f)
     private val cubbies = listOf(
@@ -45,10 +45,16 @@ internal object PhysicalPostalStorage {
         cubby(209,510,341,594,points(164,589,379,593,379,647,160,645)),
         cubby(418,529,545,595,points(399,593,581,599,581,648,398,646)),
         cubby(624,530,751,602,points(599,598,789,605,789,648,598,648)))
+    // One in each shallow tray, one directly in front on the clear counter. A pair is
+    // physical correspondence, never a representative hiding other real messages.
+    private val counterLip = points(0,1285, 1024,1285, 1024,1300, 0,1300)
     private val trays = listOf(
         slot(points(174,839,344,840,353,916,158,911), points(113,899,141,796,163,781,144,899,363,903,388,785,408,779,382,907,362,946,112,940), 36f,.76f),
+        slot(points(172,1000,358,1003,372,1114,158,1110), counterLip, 24f,.91f),
         slot(points(423,851,598,852,606,925,409,922), points(383,905,408,779,416,783,405,904,628,908,645,784,654,781,646,909,627,951,382,947), 36f,.72f),
-        slot(points(673,847,848,850,864,930,655,926), points(646,909,654,781,665,782,663,909,891,913,877,795,891,803,918,943,898,956,644,952), 36f,.68f))
+        slot(points(415,1006,625,1004,639,1117,402,1120), counterLip, 24f,.91f),
+        slot(points(673,847,848,850,864,930,655,926), points(646,909,654,781,665,782,663,909,891,913,877,795,891,803,918,943,898,956,644,952), 36f,.68f),
+        slot(points(676,1001,848,1005,862,1118,661,1114), counterLip, 24f,.91f))
     fun slots(level: Int): List<PostalSlot> = when(level) { 1 -> chest; 2 -> cubbies; 3 -> trays; else -> emptyList() }
     fun frame(level: Int, index: Int, progress: Float, occupied: Int = slots(level).size) =
         slots(level).getOrNull(index)?.let {
