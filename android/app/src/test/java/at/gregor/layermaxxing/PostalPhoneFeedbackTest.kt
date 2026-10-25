@@ -82,7 +82,7 @@ open class PostalPhoneFeedbackTest {
         h.tag("tree-lifted").performTouchInput { click(Offset(width - 6f, 10f)) }; h.frames()
         assertEquals(ScenePhase.READING, h.phase())
         h.outside(); h.until(ScenePhase.REST)
-        assertTrue(h.exists("post-controls")); assertFalse(h.exists("tree-lifted"))
+        assertTrue(h.exists(if (level == 0) "post-filter" else "post-controls")); assertFalse(h.exists("tree-lifted"))
     }
     @Test fun menusDismissOnBackdropAndKeepRealNamedSelection() {
         val h = CodexMotionHarness(rule); h.start(letters = PostPilotFixtures.letters, level = level, fontScale = fontScale)
@@ -96,9 +96,11 @@ open class PostalPhoneFeedbackTest {
         h.touch("post-person"); h.frames()
         h.tag("post-person-search").performTextInput("Mira"); h.frames()
         h.scrollSelectorTo("tree-strip-40"); h.touch("tree-strip-40"); h.frames()
+        if (level == 0) h.touch("post-filter")
         h.tag("post-person").assertContentDescriptionContains("Mira", substring = true)
         h.touch("post-status"); h.frames()
         h.scrollSelectorTo("tree-window-TRAVEL"); h.touch("tree-window-TRAVEL"); h.frames()
+        if (level == 0) h.touch("post-filter")
         h.tag("post-status").assertContentDescriptionContains("Unterwegs", substring = true)
         h.touch("post-status"); h.frames()
         for (v in PostViews.View.entries) h.tag("tree-count-${v.name}").assertDoesNotExist()
@@ -226,7 +228,7 @@ class PostalPhoneFeedbackSmall0Test : PostalPhoneFeedbackTest() {
         assertTrue(ink.isNotEmpty())
         ink.forEach { node ->
             val bounds = node.boundsInRoot
-            assertTrue("Mail ink $bounds must remain above controls $controls", bounds.bottom <= controls.top + 1f)
+            assertTrue("Mail ink $bounds must remain below rope controls $controls", bounds.top >= controls.bottom - 1f)
         }
     }
 }

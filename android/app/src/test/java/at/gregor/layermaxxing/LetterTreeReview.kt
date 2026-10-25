@@ -1,5 +1,7 @@
 package at.gregor.layermaxxing
 
+import androidx.compose.ui.test.onAllNodesWithTag
+
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -68,7 +70,11 @@ class LetterTreeReview {
         }
         frames()
     }
-    private fun tap(tag: String, n: Int = 90) { scrollTo(tag); rule.onNodeWithTag(tag, useUnmergedTree = true).performClick(); frames(n) }
+    private fun tap(tag: String, n: Int = 90) {
+        if (tag in listOf("post-person", "post-status", "post-mail") && rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
+            rule.onNodeWithTag("post-filter", useUnmergedTree = true).performClick(); frames(n)
+        }
+        scrollTo(tag); rule.onNodeWithTag(tag, useUnmergedTree = true).performClick(); frames(n) }
     private fun exists(tag: String) = rule.onAllNodes(androidx.compose.ui.test.hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     /** The paper scrolls like under a finger until [tag] stands in its middle (animated: run on the test clock). */
     private fun scrollTo(tag: String, top: Boolean = false) {
@@ -122,7 +128,7 @@ class LetterTreeReview {
         open(); rule.onNodeWithTag("tree-pen", useUnmergedTree = true).performClick()
         for (k in 0 until 14) { save("bf-anim-feder-%02d".format(k)); repeat(2) { rule.mainClock.advanceTimeByFrame() }; org.robolectric.shadows.ShadowLooper.idleMainLooper() }
     }
-    @Test fun rope() { open(); tap("tree-rope"); save("bf-7-leine-offen") }
+    @Test fun rope() { open(); tap("post-person"); save("bf-7-leine-offen") }
     @Test fun zoomAnimation() {
         // stepping up to the sealed envelope, captured every 2 frames from the running composable (test clock)
         open(); rule.onNodeWithTag("tree-letter-1", useUnmergedTree = true).performClick()
@@ -142,7 +148,7 @@ class LetterTreeReview {
     @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun restSmall() { open(true); save("bf-klein15-1-ruhe") }
     @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun sealedSmall() { open(true); tap("tree-letter-1"); save("bf-klein15-2-umschlag") }
     @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun letterSmall() { open(true); tap("tree-letter-1"); tap("tree-envelope", 260); save("bf-klein15-3-brieftext") }
-    @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun ropeSmall() { open(true); tap("tree-rope"); save("bf-klein15-4-leine") }
+    @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun ropeSmall() { open(true); tap("post-person"); save("bf-klein15-4-leine") }
     @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun penSmall() { open(true); tap("tree-pen"); save("bf-klein15-5-an-wen") }
     @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun writtenSmall() { open(true); write(); save("bf-klein15-6-brief-geschrieben") }
     @Config(qualifiers = "w360dp-h640dp-xhdpi") @Test fun optionsSmall() { open(true); write(); tap("tree-write-when"); scrollTo("tree-write-when", top = true); save("bf-klein15-7-sendoptionen") }

@@ -145,13 +145,20 @@ class StageStoryTest {
             if (post.exists("tree-time-now")) post.tap("tree-time-now")
                 // All post stages use their own physical anchors and the shared seal protocol.
                 // the letter tree (clean stage): the unread letter is opened from its sheet, the padlock shows the oldest sealed one
-                val t = { tag: String -> rule.onNode(androidx.compose.ui.test.hasTestTag(tag), useUnmergedTree = true).performClick(); frames() }
-                // 1074: an arrived letter hangs sealed – its envelope, then its seal opens it through the real call
-                // (22.10. native scene: the camera moves to the envelope – 720 ms – before it takes a tap)
-                t("tree-letter-5"); frames(); frames(); t("tree-envelope"); assertEquals("$level", listOf(5L), opened)
+                // Use the real all-stage letter picker: higher-stage resting slots are
+                // page-dependent, while the picker must retain every letter.
+                post.letter(5); frames(); frames(); post.tap("tree-envelope"); assertEquals("$level", listOf(5L), opened)
                 // (the camera moves back out first: 640 ms)
-                rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames(); frames(); frames()
-                t("tree-padlock"); assertEquals("$level", listOf(8L), locked)
+                post.back(); frames(); frames(); frames()
+                if (level == 0) {
+                    post.tap("tree-letter-8")
+                } else post.tap("tree-padlock")
+                // Selecting a travelling letter only shows its gate, on EVERY stage.
+                // The explicit arrival action, not the selection, reaches the locked handler.
+                assertTrue("$level arrival", post.exists("post-arrival"))
+                assertTrue("$level selection must not request", locked.isEmpty())
+                post.tap("post-arrival-action")
+                assertEquals("$level", listOf(8L), locked)
 
         }
     }

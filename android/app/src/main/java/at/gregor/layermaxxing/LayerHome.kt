@@ -260,17 +260,7 @@ fun LayerHome(
     }
     // 1074: one request per letter at a time (the tree's seal, the inbox, the thread share it); see LetterOpener
     val opener = rememberLetterOpener(opened, fetch = { message ->
-        val content = api.content(token, message.id)
-        val aad = content.canonicalMetadata?.toByteArray() ?: byteArrayOf()
-        val text = CryptoBox.decryptBytes(content.ciphertext, content.nonce, content.encryptionKey, aad).toString(Charsets.UTF_8)
-        val bytes = if (content.attachmentCiphertext != null && content.attachmentNonce != null)
-            CryptoBox.decryptBytes(
-                content.attachmentCiphertext, content.attachmentNonce, content.encryptionKey,
-                if (content.canonicalMetadata != null && content.attachmentName != null && content.attachmentMime != null)
-                    EvidenceProtocol.attachmentAad(content.canonicalMetadata, content.attachmentName, content.attachmentMime)
-                else byteArrayOf(),
-            ) else null
-        OpenedMessage(text, bytes, content.attachmentName, content.attachmentMime)
+        openLetterContent(api, token, message)
     }, onDone = { scope.launch { runCatching { refresh() } } }, onError = { error = ApiErrors.friendly(it) })
     fun openLetter(message: ApiClient.Message) { opener.open(message) }
     // Briefbaum 22.10.: "auf ungelesen setzen" – the recipient's own server-side marker (one request per letter)

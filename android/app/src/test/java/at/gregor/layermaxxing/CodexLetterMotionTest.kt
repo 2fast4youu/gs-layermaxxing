@@ -54,6 +54,7 @@ internal class CodexMotionHarness(
     val opened = mutableStateMapOf<Long, OpenedMessage>()
     val answer = CompletableDeferred<Unit>()
     var calls = 0
+    val fetched = mutableListOf<Long>()
     val locked = mutableListOf<Long>()
     var marks = 0
     var compositions = 0
@@ -71,7 +72,9 @@ internal class CodexMotionHarness(
         repeat(limit) { if (phase() == target) return; frames(1) }
         assertEquals("bounded phase wait", target, phase())
     }
-    fun touch(name: String) { tag(name).performTouchInput { click(center) }; rule.waitForIdle() }
+    fun touch(name: String) {
+        if (name in listOf("post-person", "post-status", "post-mail") && !exists(name) && exists("post-filter")) { tag("post-filter").performTouchInput { click(center) }; frames() }
+        tag(name).performTouchInput { click(center) }; rule.waitForIdle() }
     fun flushPointerState() {
         rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
     }
@@ -126,7 +129,7 @@ internal class CodexMotionHarness(
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                 VillageTheme(true) {
                     val opener = rememberLetterOpener(opened, fetch = { m ->
-                        calls++; answer.await()
+                        calls++; fetched += m.id; answer.await()
                         OpenedMessage(LetterSceneFixtures.text(m.id), null, null, null)
                     }, onDone = {}, onError = {})
                     val marker = rememberUnreadMarker(opened, transmit = { marks++ }, onDone = {}, onError = {})

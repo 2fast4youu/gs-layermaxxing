@@ -50,6 +50,7 @@ open class LetterTreeEndToEndTest {
     private var openFails = false
     private val sent = mutableListOf<ApiClient.SendRequest>()
     private var sendFails = false
+    private var sendAnswer: CompletableDeferred<Unit>? = null
     private val draft = mutableStateOf<LetterDraft?>(null)
     private val groups = listOf(ApiClient.Group(70, "Waldrand-Runde", 1, PostPilotFixtures.pals.take(3)))
     // Mira's friendship asks for at least two hours until a letter may open
@@ -59,32 +60,38 @@ open class LetterTreeEndToEndTest {
     private fun tag(t: String) = rule.onNodeWithTag(t, useUnmergedTree = true)
     /** A tap like a finger's: what lies further down the paper is scrolled into view first (the paper scrolls). */
     private fun tap(t: String) {
+        if (t in listOf("post-person", "post-status", "post-mail") && !exists(t) && exists("post-filter")) { tag("post-filter").performClick(); frames() }
         if (postLevel > 0 && t.startsWith("tree-letter-") && !exists(t)) {
             NativePostTestDriver(rule).letter(t.removePrefix("tree-letter-").toLong())
             return
         }
         scrollTo(t); tag(t).performClick(); frames() }
-    /** Scrolls the paper (tree-page) so that [t] stands in its middle, as a finger would. */
-    private fun scrollTo(t: String) {
-        if (!exists("tree-page")) return
-        val page = tag("tree-page").fetchSemanticsNode()
-        val node = tag(t).fetchSemanticsNode()
-        if (generateSequence(node.parent) { it.parent }.none { it.id == page.id }) return
-        val y = node.positionInRoot.y + node.size.height / 2f
-        val mid = page.boundsInRoot.center.y
-        if (kotlin.math.abs(y - mid) > page.boundsInRoot.height / 2f - node.size.height / 2f) {
-            // (the scroll is animated: let it run on the test clock)
-            tag("tree-page").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.ScrollBy) { it(0f, y - mid) }
-            frames(40)
-        }
-    }
+    /** Scroll the actual owning container, then advance its animation on the frozen test clock. */
+    private fun scrollTo(t: String) = NativePostTestDriver(rule).scrollTo(t)
     private fun exists(t: String) = rule.onAllNodesWithTag(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     private fun shown(text: String) = rule.onAllNodesWithText(text, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     private fun back() { rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames(200) }
     private fun onTrunk(): List<Long> = rule.onAllNodes(SemanticsMatcher("letter") { it.config.getOrNull(SceneSlotKey)?.startsWith("letter:") == true }, useUnmergedTree = true)
         .fetchSemanticsNodes().sortedWith(compareBy({ it.boundsInRoot.top.toInt() / 40 }, { it.boundsInRoot.left })).map { it.config[SceneSlotKey].removePrefix("letter:").toLong() }
     /** Sealing runs off the main thread (EvidenceProtocol on Dispatchers.Default): wait for it in real time. */
-    private fun until(what: () -> Boolean) { repeat(200) { frames(2); if (what()) return; Thread.sleep(25) }; assertTrue("timed out", what()) }
+    private fun until(what: () -> Boolean) {
+        repeat(200) { frames(2); if (what()) return; Thread.sleep(25) }
+        // Bounded failure evidence only: never dump a potentially unbounded semantics tree.
+        val current = draft.value
+        val notice = rule.onAllNodesWithTag("tree-write-notice", useUnmergedTree = true)
+            .fetchSemanticsNodes().flatMap { it.config.getOrNull(SemanticsProperties.Text).orEmpty() }
+        val completedBeforePublication = what()
+        val sentViewBeforePublication = exists("tree-write-sent")
+        // Diagnostic after the ORIGINAL deadline: cannot turn this timed-out run green.
+        rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        frames(2)
+        assertTrue("timed out: stage=$postLevel sent=${sent.size} calls=$calls " +
+            "draft=${current != null} busy=${current?.busy} notice=$notice " +
+            "sentView=$sentViewBeforePublication " +
+            "afterPublicationCompleted=${what()} afterPublicationSentView=${exists("tree-write-sent")}",
+            completedBeforePublication)
+    }
 
     private fun start(withOpened: Map<Long, OpenedMessage> = emptyMap(), fontScale: Float = 1.5f) {
         opened.putAll(withOpened)
@@ -101,7 +108,7 @@ open class LetterTreeEndToEndTest {
                     }, onDone = { calls += "refresh" }, onError = { calls += "error" })
                     val writer = remember {
                         LetterWriter(PostPilotFixtures.pals, groups, settings, creativeActive = false,
-                            transmit = { request -> sent += request; if (sendFails) throw java.io.IOException("TESTDATEN: Server nicht erreichbar"); listOf(900L) },
+                            transmit = { request -> sent += request; if (sendFails) throw java.io.IOException("TESTDATEN: Server nicht erreichbar"); sendAnswer?.await(); listOf(900L) },
                             onSent = { calls += "sent" }, draftState = draft)
                     }
                     PostOffice(PostPilotFixtures.pals, PostPilotFixtures.letters, opened, level = postLevel, openRequests = opener.requests, writer = writer,
@@ -186,7 +193,8 @@ open class LetterTreeEndToEndTest {
         tap("tree-letter-8"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
         assertEquals(listOf("locked:3", "locked:8"), calls)
         assertFalse(exists("tree-envelope") || exists("tree-lifted"))
-        tap("tree-padlock"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
+        if (postLevel == 0) tap("tree-letter-3") else tap("tree-padlock")
+        assertTrue(exists("post-arrival")); tap("post-arrival-action")
         assertTrue(calls.last().startsWith("locked:") && calls.none { it.startsWith("open:") })
     }
 
@@ -260,6 +268,40 @@ open class LetterTreeEndToEndTest {
         assertNull(draft.value)
         tap("tree-write-done")
         assertFalse(exists("tree-lifted"))
+    }
+
+    @Test fun delayedSendKeepsItsReceiptUntilExplicitCloseWithoutExpiring() {
+        val answer = CompletableDeferred<Unit>()
+        sendAnswer = answer
+        start()
+        tap("tree-pen"); tap("tree-to-40")
+        tag("tree-write-text").performTextInput("Späte Antwort (TESTDATEN)"); frames()
+        tap("tree-write-send")
+        until { sent.size == 1 }
+        assertTrue("held server answer keeps the draft busy", draft.value?.busy == true)
+        assertFalse(exists("tree-write-sent"))
+        assertEquals(0, calls.count { it == "sent" })
+        // A controlled asynchronous answer, explicitly published on the frozen JVM clock.
+        rule.runOnIdle {
+            answer.complete(Unit)
+            androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+        }
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        until { exists("tree-write-sent") }
+        assertNull(draft.value)
+        assertEquals(1, sent.size)
+        assertEquals(1, calls.count { it == "sent" })
+        assertTrue(shown("✓ Verschlüsselt gesendet"))
+        frames(600)
+        assertTrue("receipt has no timer expiry", exists("tree-write-sent"))
+        assertTrue(exists("tree-write-done"))
+        assertFalse(exists("tree-write-send"))
+        assertEquals(1, sent.size)
+        tap("tree-write-done")
+        assertFalse(exists("tree-lifted"))
+        assertFalse(exists("tree-write-sent"))
+        assertNull(draft.value)
+        assertEquals(1, calls.count { it == "sent" })
     }
 
     @Test fun goingBackKeepsTheDraftAndTheRecipientsChangeOnThePaper() {

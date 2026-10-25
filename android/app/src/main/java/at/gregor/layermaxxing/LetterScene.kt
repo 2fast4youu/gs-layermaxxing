@@ -87,7 +87,7 @@ import kotlin.math.sin
  *  - the camera moves into the same painted tree (one transform over the whole scene: bark, belt, envelopes, ink);
  *  - the envelope is a classic LANDSCAPE envelope built from layers the app moves itself (back panel, letter sheet,
  *    pocket, flap, wax seal – painted raster material, see scripts/letter_layers.py);
- *  - a second tap anywhere on the envelope lets the seal go (it lifts, cracks and falls away), the flap folds up, the
+ *  - a second tap in the broad central screen area lets the seal go (it lifts, cracks and falls away), the flap folds up, the
  *    letter slides out and floats large above the envelope; a tap beside it puts it back and the camera moves out.
  */
 
@@ -118,7 +118,7 @@ internal class LetterScene {
     fun arrived() { if (phase == ScenePhase.APPROACH) phase = if (readOnArrival) ScenePhase.EMERGING else ScenePhase.SEALED }
 
     /**
-     * A tap anywhere on the envelope. true = the caller asks the server now (exactly then and only then).
+     * A tap in the selected envelope's central screen area. true = the caller asks the server now (exactly then and only then).
      * [openedHere]: the text is here already (it came while the view was away) – no second seal; [busy]: the app's request
      * for it still runs – wait for it, never a second call.
      */

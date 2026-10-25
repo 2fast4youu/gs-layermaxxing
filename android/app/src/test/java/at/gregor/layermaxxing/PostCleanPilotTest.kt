@@ -7,7 +7,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.performScrollTo
+
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onRoot
 import org.junit.Assert.*
 import org.junit.Rule
@@ -26,6 +28,78 @@ import org.robolectric.annotation.GraphicsMode
 class PostCleanPilotTest {
     @get:Rule val rule = createAndroidComposeRule<androidx.activity.ComponentActivity>()
     private var level by mutableStateOf(1)
+    @Test fun compactStageControlsKeep48DpInsideTheClickableInk() = checkCompactControls(false)
+    @Test fun compactStageControlPickersOpenByPhysicalTap() = checkCompactControls(true)
+    private fun checkCompactControls(tapPickers: Boolean) {
+        val d = NativePostTestDriver(rule)
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
+                androidx.compose.runtime.key(level) {
+                    VillageTheme(true) { PostPilotFixtures.Post(level) }
+                }
+            }
+        }
+        for (l in 1..3) {
+            rule.runOnIdle { level = l; androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            d.frames(40)
+            val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
+            val px = rule.activity.resources.displayMetrics.density
+            for (name in listOf("post-person", "post-status", "post-mail", "post-time-rail")) {
+                val r = d.tag(name).fetchSemanticsNode().boundsInRoot
+                assertTrue("$l $name actual clickable size $r", r.width >= 48 * px - 1 && r.height >= 48 * px - 1)
+                assertTrue("$l $name contained $r", r.left >= 0 && r.right <= root.right && r.top >= 64 * px && r.bottom <= root.bottom)
+            }
+            System.getenv("POSTAL_REPAIR_SHOTS")?.let { out ->
+                val view = rule.activity.window.decorView
+                val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+                rule.runOnIdle { view.draw(android.graphics.Canvas(bitmap)) }
+                val file = java.io.File(out, "compact-stage-$l.png"); file.parentFile.mkdirs()
+                file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+            }
+            if (tapPickers) {
+                d.tag("post-person").performTouchInput { click(center) }; d.frames()
+                assertTrue("$l person picker opens", d.exists("post-person-search")); d.tag("post-selector-close").performTouchInput { click(center) }; d.frames()
+                d.tag("post-status").performTouchInput { click(center) }; d.frames()
+                assertTrue("$l status picker opens", d.exists("tree-window-UNREAD")); d.tag("post-selector-close").performTouchInput { click(center) }; d.frames()
+                d.tag("post-mail").performTouchInput { click(center) }; d.frames()
+                assertTrue("$l mail picker opens", d.exists("post-search")); d.tag("post-selector-close").performTouchInput { click(center) }; d.frames()
+            }
+        }
+    }
+
+    @Test fun oneBackDismissesEveryCompactPickerWithoutLeavingOrChangingTheStage() {
+        val d = NativePostTestDriver(rule)
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
+                androidx.compose.runtime.key(level) { VillageTheme(true) { PostPilotFixtures.Post(level) } }
+            }
+        }
+        for (l in 1..3) {
+            rule.runOnIdle { level = l; androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            d.frames()
+            val person = d.description("post-person")
+            val status = d.description("post-status")
+            val rail = d.description("post-time-rail")
+            for (picker in listOf("post-mail", "post-person", "post-status")) {
+                d.tap(picker)
+                assertTrue("POST$l $picker opened", d.exists("post-selector"))
+                d.back() // Exactly one dispatcher action; no retry or fallback close button.
+                assertFalse("POST$l $picker dismissed by one Back", d.exists("post-selector"))
+                assertTrue("POST$l remains at rest", d.exists("tree-scene-REST"))
+                assertFalse(rule.activity.isFinishing)
+                assertEquals(person, d.description("post-person"))
+                assertEquals(status, d.description("post-status"))
+                assertEquals(rail, d.description("post-time-rail"))
+            }
+        }
+    }
+
     @Test fun onEveryPostStageTheRestIsCleanAndEveryFunctionIsOneObjectAway() {
         val d = NativePostTestDriver(rule)
         val opened = mutableListOf<Long>(); val locked = mutableListOf<Long>()
@@ -39,7 +113,9 @@ class PostCleanPilotTest {
             }
         }
         for (l in 1..3) {
-            rule.runOnIdle { level = l }; d.frames()
+            rule.runOnIdle { level = l; androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            d.frames()
             opened.clear(); locked.clear()
             val letters = PostPilotFixtures.letters
             val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
@@ -63,12 +139,12 @@ class PostCleanPilotTest {
             d.tap("post-status")
             val counts = PostViews.counts(letters, emptyMap<Long, Any>(), 40, "")
             for (v in PostViews.View.entries) {
-                d.tag("tree-window-${v.name}").performScrollTo()
+                d.scrollTo("tree-window-${v.name}")
                 assertEquals("${v.label}: ${counts[v]}", d.description("tree-window-${v.name}"))
                 val r = d.tag("tree-window-${v.name}").fetchSemanticsNode().boundsInRoot
                 assertTrue("$l ${v.label} visible $r", r.left >= -1 && r.right <= root.right + 1 && r.top >= 64 * px - 1 && r.bottom <= root.bottom + 1)
             }
-            d.tag("tree-window-UNREAD").performScrollTo()
+            d.scrollTo("tree-window-UNREAD")
             d.tap("tree-window-UNREAD")
             val both = PostViews.shown(letters, emptyMap<Long, Any>(), PostViews.View.UNREAD, 40, "")
             assertTrue(both.isNotEmpty())

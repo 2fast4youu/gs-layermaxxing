@@ -62,15 +62,20 @@ abstract class PostUpperMotionContract {
         h.until(ScenePhase.SEALED)
         assertFalse(h.exists("tree-letter-text"))
         h.touch("tree-envelope"); h.until(ScenePhase.READING)
-        assertEquals(1, h.calls)
+        // Marking unread removes cached plaintext: reopening must fetch 1 again.
+        assertEquals(2, h.calls); assertEquals(listOf(1L, 1L), h.fetched)
         h.tag("tree-letter-prev").performClick(); h.frames(1); h.until(ScenePhase.READING)
-        // The newest same-peer fixture is 1; earlier leads to the already-read 2.
+        // The newest same-peer fixture is 1; earlier leads to the already-read 2,
+        // whose content still needs its own authenticated fetch.
         // Another earlier letter (3) is locked: the footer must retain that gate.
-        assertTrue(h.exists("tree-letter-text")); assertEquals(2, h.calls)
+        assertTrue(h.exists("tree-letter-text")); assertEquals(3, h.calls)
+        assertEquals(listOf(1L, 1L, 2L), h.fetched)
         h.tag("tree-letter-prev").performClick(); h.frames(5)
-        assertEquals(ScenePhase.READING, h.phase()); assertEquals(2, h.calls)
+        assertEquals(ScenePhase.READING, h.phase()); assertEquals(3, h.calls)
+        assertEquals(listOf(1L, 1L, 2L), h.fetched)
         assertTrue(h.exists("post-arrival")); assertTrue(h.locked.isEmpty())
-        h.tag("post-arrival-action").performScrollTo(); h.touch("post-arrival-action"); h.frames()
+        NativePostTestDriver(rule).scrollTo("post-arrival-action")
+        h.touch("post-arrival-action"); h.frames()
         assertEquals(listOf(3L), h.locked)
         h.back(); h.until(ScenePhase.REST)
     }

@@ -45,7 +45,9 @@ class LetterTreeTest {
     private var serverAnswers = true
     private fun frames(n: Int = 140) { rule.waitForIdle(); repeat(n) { rule.mainClock.advanceTimeByFrame() }; rule.waitForIdle() }
     private fun tag(t: String) = rule.onNodeWithTag(t, useUnmergedTree = true)
-    private fun tap(t: String) { tag(t).performClick(); frames() }
+    private fun tap(t: String) {
+        if (t in listOf("post-person", "post-status", "post-mail") && !exists(t) && exists("post-filter")) { tag("post-filter").performClick(); frames() }
+        tag(t).performClick(); frames() }
     private fun exists(t: String) = rule.onAllNodesWithTag(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     private fun desc(t: String) = tag(t).fetchSemanticsNode().config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString().orEmpty()
     private fun onTrunk(): List<Long> = rule.onAllNodes(SemanticsMatcher("letter") { it.config.getOrNull(SceneSlotKey)?.startsWith("letter:") == true }, useUnmergedTree = true)
@@ -154,13 +156,13 @@ class LetterTreeTest {
 
     @Test fun filtersCombineWithTheOrderAndTheTimePages() {
         start()
-        tap("tree-rope"); tap("tree-strip-40")                 // Mira: 1, 2, 3, 14
+        tap("post-person"); tap("tree-strip-40")                 // Mira: 1, 2, 3, 14
         assertEquals(listOf(1L, 14, 3, 2), onTrunk())
         assertTrue(!exists("tree-time-back"))
-        tap("tree-belt"); tap("tree-window-UNREAD")            // Mira × Ungelesen: the arrived ones (1, 14)
+        tap("post-status"); tap("tree-window-UNREAD")            // Mira × Ungelesen: the arrived ones (1, 14)
         assertEquals(PostViews.shown(letters, emptyMap<Long, Any>(), PostViews.View.UNREAD, 40, "").map { it.id }.toSet(), onTrunk().toSet())
         assertEquals(listOf(1L, 14), onTrunk())
-        tap("tree-belt")
+        tap("post-status")
         val counts = PostViews.counts(letters, emptyMap<Long, Any>(), 40, "")
         for (v in PostViews.View.entries) assertEquals("${v.label}: ${counts[v]}", desc("tree-window-${v.name}"))
     }
@@ -184,8 +186,8 @@ class LetterTreeTest {
         assertTrue(selector.left >= root.left && selector.right <= root.right)
         assertTrue(selector.height <= root.height)
         tag("tree-strip-40").performScrollTo(); tap("tree-strip-40")
-        assertTrue(desc("post-person").contains("Mira"))
         assertTrue(!exists("post-selector"))
+        tap("post-filter"); assertTrue(desc("post-person").contains("Mira")); tap("post-selector-close")
     }
 
     @Test fun reducedMotionStepsCloserAtOnce() {
@@ -214,10 +216,16 @@ class LetterTreeTest {
         val env = tag("tree-env-1").fetchSemanticsNode().boundsInRoot
         assertTrue("$env", env.width >= root.width * .78f && env.width <= root.width && kotlin.math.abs(env.center.x - root.center.x) < 6 * density)
         assertTrue("$env", kotlin.math.abs(env.width / env.height - EnvelopeArt.ASPECT) < .05f)
-        // the touch area is the whole envelope; a tap near its lower left corner (far from the seal) opens it
+        // 24.10. phone feedback supersedes envelope-only input: all but the outer 12dp opens.
+        // Keep the original whole-envelope coverage and physical lower-left envelope tap too.
         val zone = tag("tree-envelope").fetchSemanticsNode().boundsInRoot
-        assertTrue("$zone ~ $env", kotlin.math.abs(zone.width - env.width) < 3 * density && kotlin.math.abs(zone.left - env.left) < 3 * density)
-        tag("tree-envelope").performTouchInput { click(androidx.compose.ui.geometry.Offset(width * .08f, height * .9f)) }
+        assertEquals(root.left + 12 * density, zone.left, 1f)
+        assertEquals(root.top + 12 * density, zone.top, 1f)
+        assertEquals(root.right - 12 * density, zone.right, 1f)
+        assertEquals(root.bottom - 12 * density, zone.bottom, 1f)
+        assertTrue("whole envelope $env inside central input $zone", zone.contains(env.topLeft) && zone.contains(env.bottomRight))
+        assertTrue("selection must not open", calls.isEmpty() && exists("tree-scene-SEALED"))
+        rule.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(env.left + env.width * .08f, env.top + env.height * .9f)) }
         // the opening on the test clock: the seal lets go, then the letter comes out (each its own phase), then it floats
         val seen = mutableListOf<String>()
         var first: androidx.compose.ui.geometry.Rect? = null
@@ -254,8 +262,9 @@ class LetterTreeTest {
         val full11 = tag("tree-env-11").fetchSemanticsNode().boundsInRoot
         assertEquals(k, full6.width / rest6.width, .03f * k)
         assertEquals(k, full11.width / rest11.width, .05f * k)
-        // a tap beside the envelope: the camera moves back out (nothing opened)
-        rule.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(width * .5f, height * .95f)) }; rule.waitForIdle()
+        // 24.10.: only the thin screen edge closes; .95h is now opening input, not outside.
+        // Keep the original same-camera interpolation/return and zero-request assertions.
+        rule.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(width * .5f, height - 6 * density)) }; rule.waitForIdle()
         repeat(14) { rule.mainClock.advanceTimeByFrame() }; rule.waitForIdle()
         val back = tag("tree-env-1").fetchSemanticsNode().boundsInRoot
         assertTrue("shrinks $back", back.width < full.width * .9f && back.width > rest1.width)
@@ -263,6 +272,35 @@ class LetterTreeTest {
         assertTrue(exists("tree-scene-REST") && exists("tree-letter-1"))
         assertEquals(rest1.width, tag("tree-env-1").fetchSemanticsNode().boundsInRoot.width, 1f)
         assertTrue(calls.isEmpty())
+    }
+
+    @Test fun onlyTheFourThinEdgesReturnAndTheOldOutsidePointOpensExactlyOnce() {
+        start()
+        val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
+        val edge = 6 * density
+        val edgePoints = listOf(
+            androidx.compose.ui.geometry.Offset(edge, root.height * .5f),
+            androidx.compose.ui.geometry.Offset(root.width - edge, root.height * .5f),
+            androidx.compose.ui.geometry.Offset(root.width * .5f, edge),
+            androidx.compose.ui.geometry.Offset(root.width * .5f, root.height - edge)
+        )
+        for ((index, point) in edgePoints.withIndex()) {
+            tap("tree-letter-1")
+            assertTrue("edge $index selection only", exists("tree-scene-SEALED") && calls.isEmpty())
+            rule.onRoot().performTouchInput { click(point) }; frames()
+            assertTrue("edge $index returns without a request", exists("tree-scene-REST") && !exists("tree-envelope") && calls.isEmpty())
+            assertEquals(listOf(1L, 6, 11, 14, 3, 8, 4, 7, 12), onTrunk())
+        }
+        tap("tree-letter-1")
+        val point = androidx.compose.ui.geometry.Offset(root.width * .5f, root.height * .95f)
+        val env = tag("tree-env-1").fetchSemanticsNode().boundsInRoot
+        assertTrue("regression point is outside painted envelope $env", !env.contains(point))
+        assertTrue("but inside broad opening input", tag("tree-envelope").fetchSemanticsNode().boundsInRoot.contains(point))
+        assertTrue(calls.isEmpty())
+        rule.onRoot().performTouchInput { click(point) }; frames(200)
+        assertEquals(listOf("open:1"), calls)
+        assertTrue(exists("tree-scene-READING") && exists("tree-letter-text") && !exists("tree-envelope"))
+        assertTrue(rule.onAllNodesWithText("Inhalt von Brief 1 (TESTDATEN)").fetchSemanticsNodes().isNotEmpty())
     }
 
     /** Every text of the tree's ink / numbers: its laid-out text fits its own box (no cut, no clipped descender). */
@@ -277,12 +315,25 @@ class LetterTreeTest {
         return nodes
     }
 
+    /** Opt-in native JVM pixels for the exact large-font ink regression, never handset proof. */
+    private fun captureInkFixture(name: String) {
+        val directory = System.getenv("TREE_INK_SHOTS")?.takeIf { it.isNotBlank() } ?: return
+        val out = java.io.File(directory).also { it.mkdirs() }
+        val view = rule.activity.window.decorView
+        val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+        rule.runOnIdle { view.draw(android.graphics.Canvas(bitmap)) }
+        java.io.File(out, "$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+    }
+
     @Test fun pixelReview1074NamesStatesCountsAndTheArrowAreWholeOnASmallPhoneWithALargeFont() {
         start()
-        // (2) every letter on the trunk shows its name AND its state word (long or short form), both whole
-        val ink = wholeTexts("tree-ink")
+        captureInkFixture("compact360-font1.5-current")
+        // Every native identity fits its paper; state remains in each letter accessibility label.
+        val identityNodes = rule.onAllNodes(SemanticsMatcher("native identity") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("post-identity-") == true }, useUnmergedTree = true).fetchSemanticsNodes()
+        val ink = identityNodes.flatMap { wholeTexts(it.config[SemanticsProperties.TestTag]) }
         val shown = onTrunk()
-        assertEquals("name + state on each of ${shown.size} letters", shown.size * 2, ink.size)
+        assertEquals("identity on each of ${shown.size} letters", shown.size, ink.size)
         // all ink lines lie on their envelope / sheet: inside the letter's touch area (= the painted thing)
         // (the painted thing: the envelope sprite where one hangs, else the sheet)
         val things = rule.onAllNodes(SemanticsMatcher("e") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("tree-env-") == true }, useUnmergedTree = true).fetchSemanticsNodes().map { it.boundsInRoot } +
@@ -298,10 +349,10 @@ class LetterTreeTest {
             assertTrue("$r on the paper of $e", r.bottom <= e.top + e.height * .95f + 1 * density && r.left >= e.left && r.right <= e.right)
         }
         // names have a readable size: no name drawn more than a third smaller than the largest one
-        val names = ink.filterIndexed { k, _ -> k % 2 == 0 }.map { it.size.height }
+        val names = ink.map { it.size.height }
         assertTrue("$names", names.min() >= names.max() * .66f)
         // (4) counts belong to labelled controls, never detached ink over the furniture.
-        assertTrue(wholeTexts("post-status").isNotEmpty())
+        tap("post-filter"); assertTrue(wholeTexts("post-status").isNotEmpty())
         tap("post-status")
         for (v in PostViews.View.entries) {
             wholeTexts("tree-window-${v.name}").single()
@@ -319,6 +370,7 @@ class LetterTreeTest {
         assertTrue(wholeTexts("post-time-label").isNotEmpty())
         // (3) the older page: "offen" / "gesendet" whole on the opened envelopes
         tap("tree-time-back")
-        assertEquals(10, wholeTexts("tree-ink").size)
+        captureInkFixture("compact360-font1.5-older")
+        assertEquals(5, rule.onAllNodes(SemanticsMatcher("older native identities") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("post-identity-") == true }, useUnmergedTree = true).fetchSemanticsNodes().flatMap { wholeTexts(it.config[SemanticsProperties.TestTag]) }.size)
     }
 }

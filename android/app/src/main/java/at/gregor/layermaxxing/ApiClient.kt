@@ -3,6 +3,10 @@ package at.gregor.layermaxxing
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -66,6 +70,10 @@ class ApiClient(
         .connectTimeout(20, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS).build(),
 ) {
+    // Opening can consume a read-once key. A transport failure requires an explicit retry,
+    // never an automatic replay of this GET by OkHttp. Other endpoints retain their policy.
+    private val letterContentClient by lazy { client.newBuilder().retryOnConnectionFailure(false).build() }
+
     data class ServerInfo(
         val name: String, val role: String, val version: String, val warning: String,
         val features: List<String>,
@@ -639,9 +647,32 @@ class ApiClient(
 
     suspend fun messages(token: String): List<Message> = array(token, "api/messages") { parseMessage(it, true) }
     suspend fun outbox(token: String): List<Message> = array(token, "api/outbox") { parseMessage(it, false) }
-    suspend fun content(token: String, id: Long): MessageContent = io {
-        val json = execute(authorized(token, "api/messages/$id/content").get().build())
-        MessageContent(json.getString("ciphertext"), json.getString("nonce"), json.getString("encryption_key"),
+    suspend fun content(token: String, id: Long): MessageContent {
+        // Cancel the underlying call, rather than merely abandoning a blocking IO coroutine.
+        // System DNS may finish out of band; LetterOpener's attempt guard rejects late results.
+        // A total call deadline also bounds redirects and a response that trickles forever.
+        val json = suspendCancellableCoroutine<JSONObject> { continuation ->
+            val call = letterContentClient.newCall(authorized(token, "api/messages/$id/content").get().build())
+            call.timeout().timeout(45, TimeUnit.SECONDS)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    continuation.resumeWith(Result.failure(ApiErrors.fromNetworkFailure(e)))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    val result = runCatching {
+                        response.use {
+                            val text = try { it.body?.string().orEmpty() }
+                                catch (e: IOException) { throw ApiErrors.fromNetworkFailure(e) }
+                            if (!it.isSuccessful) throw ApiErrors.fromHttpResponse(it.code, text)
+                            JSONObject(text)
+                        }
+                    }
+                    continuation.resumeWith(result)
+                }
+            })
+        }
+        return MessageContent(json.getString("ciphertext"), json.getString("nonce"), json.getString("encryption_key"),
             json.nullableString("attachment_name"), json.nullableString("attachment_mime"),
             json.nullableString("attachment_ciphertext"), json.nullableString("attachment_nonce"),
             json.nullableString("canonical_metadata"))

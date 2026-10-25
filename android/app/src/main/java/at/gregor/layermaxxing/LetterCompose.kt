@@ -16,6 +16,9 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDateTime
@@ -182,26 +185,79 @@ internal class LetterOpener(
     private val fetch: () -> (suspend (ApiClient.Message) -> OpenedMessage),
     private val onDone: () -> (() -> Unit),
     private val onError: () -> ((String) -> Unit),
+    private val timeoutMillis: Long = 45_000L,
 ) {
     val requests = mutableStateMapOf<Long, OpenRequest>()
     private var generation = 0
+    private class Attempt { var work: Job? = null; var deadline: Job? = null }
+    private val attempts = mutableMapOf<Long, Attempt>()
 
-    /** Asks the server for [message]; false = not sent (its request is still running). */
+    /** Deadline includes transport, response body and authenticated decryption, not just socket reads. */
     fun open(message: ApiClient.Message): Boolean {
         if (requests[message.id] == OpenRequest.RUNNING) return false
+        val attempt = Attempt()
+        attempts[message.id] = attempt
         requests[message.id] = OpenRequest.RUNNING
         val gen = generation
-        val get = fetch()
-        scope.launch {
-            val result = runCatching { get(message) }
-            if (gen != generation) return@launch
-            result.onSuccess { opened[message.id] = it; requests.remove(message.id); onDone()() }
-                .onFailure { requests[message.id] = OpenRequest.FAILED; onError()(it.message ?: "Öffnen fehlgeschlagen") }
+        fun current() = gen == generation && attempts[message.id] === attempt
+        fun fail(label: String) {
+            if (!current()) return
+            attempts.remove(message.id)
+            attempt.deadline?.cancel()
+            requests[message.id] = OpenRequest.FAILED
+            runCatching { onError()(label) }
+        }
+        // Capture the account's transport before launching; a later recomposition may carry
+        // another token. Factory failures are terminal too, rather than leaving RUNNING behind.
+        val get = try { fetch() } catch (e: Exception) {
+            fail(failureLabel(e)); return true
+        }
+        attempt.deadline = scope.launch {
+            delay(timeoutMillis)
+            fail("Öffnen dauert zu lange – bitte erneut versuchen")
+            attempt.work?.cancel()
+        }
+        attempt.work = scope.launch {
+            try {
+                val result = get(message)
+                if (!current()) return@launch
+                attempts.remove(message.id)
+                attempt.deadline?.cancel()
+                opened[message.id] = result
+                requests.remove(message.id)
+                // Refresh/report callbacks cannot turn a verified success into a failed open.
+                runCatching { onDone()() }
+            } catch (e: Exception) {
+                fail(failureLabel(e))
+            }
+        }
+        // Also handles a scope cancelled before the worker ever enters its body.
+        attempt.work?.invokeOnCompletion { cause ->
+            if (cause != null) fail("Öffnen abgebrochen – bitte erneut versuchen")
         }
         return true
     }
 
-    fun reset() { generation++; requests.clear() }
+    private fun failureLabel(error: Exception): String = when {
+        error is CancellationException -> "Öffnen abgebrochen – bitte erneut versuchen"
+        error is ApiException && error.code == 0 -> "Keine Verbindung zum Server – bitte erneut öffnen"
+        error is ApiException -> ApiErrors.friendly(error.message)
+        else -> "Der Brief konnte nicht geprüft oder geöffnet werden – bitte erneut versuchen"
+    }
+
+    fun cancel(id: Long) {
+        val attempt = attempts.remove(id) ?: return
+        requests[id] = OpenRequest.FAILED
+        attempt.deadline?.cancel(); attempt.work?.cancel()
+    }
+
+    fun reset() {
+        generation++
+        val old = attempts.values.toList()
+        attempts.clear(); requests.clear()
+        old.forEach { it.deadline?.cancel(); it.work?.cancel() }
+    }
+
 }
 
 @Composable
@@ -210,10 +266,11 @@ internal fun rememberLetterOpener(
     fetch: suspend (ApiClient.Message) -> OpenedMessage,
     onDone: () -> Unit,
     onError: (String) -> Unit,
+    timeoutMillis: Long = 45_000L,
 ): LetterOpener {
     val scope = rememberCoroutineScope()
     val f by rememberUpdatedState(fetch); val d by rememberUpdatedState(onDone); val e by rememberUpdatedState(onError)
-    return remember(opened) { LetterOpener(scope, opened, { f }, { d }, { e }) }
+    return remember(opened, timeoutMillis) { LetterOpener(scope, opened, { f }, { d }, { e }, timeoutMillis) }
 }
 
 /** The state of the one request that marks a read letter unread again. Absent = none; DONE stays until the next mark. */
@@ -272,4 +329,19 @@ internal fun rememberUnreadMarker(
     val scope = rememberCoroutineScope()
     val t by rememberUpdatedState(transmit); val d by rememberUpdatedState(onDone); val e by rememberUpdatedState(onError)
     return remember(opened) { UnreadMarker(scope, opened, { t }, { d }, { e }) }
+}
+
+/** Production content endpoint and AES-GCM authentication, shared by every open surface. */
+internal suspend fun openLetterContent(api: ApiClient, token: String, message: ApiClient.Message): OpenedMessage {
+    val content = api.content(token, message.id)
+    return withContext(Dispatchers.Default) {
+        val aad = content.canonicalMetadata?.toByteArray() ?: byteArrayOf()
+        val text = CryptoBox.decryptBytes(content.ciphertext, content.nonce, content.encryptionKey, aad).toString(Charsets.UTF_8)
+        val bytes = if (content.attachmentCiphertext != null && content.attachmentNonce != null)
+            CryptoBox.decryptBytes(content.attachmentCiphertext, content.attachmentNonce, content.encryptionKey,
+                if (content.canonicalMetadata != null && content.attachmentName != null && content.attachmentMime != null)
+                    EvidenceProtocol.attachmentAad(content.canonicalMetadata, content.attachmentName, content.attachmentMime)
+                else byteArrayOf()) else null
+        OpenedMessage(text, bytes, content.attachmentName, content.attachmentMime)
+    }
 }
