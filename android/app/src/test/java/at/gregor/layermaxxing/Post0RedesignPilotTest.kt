@@ -175,6 +175,7 @@ class Post0RedesignPilotTest {
         assertTrue(entry.width >= 48 * px - 1 && entry.height >= 48 * px - 1)
         for (t in listOf("post-person", "post-status", "post-mail", "post-controls")) node(t).assertDoesNotExist()
         contained("post-filter"); contained("post-time-label"); contained("tree-wax-write-label")
+        assertEquals("e_post_0_lay_sheet", node("post-filter-surface").fetchSemanticsNode().config[PostalMenuMaterialKey])
         for (tag in listOf("post-filter-ink", "post-time-label", "tree-wax-writing-cue")) {
             val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
             node(tag).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
@@ -192,6 +193,7 @@ class Post0RedesignPilotTest {
         }
         capture("rest120")
         tap("post-filter"); capture("filteropen")
+        assertEquals("e_post_0_lay_sheet", node("post-selector").fetchSemanticsNode().config[PostalMenuMaterialKey])
         contained("post-selector-close")
         tap("post-selector-close"); node("post-selector").assertDoesNotExist(); tap("post-filter")
         for (t in listOf("post-person", "post-status", "post-mail")) node(t).assertExists()

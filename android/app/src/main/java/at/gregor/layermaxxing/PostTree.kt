@@ -1416,7 +1416,7 @@ private fun timeSummary(page: Int, pages: Int, mail: List<ApiClient.Message>): S
     return "${page + 1}/$pages · $date"
 }
 
-/** A single quiet filter trigger; no imitation paper or decorative rope attachments. */
+/** A quiet label in the scene's own paper and ink; no floating white Material card. */
 @Composable
 private fun RopeFilterTag(r: DpRect, active: Boolean, action: () -> Unit) {
     Box(Modifier.offset(r.left, r.top).size(maxOf(96.dp, r.w), maxOf(48.dp, r.h))
@@ -1425,10 +1425,10 @@ private fun RopeFilterTag(r: DpRect, active: Boolean, action: () -> Unit) {
         .testTag("post-filter"), Alignment.TopCenter) {
         Box(Modifier.fillMaxWidth().heightIn(min = 40.dp)
             .testTag("post-filter-surface")
-            .background(Color(0xF5FFFCF6), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            .postalPaperSurface(strip = true)
             .padding(horizontal = 8.dp, vertical = 8.dp), Alignment.Center) {
-            Text(if (active) "Filter • ▾" else "Filter ▾", fontFamily = androidx.compose.ui.text.font.FontFamily.SansSerif,
-                fontSize = 13.sp, lineHeight = 17.sp, letterSpacing = 0.sp, fontWeight = FontWeight.Medium, color = Color(0xFF29251F), maxLines = 1,
+            Text(if (active) "Filter • ▾" else "Filter ▾", fontFamily = Kit.Body,
+                fontSize = 13.sp, lineHeight = 17.sp, letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF382616), maxLines = 1,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().testTag("post-filter-ink"))
         }
     }
