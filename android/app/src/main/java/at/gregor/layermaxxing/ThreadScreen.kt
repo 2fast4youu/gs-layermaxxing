@@ -214,7 +214,8 @@ internal fun ThreadScreen(
         runCatching { api.chatMessages(token, friend.id) }.onSuccess { chat = it; selectedIds = selectedIds.intersect(it.filterNot { message -> message.deleted }.map { message -> message.id }.toSet()); threadError = null }
             .onFailure { threadError = it.message }
     }
-    LaunchedEffect(friend.id, token, chatsEnabled) { while (true) { reloadChat(); delay(5_000) } }
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(friend.id, token, chatsEnabled) { while (true) { reloadChat(); lifecycle.pollPause(5_000) } }
     // Presence is light: typing, online and the shared chat days, every 3 s.
     LaunchedEffect(friend.id, token, chatsEnabled) {
         if (!chatsEnabled) { presence = null; return@LaunchedEffect }
@@ -225,7 +226,7 @@ internal fun ThreadScreen(
                 if (pr.chatDayToday && presence?.chatDayToday == false && !counted) { notice = ChatExtras.growthNote(pr); counted = true }
                 presence = pr
             }
-            delay(3_000)
+            lifecycle.pollPause(3_000)
         }
     }
     LaunchedEffect(token) { runCatching { api.glossary(token) }.onSuccess { glossary = it } }

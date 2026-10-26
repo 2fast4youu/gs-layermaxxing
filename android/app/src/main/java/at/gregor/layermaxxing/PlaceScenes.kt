@@ -47,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -63,6 +65,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -80,6 +83,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.PI
@@ -452,8 +456,9 @@ private fun BoxScope.PostRest(
         val tr = rememberInfiniteTransition(label = "lamp")
         val context = androidx.compose.ui.platform.LocalContext.current
         val still = remember(context) { android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
-        val a by tr.animateFloat(.10f, .24f, infiniteRepeatable(tween(2400), RepeatMode.Reverse), label = "glow")
-        Box(letters.box().background(Brush.radialGradient(listOf(Color(0xFFFFD58A).copy(alpha = if (still) .16f else a), Color.Transparent))))
+        val a = tr.animateFloat(.10f, .24f, infiniteRepeatable(tween(2400), RepeatMode.Reverse), label = "glow")
+        // the glow is read while drawing: it repaints the light, it does not recompose the post every frame
+        Box(letters.box().drawBehind { drawRect(Brush.radialGradient(listOf(Color(0xFFFFD58A).copy(alpha = if (still) .16f else a.value), Color.Transparent))) })
     }
     @Composable
     fun hotspot(r: DpRect, focus: PostFocus, label: String) {
@@ -855,7 +860,8 @@ internal fun LighthouseView(
     level: Int = 3,
 ) {
     val t = rememberInfiniteTransition(label = "sea")
-    val bob by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(1800), RepeatMode.Reverse), label = "bob")
+    // the sea's bob is read only where it moves the drawn lights and bottles, so the place is not recomposed every frame
+    val bob = t.animateFloat(-1f, 1f, infiniteRepeatable(tween(1800), RepeatMode.Reverse), label = "bob")
     val scene = StageScenes.of(IsleBuilding.LIGHTHOUSE, level)
     var page by rememberSaveable { mutableStateOf(0) }
     var bottlePage by rememberSaveable { mutableStateOf(0) }
@@ -936,9 +942,9 @@ internal fun LighthouseView(
 
 /** A friend as the place sees them out on the sea: a light with their picture and name (faded while unanswered). */
 @Composable
-private fun Lookout(emoji: String, name: String, color: Color, stars: Int, night: Boolean, bob: Float, waiting: Boolean, modifier: Modifier) {
+private fun Lookout(emoji: String, name: String, color: Color, stars: Int, night: Boolean, bob: State<Float>, waiting: Boolean, modifier: Modifier) {
     Column(modifier.alpha(if (waiting) .62f else 1f), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.fillMaxWidth().weight(1f).offset(y = (bob * 2).dp), Alignment.Center) {
+        Box(Modifier.fillMaxWidth().weight(1f).offset { IntOffset(0, (bob.value * 2).dp.roundToPx()) }, Alignment.Center) {
             Box(Modifier.fillMaxSize(.95f).background(Brush.radialGradient(listOf(if (night) Color(0xAAFFE7A0) else Color(0x88FFFFFF), Color.Transparent)), CircleShape))
             Box(
                 Modifier.size(44.dp).shadow(3.dp, CircleShape)
@@ -954,15 +960,15 @@ private fun Lookout(emoji: String, name: String, color: Color, stars: Int, night
 }
 
 @Composable
-private fun Bottle(name: String, bob: Float, onYes: () -> Unit, onNo: () -> Unit) {
+private fun Bottle(name: String, bob: State<Float>, onYes: () -> Unit, onNo: () -> Unit) {
     // 7.9.13: request text above, the two answers in their own row: in one row (250 dp, font 1.5) the text was cut.
     Column(
-        Modifier.fillMaxWidth().offset(y = (bob * 2).dp).shadow(5.dp, RoundedCornerShape(20.dp))
+        Modifier.fillMaxWidth().offset { IntOffset(0, (bob.value * 2).dp.roundToPx()) }.shadow(5.dp, RoundedCornerShape(20.dp))
             .background(Brush.verticalGradient(listOf(Color(0xF2FFFBF1), Color(0xF2F6E7C8))), RoundedCornerShape(20.dp))
             .border(1.5.dp, Color(0xFFD9BE8A), RoundedCornerShape(20.dp)).padding(6.dp).testTag("bottle-card"),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Sprite(R.drawable.p_bottle, Modifier.size(40.dp).rotate(-35f + bob * 6))
+            Sprite(R.drawable.p_bottle, Modifier.size(40.dp).graphicsLayer { rotationZ = -35f + bob.value * 6 })
             Column(Modifier.weight(1f)) {
                 Text(name, fontFamily = Display, color = Color(0xFF3B2410), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag("bottle-name"))

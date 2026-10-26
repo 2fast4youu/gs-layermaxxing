@@ -217,13 +217,13 @@ internal fun BuildingMarker(
     reducedMotion: Boolean,
     phase: Float = 0f,
 ) {
-    val bob = if (reducedMotion) 0f else {
+    // read only in the layer below: the bob moves the drawn marker, it does not recompose it every frame
+    val bob = if (reducedMotion) remember { androidx.compose.runtime.mutableFloatStateOf(0f) } else {
         val t = rememberInfiniteTransition(label = "marker-bob")
-        val v by t.animateFloat(
+        t.animateFloat(
             -1f, 1f, infiniteRepeatable(tween(1300 + (phase * 400).toInt(), easing = FastOutSlowInEasing), RepeatMode.Reverse),
             label = "marker-bob-v",
         )
-        v
     }
     val pop by animateFloatAsState(if (selected) 1.15f else 1f, tween(220), label = "marker-pop")
     val unit = 1f / scope.zoom
@@ -237,7 +237,7 @@ internal fun BuildingMarker(
         Column(
             Modifier.at(pinAt, box, box + 10.dp * unit, pivotY = if (below) 0f else 1f).width(box)
                 .graphicsLayer {
-                    translationY = bob * 3.dp.toPx() * unit
+                    translationY = bob.value * 3.dp.toPx() * unit
                     scaleX = pop; scaleY = pop
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, if (below) 0f else 1f)
                 }
@@ -304,17 +304,16 @@ private fun MarkerPin(up: Boolean, unit: Float) {
 /** A courier walking the village road with a letter under his arm. */
 @Composable
 internal fun CourierWalker(point: MapPoint, scope: PlateScope, label: String, reducedMotion: Boolean, onClick: () -> Unit) {
-    val hop = if (reducedMotion) 0f else {
+    val hop = if (reducedMotion) remember { androidx.compose.runtime.mutableFloatStateOf(0f) } else {
         val t = rememberInfiniteTransition(label = "courier")
-        val v by t.animateFloat(0f, 1f, infiniteRepeatable(tween(520, easing = LinearEasing), RepeatMode.Reverse), label = "courier-hop")
-        v
+        t.animateFloat(0f, 1f, infiniteRepeatable(tween(520, easing = LinearEasing), RepeatMode.Reverse), label = "courier-hop")
     }
     val unit = 1f / scope.zoom
     val s = 44.dp * unit
     with(scope) {
         Box(
             Modifier.at(point, s, s, pivotY = 1f).size(s)
-                .graphicsLayer { translationY = -hop * 4.dp.toPx() * unit; rotationZ = (hop - .5f) * 6f }
+                .graphicsLayer { translationY = -hop.value * 4.dp.toPx() * unit; rotationZ = (hop.value - .5f) * 6f }
                 .semantics { contentDescription = label; role = Role.Button }
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         ) {

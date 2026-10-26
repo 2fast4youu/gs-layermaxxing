@@ -269,6 +269,7 @@ fun LayerHome(
     // the letter being written on the letter tree's paper (kept when going back to the tree; a new account starts empty)
     val treeDraft = remember(token) { mutableStateOf<LetterDraft?>(null) }
 
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(token) {
         // Switching accounts must not leak the previous account's transient state.
         opener.reset(); unreadMarker.reset(); opened.clear(); epProposal = null; openThreadFriend = null; proof = null; composeLetterFriend = null
@@ -282,7 +283,7 @@ fun LayerHome(
         fogVisible = false; lockedTapTracker.reset(); lockedLetterSounds.stopAll()
         busy = true; error = null; offline = false; status = null
         // Offline? retry sooner, so the app comes back by itself.
-        while (true) { refresh(); delay(if (offline) 8_000 else 30_000) }
+        while (true) { refresh(); lifecycle.pollPause(if (offline) 8_000 else 30_000) }
     }
     if (recoveryCode != null) RecoveryDialog(recoveryCode!!) { recoveryCode = null; onRecoveryCodeSeen() }
     proof?.let { ProofDialog(it, onDismiss = { proof = null }) }

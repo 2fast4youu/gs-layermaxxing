@@ -93,8 +93,9 @@ class StageSceneSmallScreenTest {
             // the post's views show their label and count whole
             // 1011: the post's views appear when its brass slider is touched: label and count whole, over the bottom row
             if (b == IsleBuilding.POST && StageScenes.of(b, level).clean) {
-                // the letter tree: its brass belt touched, the four windows with their scratched labels on screen, labels whole
-                rule.onNodeWithTag("tree-belt", useUnmergedTree = true).performClick(); frames()
+                // the letter tree: Filter → Status opened, the four windows with their labels on screen, labels whole
+                rule.onNodeWithTag("post-filter", useUnmergedTree = true).performClick(); frames()
+                rule.onNodeWithTag("post-status", useUnmergedTree = true).performClick(); frames()
                 for (v in PostViews.View.entries) {
                     rule.onNodeWithTag("tree-window-${v.name}", useUnmergedTree = true).performScrollTo(); frames()
                     val n = rule.onNodeWithTag("tree-window-${v.name}", useUnmergedTree = true).fetchSemanticsNode()
@@ -218,7 +219,7 @@ class StageSceneSmallScreenTest {
         rule.setContent { VillageTheme(true) { PostOffice(many, letters, emptyMap(), {}, {}, {}, {}, level = 1) } }
         frames()
         val d = NativePostTestDriver(rule)
-        d.tap("tree-rope")
+        d.tap("post-person")
         assertEquals((listOf("person:alle") + many.map { "person:${it.id}" }).toSet(), d.people())
         d.back()
         assertEquals(letters.map { "letter:${it.id}" }.toSet(), d.letters())
@@ -228,6 +229,8 @@ class StageSceneSmallScreenTest {
         d.frames()
         d.back()
         assertEquals(setOf("letter:1120"), d.keys("letter:"))
-        assertTrue(d.description("tree-belt").contains("Alle, 1 Briefe"))
+        d.tap("post-filter")
+        assertEquals("Status: Alle", d.description("post-status"))
+        assertEquals("1 Briefe durchsuchen", d.description("post-mail"))
     }
 }

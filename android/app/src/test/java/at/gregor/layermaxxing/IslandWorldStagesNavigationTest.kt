@@ -77,7 +77,10 @@ class IslandWorldStagesNavigationTest {
             IsleBuilding.POST -> {
                 // the person surface is touched (the letter tree: its rope), then Anna's filters the post to her three letters
                 val tree = scene.clean
-                rule.onAllNodes(androidx.compose.ui.test.hasTestTag(if (tree) "tree-rope" else "post-hotspot-PEOPLE"), useUnmergedTree = true)[0].performClick(); tick()
+                // 7.9.14: the letter tree's person filter sits behind its "Filter" label (Filter → Person)
+                if (tree) for (t in listOf("post-filter", "post-person")) {
+                    rule.onAllNodes(androidx.compose.ui.test.hasTestTag(t), useUnmergedTree = true)[0].performClick(); tick()
+                } else { rule.onAllNodes(androidx.compose.ui.test.hasTestTag("post-hotspot-PEOPLE"), useUnmergedTree = true)[0].performClick(); tick() }
                 slot("person:3")[0].performClick(); tick()
                 assertEquals(msg, 3, rule.onAllNodes(SemanticsMatcher("letters") { it.config.getOrNull(SceneSlotKey)?.startsWith("letter:") == true }, useUnmergedTree = true).fetchSemanticsNodes().size)
                 slot("letter:4")[0].performClick(); tick()
@@ -85,6 +88,10 @@ class IslandWorldStagesNavigationTest {
                 // show its sealed envelope first
                 if (tree && rule.onAllNodes(androidx.compose.ui.test.hasTestTag("tree-envelope"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
                     rule.onAllNodes(androidx.compose.ui.test.hasTestTag("tree-envelope"), useUnmergedTree = true)[0].performClick(); tick()
+                }
+                // 7.9.14: a letter still travelling first shows its arrival note; its seal sound reaches the app
+                if (rule.onAllNodes(androidx.compose.ui.test.hasTestTag("post-arrival-action"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
+                    rule.onAllNodes(androidx.compose.ui.test.hasTestTag("post-arrival-action"), useUnmergedTree = true)[0].performClick(); tick()
                 }
                 assertTrue("$msg $calls", calls.any { it == "open:4" || it == "locked:4" })
             }
@@ -138,7 +145,7 @@ class IslandWorldStagesNavigationTest {
         visit(IsleBuilding.POST, 0)
         val tag = { t: String -> rule.onAllNodes(androidx.compose.ui.test.hasTestTag(t), useUnmergedTree = true) }
         // (the visit above filtered the tree to Anna; all people again) the arrived letter's seal waits for its running request
-        tag("tree-rope")[0].performClick(); tick(); slot("person:alle")[0].performClick(); tick()
+        tag("post-filter")[0].performClick(); tick(); tag("post-person")[0].performClick(); tick(); slot("person:alle")[0].performClick(); tick()
         calls.clear()
         slot("letter:${arrived.id}")[0].performClick(); tick(1200)
         assertTrue(rule.onAllNodesWithText("wird geöffnet", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())

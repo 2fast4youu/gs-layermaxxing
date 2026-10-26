@@ -69,8 +69,12 @@ class StageSceneRenderTest {
     }
     /** The same strip taken from the decoded scene picture as FunctionStage maps it onto a [w] × [h] window (Crop). */
     private fun pictureEdge(scene: StageScenes.Scene, w: Int, h: Int): IntArray {
-        val id = scene.picture
-        val res = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().resources
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val res = context.resources
+        // 7.9.14: the post paints its own physical back picture behind the scene (the same choice as PostTree)
+        val back = if (scene.building != IsleBuilding.POST) 0 else if (scene.level == 0) R.drawable.e_post_0_time_back
+            else res.getIdentifier("e_post_${scene.level}_physical_back", "drawable", context.packageName)
+        val id = if (back != 0) back else scene.picture
         val pic = android.graphics.BitmapFactory.decodeResource(res, id, android.graphics.BitmapFactory.Options().apply { inScaled = false })
         val aspect = pic.width.toFloat() / pic.height
         val byHeight = w.toFloat() / h < aspect
@@ -152,7 +156,7 @@ class StageSceneRenderTest {
             // no surface uses, between the header and the action row) the window shows the scene picture's own colours
             for (level in 0..3) {
                 val (shot, pic) = edges.getValue(b to level)
-                assertTrue("$b stage $level edge differs from its picture by $shot vs $pic", listOf(0, 1, 2).all { kotlin.math.abs(shot[it] - pic[it]) <= 28 })
+                assertTrue("$b stage $level edge differs from its picture by ${shot.contentToString()} vs ${pic.contentToString()}", listOf(0, 1, 2).all { kotlin.math.abs(shot[it] - pic[it]) <= 28 })
             }
         }
     }

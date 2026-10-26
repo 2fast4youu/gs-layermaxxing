@@ -190,7 +190,9 @@ class IslandStartUiTest {
             openFromMenu(b)
             val stage = IslandStages.of(b, 2)
             rule.onAllNodesWithContentDescription("Ort: ${stage.name}")[0].assertExists()
-            rule.onAllNodesWithContentDescription("Kopfbild: ${stage.name}")[0].assertExists()
+            // (a clean stage – every post stage since 7.9.14 – draws no header picture: the place itself is the picture)
+            if (!StageScenes.of(b, 2).clean) rule.onAllNodesWithContentDescription("Kopfbild: ${stage.name}")[0].assertExists()
+            else rule.onAllNodesWithContentDescription("Kopfbild: ${stage.name}").assertCountEquals(0)
             rule.onAllNodesWithContentDescription("Ort: ${IslandStages.of(b, 0).name}").assertCountEquals(0)
             rule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }; tick(900)
         }
