@@ -179,7 +179,7 @@ class IslandGroundTest {
     }
 
     @Test fun unknownRulesFailClosedAndOlderRulesKeepTheirOwnGeometry() {
-        for (v in listOf(8, 9, 99)) {
+        for (v in listOf(9, 99)) {
             val c = at(IsleBuilding.HOUSE, 1, 5).copy(gridVersion = v)
             assertTrue(IslandLayout.targets(c, IslandTarget.Building(IsleBuilding.HOUSE)).isEmpty())
             assertNotNull(PlacementRule.problem(v))

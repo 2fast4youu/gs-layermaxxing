@@ -84,6 +84,10 @@ jobs:
             --tests '*IslandMap*Test' \
             --tests '*HarbourRouteTest' \
             --tests '*IslandEdge*Test' \
+            --tests '*IslandConstantGround*Test' \
+            --tests '*IslandEdgeApiTest' \
+            --tests '*IslandEdgeTest' \
+            --tests '*IslandEdgeUiTest' \
             --tests '*IslandGroundTest' \
             --tests '*IslandMasksTest' \
             --tests '*IslandPlacementTest' \
@@ -115,8 +119,21 @@ jobs:
           server_match = re.search(r'^GRID_VERSION\s*=\s*(\d+)', Path('server/app/main.py').read_text(), re.M)
           if not server_match or int(server_match.group(1)) != expected_grid:
               raise SystemExit('Server implementation and shared edge fixture disagree')
+          newest_match = re.search(r'\.field public static final NEWEST:I = (0x[0-9a-fA-F]+|\d+)', dex)
+          constant_match = re.search(r'\.field public static final CONSTANT:I = (0x[0-9a-fA-F]+|\d+)', dex)
+          expected_newest = json.loads(Path('server/app/geometry/island_constant_ground.json').read_text())['version']
+          if expected_newest != 8 or any(not match or int(match.group(1), 0) != expected_newest
+                                         for match in (newest_match, constant_match)):
+              raise SystemExit('Actual compiled client lacks NEWEST=8 / CONSTANT=8; refuse APK publication')
+          def manifest_value(field):
+              return subprocess.check_output([str(analyzer), 'manifest', field, str(source)], text=True).strip()
+          application_id = manifest_value('application-id')
+          version_code = int(manifest_value('version-code'))
+          version_name = manifest_value('version-name')
+          if (application_id, version_code, version_name) != ('at.gregor.layermaxxing.gerfried', 82, '7.9.14-post-fundament1'):
+              raise SystemExit('Actual APK manifest does not match the version 82 rollout candidate')
           with zipfile.ZipFile(source) as apk:
-              for name in ('island_edge.json', 'island_ground.json'):
+              for name in ('island_edge.json', 'island_ground.json', 'island_constant_ground.json'):
                   if apk.read(name) != (Path('server/app/geometry') / name).read_bytes():
                       raise SystemExit('Packaged geometry mismatch: ' + name)
           signer = Path(os.environ['ANDROID_HOME']) / 'build-tools/36.0.0/apksigner'
@@ -125,14 +142,17 @@ jobs:
           if not found or found.group(1).lower() != os.environ['EXPECTED_SIGNER'].lower():
               raise SystemExit('Unexpected APK signer; refuse delivery')
           out = Path('dist'); out.mkdir()
-          target = out / 'GS-Layermaxxing-Gerfried-v7.9.14-post-stufen1.apk'
+          target = out / 'GS-Layermaxxing-Gerfried-v7.9.14-post-fundament1.apk'
           shutil.copy2(source, target)
           manifest = {'commit': os.environ['GITHUB_SHA'], 'branch': os.environ['GITHUB_REF_NAME'],
                       'file': target.name, 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
                       'signer_sha256': found.group(1).lower(), 'bytes': target.stat().st_size,
-                      'application_id': 'at.gregor.layermaxxing.gerfried', 'version_code': 81,
-                      'version_name': '7.9.14-post-stufen1', 'test_candidate_only': True,
+                      'application_id': application_id, 'version_code': version_code,
+                      'version_name': version_name, 'test_candidate_only': True,
                       'client_grid_version': int(current_match.group(1), 0), 'server_grid_version': expected_grid,
+                      'client_newest_grid_version': int(newest_match.group(1), 0),
+                      'client_constant_grid_version': int(constant_match.group(1), 0),
+                      'opt_in_server_grid_version': expected_newest,
                       'no_deployment': True, 'full_regression_status': 'separate hard-failing job'}
           (out / 'BUILD-MANIFEST.json').write_text(json.dumps(manifest, indent=2))
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
@@ -141,7 +161,7 @@ jobs:
               f.write('APK SHA256: `' + manifest['sha256'] + '`\n')
       - uses: actions/upload-artifact@v4
         with:
-          name: postal-ui-test-apk
+          name: postal-ui-test-apk-82
           path: dist/*
           if-no-files-found: error
           retention-days: 14

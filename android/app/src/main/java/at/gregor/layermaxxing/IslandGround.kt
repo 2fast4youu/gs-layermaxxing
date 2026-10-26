@@ -21,10 +21,12 @@ internal object IslandGround {
     const val RESOURCE = "island_ground.json"
 
     private class Data(val zones: List<String>, val pieces: Map<String, List<Shape>>, val berth: List<Int>, val coast: Coast, val version: Int)
-    private val data: Data by lazy { parse(load()) }
+    private val data: Data by lazy { parse(load(RESOURCE)) }
+    private val constantData: Data by lazy { parse(load("island_constant_ground.json")).also { require(it.version == 8) } }
+    private fun contract(version: Int) = if (version == PlacementRule.CONSTANT) constantData else data
 
-    private fun load(): String =
-        (IslandGround::class.java.classLoader?.getResourceAsStream(RESOURCE) ?: error("$RESOURCE fehlt im Paket"))
+    private fun load(resource: String): String =
+        (IslandGround::class.java.classLoader?.getResourceAsStream(resource) ?: error("$resource fehlt im Paket"))
             .use { it.readBytes().toString(Charsets.UTF_8) }
 
     private fun parse(text: String): Data {
@@ -58,22 +60,22 @@ internal object IslandGround {
     /** May a normal piece's ground lie on (i, j) on this land stage? Meadow inside the build ellipse. */
     fun meadow(i: Int, j: Int, land: Int) = zone(i, j) == 'L' && IslandGrid.buildable(i, j, land)
 
-    fun shape(key: String, land: Int): Shape = data.pieces.getValue(key)[land.coerceIn(0, 5)]
+    fun shape(key: String, land: Int, version: Int = 6): Shape = contract(version).pieces.getValue(key)[land.coerceIn(0, 5)]
     private fun rect(r: List<Int>?, spot: List<Int>): Set<List<Int>> = r?.let {
         buildSet { for (x in r[0]..r[2]) for (y in r[1]..r[3]) add(listOf(spot[0] + x, spot[1] + y)) }
     }.orEmpty()
     /** The ground rectangle of [key] standing at [spot] (without a pier's head over the water). */
-    fun ground(key: String, land: Int, spot: List<Int>): Set<List<Int>> = rect(shape(key, land).ground, spot)
+    fun ground(key: String, land: Int, spot: List<Int>, version: Int = 6): Set<List<Int>> = rect(shape(key, land, version).ground, spot)
     /** A pier's head over the water (empty for every other piece). */
-    fun sea(key: String, land: Int, spot: List<Int>): Set<List<Int>> = rect(shape(key, land).sea, spot)
+    fun sea(key: String, land: Int, spot: List<Int>, version: Int = 6): Set<List<Int>> = rect(shape(key, land, version).sea, spot)
     /** Everything the piece occupies: its ground and a pier's head. */
-    fun cells(key: String, land: Int, spot: List<Int>): Set<List<Int>> = ground(key, land, spot) + sea(key, land, spot)
+    fun cells(key: String, land: Int, spot: List<Int>, version: Int = 6): Set<List<Int>> = ground(key, land, spot, version) + sea(key, land, spot, version)
 
     /** Why the piece's whole ground does not fit its zone at [spot] (null = it does); the server's ground_error. */
-    fun landProblem(key: String, land: Int, spot: List<Int>, harbour: Boolean): String? {
+    fun landProblem(key: String, land: Int, spot: List<Int>, harbour: Boolean, version: Int = 6): String? {
         if (spot.size != 2 || spot[0] !in 0..IslandGrid.STEPS || spot[1] !in 0..IslandGrid.STEPS) return "Außerhalb der Insel"
-        val ground = ground(key, land, spot)
-        val sea = sea(key, land, spot)
+        val ground = ground(key, land, spot, version)
+        val sea = sea(key, land, spot, version)
         if (harbour) {
             if (ground.any { zone(it) != 'B' })
                 return if (sea.isNotEmpty()) "Der Steg wächst vom Strand ins Wasser – sein Fuß gehört auf den Strand"
@@ -96,17 +98,17 @@ internal object IslandGround {
     /** Candidate spots: every lattice cell for the harbour (its zones decide), the meadow cells for everything else. */
     fun spots(land: Int, harbour: Boolean): List<List<Int>> = if (harbour) lattice else meadowByLand[land.coerceIn(0, 5)].value
     /** Every spot where a harbour of this stage fits with its ground (other pieces ignored): its snap spots. */
-    fun harbourSpots(stage: Int, land: Int): List<List<Int>> {
+    fun harbourSpots(stage: Int, land: Int, version: Int = 6): List<List<Int>> {
         val key = IslandMasks.buildingKey(IsleBuilding.HARBOUR, stage)
-        return lattice.filter { landProblem(key, land, it, harbour = true) == null }
+        return lattice.filter { landProblem(key, land, it, harbour = true, version = version) == null }
     }
 
     /**
      * Where a ship moors at a harbour of [stage] standing at [spot]: in front of a pier head; for the rowboat on the
      * beach the first open water straight in front of it (the walk from the boat down to the water line).
      */
-    fun berthCell(spot: List<Int>, stage: Int): List<Int> {
-        if (stage > 0) return listOf(spot[0] + BERTH[0], spot[1] + BERTH[1])
+    fun berthCell(spot: List<Int>, stage: Int, version: Int = 6): List<Int> {
+        if (stage > 0 && version != PlacementRule.CONSTANT) return listOf(spot[0] + BERTH[0], spot[1] + BERTH[1])
         var y = spot[1] + 1
         while (y <= IslandGrid.STEPS + 1 && zone(spot[0], y) != 'W') y++
         return listOf(spot[0], y)

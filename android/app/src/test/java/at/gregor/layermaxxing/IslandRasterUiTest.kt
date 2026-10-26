@@ -157,11 +157,11 @@ class IslandRasterUiTest {
     }
 
     @Test fun anUnknownRuleOffersNothingAndAsksForAnUpdate() {
-        val server = Server(grown(8)); start(server)
+        val server = Server(grown(9)); start(server)
         lift("Post")
         assertTrue(drawn().isEmpty())
         confirm.assertIsNotEnabled()
-        hint("Der Server nutzt neuere Bauregeln (Version 8) – bitte die App aktualisieren")[0].assertExists()
+        hint("Der Server nutzt neuere Bauregeln (Version 9) – bitte die App aktualisieren")[0].assertExists()
         groundTap(listOf(9, 10)); tick()
         confirm.assertIsNotEnabled()
         assertTrue(server.requests.isEmpty())

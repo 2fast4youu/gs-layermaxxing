@@ -245,7 +245,12 @@ internal data class EditTarget(val target: IslandTarget, val cell: List<Int>, va
         val pad = 2f * dp / zoom.coerceAtLeast(1f)
         val rect = spriteRect(surface.width, surface.height)
         if (rect.inflate(pad).contains(at)) return true
+        return containsSign(at, surface, dp, zoom)
+    }
+    /** Same foot, width and counter-scale as the painted IslandNameSign in HubIsland. */
+    fun containsSign(at: Offset, surface: Size, dp: Float, zoom: Float): Boolean {
         val name = sign ?: return false
+        val rect = spriteRect(surface.width, surface.height)
         val half = IslandSign.width(name) * dp / (2f * zoom.coerceAtLeast(1f))
         return at.x in x * surface.width - half..x * surface.width + half &&
             at.y in rect.bottom..rect.bottom + IslandSign.HEIGHT * dp / zoom.coerceAtLeast(1f)
@@ -453,7 +458,11 @@ internal fun BoxWithConstraintsScope.IslandTouchSurface(
                         down.consume()
                         if (grab.value == Offset.Zero) apply(down.position)
                     } else {
+                        // Signs are drawn above sprites. A front neighbour's sprite must not steal
+                        // a finger on the explicitly named sign (including a long press to move).
                         val t = currentTargets.filter { tg ->
+                            tg.containsSign(down.position, s, 1.dp.toPx(), camera?.zoom ?: 1f)
+                        }.maxByOrNull { it.y } ?: currentTargets.filter { tg ->
                             tg.contains(down.position, s, 1.dp.toPx(), camera?.zoom ?: 1f)
                         }.maxByOrNull { it.y }
                         if (t == null) {

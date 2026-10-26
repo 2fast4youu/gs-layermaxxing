@@ -29,7 +29,7 @@ internal object HarbourRoute {
         val land = (c?.land ?: 0).coerceIn(0, 5)
         val spot = harbourSpot(c) ?: return fallbackBerth(land)
         // 7.9.13 (rule 6): in front of the pier head; the rowboat on the beach: the water line straight in front of it
-        if (c != null && IslandLayout.ground(c)) return IslandGrid.project(IslandGround.berthCell(spot, c.level(IsleBuilding.HARBOUR).coerceIn(0, 3)), land)
+        if (c != null && IslandLayout.ground(c)) return IslandGrid.project(IslandGround.berthCell(spot, c.level(IsleBuilding.HARBOUR).coerceIn(0, 3), c.gridVersion), land)
         return IslandGrid.project(listOf(spot[0] + IslandMasks.BERTH[0], spot[1] + IslandMasks.BERTH[1]), land)
     }
     /** 7.9.13: where the rowboat's walk to the water starts (its spot), for drawing the short beach path; null for a pier. */
@@ -49,7 +49,7 @@ internal object HarbourRoute {
     fun atSocket(c: ApiClient.IslandConstruction?): Boolean? {
         val spot = harbourSpot(c) ?: return null
         if (c == null || !IslandLayout.ground(c)) return null
-        return spot in IslandGround.harbourSpots(c.level(IsleBuilding.HARBOUR).coerceIn(0, 3), c.land.coerceIn(0, 5))
+        return spot in IslandGround.harbourSpots(c.level(IsleBuilding.HARBOUR).coerceIn(0, 3), c.land.coerceIn(0, 5), c.gridVersion)
     }
 
     /**

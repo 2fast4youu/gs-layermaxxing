@@ -19,7 +19,7 @@ internal object IslandEdge {
     }
     fun cells(land: Int): Set<List<Int>> = data[land.coerceIn(0, 5)]
     fun problem(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>): String? {
-        if (c.gridVersion != PlacementRule.EDGE || t != IslandTarget.Building(IsleBuilding.LIGHTHOUSE)) return null
-        return if (IslandGround.ground(IslandLayout.key(c, t), c.land, p).any { it in cells(c.land) }) null else ERROR
+        if (c.gridVersion !in setOf(PlacementRule.EDGE, PlacementRule.CONSTANT) || t != IslandTarget.Building(IsleBuilding.LIGHTHOUSE)) return null
+        return if (IslandGround.ground(IslandLayout.key(c, t), c.land, p, c.gridVersion).any { it in cells(c.land) }) null else ERROR
     }
 }

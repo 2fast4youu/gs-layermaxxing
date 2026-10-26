@@ -200,6 +200,9 @@ class PostAllStagesProductionTest {
                     val inkLayouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
                     ink.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(inkLayouts) }
                     val layout = inkLayouts.single()
+                    assertEquals("Only envelope names use the native handwriting face", LetterInkFont, layout.layoutInput.style.fontFamily)
+                    assertEquals(androidx.compose.ui.text.font.FontWeight.Normal, layout.layoutInput.style.fontWeight)
+                    assertEquals("Complete name without decorative UI arrows", name, layout.layoutInput.text.text)
                     val inkRoom = ink.fetchSemanticsNode().boundsInRoot
                     // Native TextLayoutResult rounds its intrinsic height down even when the actual
                     // ink node reserves the paragraph's ceiling + leading. Check the real draw room,

@@ -184,7 +184,7 @@ class IslandEdgeTest {
         val occupied = c.copy(decor = listOf(ApiClient.IslandDecor(100, "bench", edge1)))
         assertFalse(edge1 in IslandLayout.targets(occupied, lighthouse))
         assertTrue(IslandLayout.targets(occupied, lighthouse).isNotEmpty())
-        for (raw in listOf("8", "99", "\"7\"", "7.0", "7.1", "true", "{}", "[]", "2147483648", "null")) {
+        for (raw in listOf("9", "99", "\"7\"", "7.0", "7.1", "true", "{}", "[]", "2147483648", "null")) {
             val bad = Grid7Contract.home(version = raw).construction
             assertNotNull(raw, PlacementRule.problem(bad.gridVersion))
             assertTrue(IslandLayout.targets(bad, lighthouse).isEmpty())

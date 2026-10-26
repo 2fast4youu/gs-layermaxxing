@@ -70,6 +70,8 @@ internal object IslandFootprint {
  *    it belongs to (meadow; the harbour on the beach / at the water). Roofs may cover other pieces.
  *  - 7 = rule 6 plus LIGHTHOUSE ground touching the open-sea coast ([IslandEdge]); an existing building
  *    upgrading in its saved spot is checked for next-stage ground fit, with no new coast requirement.
+ *  - 8 = each building retains its stage-0 ground on every upgrade; decoration/terrain/visual sizes unchanged.
+ *    Saved-position upgrades preserve even legacy invalid/overlapping layouts; new placements/moves validate fully.
  * The harbour stands on the coast with every rule (a v2 server accepts more, never less). 7.9.12: under the older
  * rules 2–4 the app additionally checks the graphic fit ([IslandLayout.fitProblem]), so even on an old server no
  * new sprite is built into another one (it offers a subset of what that server accepts, never more). A payload without the
@@ -87,8 +89,11 @@ internal object PlacementRule {
     const val GROUND = 6
     /** Rule 7: rule 6 plus LIGHTHOUSE ground touching the open-sea coast. */
     const val EDGE = 7
+    // Default constructors and live server remain v7 until coordinated rollout.
     const val CURRENT = EDGE
-    fun known(version: Int) = version == CIRCLES || version == DIAMONDS || version == COMPACT || version == MASKS || version == GROUND || version == EDGE
+    const val CONSTANT = 8
+    const val NEWEST = CONSTANT
+    fun known(version: Int) = version == CIRCLES || version == DIAMONDS || version == COMPACT || version == MASKS || version == GROUND || version == EDGE || version == CONSTANT
     fun rings(version: Int): FootprintRings? = when (version) {
         DIAMONDS -> IslandFootprint.V3
         COMPACT -> IslandFootprint.V4
@@ -101,7 +106,7 @@ internal object PlacementRule {
         known(version) -> null
         version == LEGACY -> "Dieser Server nennt keine Bauregel – Platzieren gesperrt, bitte Server aktualisieren"
         version == INVALID -> "Ungültige Bauregel vom Server – Platzieren gesperrt"
-        version > CURRENT -> "Der Server nutzt neuere Bauregeln (Version $version) – bitte die App aktualisieren"
+        version > NEWEST -> "Der Server nutzt neuere Bauregeln (Version $version) – bitte die App aktualisieren"
         else -> "Unbekannte Bauregel (Version $version) – Platzieren gesperrt"
     }
     /**
@@ -156,13 +161,13 @@ internal object IslandLayout {
         is IslandTarget.Decor -> IslandMasks.decorKey(t.item)
     }
     /** Rule 6: the island's ground rule (7.9.13); before that the graphic masks of 7.9.12. */
-    fun ground(c: ApiClient.IslandConstruction) = c.gridVersion >= PlacementRule.GROUND
+    fun ground(c: ApiClient.IslandConstruction) = c.gridVersion in setOf(PlacementRule.GROUND, PlacementRule.EDGE, PlacementRule.CONSTANT)
     /**
      * The cells the piece occupies when it stands at [p]: rule 6 its ground rectangle (and a pier's head), every older rule
      * the cells its painted sprite covers (7.9.12, drawn and checked for those servers exactly as before).
      */
     fun cellsAt(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>): Set<List<Int>> =
-        if (ground(c)) IslandGround.cells(key(c, t), land(c), p) else IslandMasks.cells(key(c, t), land(c), p)
+        if (ground(c)) IslandGround.cells(key(c, t), land(c), p, c.gridVersion) else IslandMasks.cells(key(c, t), land(c), p)
     /**
      * One other piece while something is moved: its spot and the cells its painted sprite covers (outlined red).
      * [rings] = its footprint under the historic rules 3/4 (kept for those servers' exact rule, not drawn).
@@ -187,7 +192,7 @@ internal object IslandLayout {
     fun fitProblem(c: ApiClient.IslandConstruction, t: IslandTarget, p: List<Int>): String? {
         val held = if (t is IslandTarget.Building && !c.standing(t.building)) c.copy(starters = c.starters + t.building.name) else c
         val harbour = t == IslandTarget.Building(IsleBuilding.HARBOUR)
-        (if (ground(c)) IslandGround.landProblem(key(held, t), land(c), p, harbour) else IslandMasks.landProblem(key(held, t), land(c), p, harbour))?.let { return it }
+        (if (ground(c)) IslandGround.landProblem(key(held, t), land(c), p, harbour, c.gridVersion) else IslandMasks.landProblem(key(held, t), land(c), p, harbour))?.let { return it }
         return if (maskBlocked(held, t, p)) "Belegt – rot markierte Fläche" else null
     }
     /**
@@ -204,6 +209,7 @@ internal object IslandLayout {
      */
     fun upgradeProblem(c: ApiClient.IslandConstruction, b: IsleBuilding): String? {
         if (!c.standing(b) || c.level(b) >= 3) return null
+        if (c.gridVersion == PlacementRule.CONSTANT) return null
         val next = c.copy(buildings = c.buildings + (b.name to c.level(b) + 1), starters = c.starters - b.name)
         val spot = c.positions[b.name] ?: defaultPosition(b)
         val why = fitProblem(next, IslandTarget.Building(b), spot) ?: return null
@@ -316,7 +322,8 @@ internal object IslandLayout {
         val held = if (draft.upgrade && b != null) upgraded(c, b) else c
         val sameUpgrade = draft.upgrade && b != null && c.standing(b) &&
             draft.position == (c.positions[b.name] ?: defaultPosition(b))
-        val why = if (sameUpgrade && c.gridVersion == PlacementRule.EDGE) fitProblem(held, draft.target, draft.position)
+        val why = if (sameUpgrade && c.gridVersion == PlacementRule.CONSTANT) null
+            else if (sameUpgrade && c.gridVersion == PlacementRule.EDGE) fitProblem(held, draft.target, draft.position)
             else problem(held, draft.target, draft.position)
         return why ?: if (draft.position in draft.rejected) REJECTED else null
     }
@@ -329,6 +336,7 @@ internal object IslandLayout {
     }
     /** Validate canonical actions too: a move even to its saved position is still a move. */
     fun requestProblem(c: ApiClient.IslandConstruction, request: ApiClient.IslandRequest): String? {
+        PlacementRule.problem(c.gridVersion)?.let { return it }
         val b = request.building?.let { name -> IsleBuilding.entries.firstOrNull { it.name == name } }
         val t = when (request.action) {
             "build", "move", "upgrade" -> b?.let { IslandTarget.Building(it) } ?: return "Ungültiger Bauplatz"
@@ -409,7 +417,7 @@ internal object IslandLayout {
         val held = if (t is IslandTarget.Building && !c.standing(t.building)) c.copy(starters = c.starters + t.building.name) else c
         val k = key(held, t)
         if (ground(c)) return IslandGround.spots(land(c), false).filter {
-            IslandGround.landProblem(k, land(c), it, harbour = false) == null && IslandEdge.problem(held, t, it) == null
+            IslandGround.landProblem(k, land(c), it, harbour = false, version = c.gridVersion) == null && IslandEdge.problem(held, t, it) == null
         }
         return IslandGrid.buildableCells(land(c)).filter { IslandMasks.landProblem(k, land(c), it, harbour = false) == null }.ifEmpty { IslandGrid.buildableCells(land(c)) }
     }
@@ -423,7 +431,7 @@ internal object IslandLayout {
     }
     /** The spots where the harbour (in its current stage) fits: where a held harbour snaps to (rule 6: beach / water). */
     fun harbourSpots(c: ApiClient.IslandConstruction): List<List<Int>> =
-        if (ground(c)) IslandGround.harbourSpots(stage(c, IsleBuilding.HARBOUR), land(c)).ifEmpty { IslandGrid.coastCells(land(c)) }
+        if (ground(c)) IslandGround.harbourSpots(stage(c, IsleBuilding.HARBOUR), land(c), c.gridVersion).ifEmpty { IslandGrid.coastCells(land(c)) }
         else IslandMasks.harbourSpots(stage(c, IsleBuilding.HARBOUR), land(c)).ifEmpty { IslandGrid.coastCells(land(c)) }
     fun harbourCellNear(c: ApiClient.IslandConstruction, cell: List<Int>): List<Int> {
         val spots = harbourSpots(c)

@@ -67,6 +67,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -759,7 +760,7 @@ private fun NailedLetter(g: StageGeometry, i: Int, r: DpRect, m: ApiClient.Messa
         }
         if (anchors.level == 0) Ink(r, anchors.tilts[i], top = .08f, bottom = .62f, gap = 0.dp) {
             // (the same name size as on the envelopes: no letter shouts louder than another)
-            if (anchors.level == 0) InkFit(m.peerName, 12f, 8.5f, Ink, bold = true, tight = true, modifier = Modifier.weight(1f))
+            if (anchors.level == 0) InkFit(m.peerName, 12f, 8.5f, Ink, inkFont = LetterInkFont, tight = true, modifier = Modifier.weight(1f))
             InkFit(word, 10.5f, 8f, Ink, bold = true, fallback = short, tight = true, modifier = Modifier.weight(.8f))
         }
         return
@@ -768,7 +769,7 @@ private fun NailedLetter(g: StageGeometry, i: Int, r: DpRect, m: ApiClient.Messa
     SceneEnvelope(env, tilt, look, "tree-env-${m.id}", pose = PostalStorageMotion.pose(anchors.level, progress, i), storage = PhysicalPostalStorage.frame(anchors.level, i, progress, occupied), pageSlide = pageSlide) {
         // the name in ink on the closed flap, above the seal (the layers: seal .56–.84 of the height); it goes with the flap
         if (anchors.level > 0) StoredSender(m.peerName, env, (1f - look.flap * 5f).coerceIn(0f, 1f))
-        else InkFit(m.peerName, 14f, 8.5f, color, bold = true, tight = true,
+        else InkFit(m.peerName, 14f, 8.5f, color, inkFont = LetterInkFont, tight = true,
             modifier = Modifier.graphicsLayer { alpha = (1f - look.flap * 5f).coerceIn(0f, 1f) }
                 .padding(top = env.h * .06f, start = env.w * .12f, end = env.w * .12f).height(env.h * .42f))
     }
@@ -784,12 +785,12 @@ private fun NailedLetter(g: StageGeometry, i: Int, r: DpRect, m: ApiClient.Messa
 }
 
 /** Ink stays on the same projected face and under the same wood masks as its envelope.
- * A light address patch and larger dark type counter the cavity's ambient shade. */
+ * Warm dark handwriting sits directly on the original painted paper. */
 @Composable
 private fun StoredSender(name: String, env: DpRect, alpha: Float) {
     Box(Modifier.padding(top = env.h * .04f, start = env.w * .08f, end = env.w * .08f)
-        .height(env.h * .46f).graphicsLayer { this.alpha = alpha }.background(Color(0xFFF6E5BE))) {
-        InkFit("$name ›", 22f, 11f, Ink, bold = true, tight = true, modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp))
+        .height(env.h * .46f).graphicsLayer { this.alpha = alpha }) {
+        InkFit(name, 22f, 8.5f, Ink, inkFont = LetterInkFont, tight = true, modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp))
     }
 }
 
@@ -928,6 +929,12 @@ private fun Pen(r: DpRect, context: android.content.Context, enabled: Boolean = 
 private fun StageGeometry.box(b: LetterTree.Box): DpRect = DpRect(picture.x(b.l), picture.y(b.t), picture.w * (b.r - b.l), picture.h * (b.b - b.t))
 private fun DpRect.mod(): Modifier = Modifier.offset(x = left, y = top).size(w, h)
 
+/** Android's legible casual handwriting face; only envelope identities opt in.
+ * Menus retain their packaged Lilita/Nunito fonts. No new envelope art or font download. */
+internal val LetterInkFont: FontFamily by lazy {
+    FontFamily(android.graphics.Typeface.create("casual", android.graphics.Typeface.NORMAL))
+}
+
 /** Ink on paper: names and headings in the chunky display face (Lilita), the rest in extra-bold Nunito – never hairline. */
 private fun ink(sp: Float, bold: Boolean = false, color: Color = Ink) =
     TextStyle(fontFamily = if (bold) Kit.Display else Kit.Body, fontWeight = if (bold) FontWeight.Normal else FontWeight.ExtraBold,
@@ -943,7 +950,7 @@ private fun Ink(r: DpRect, tilt: Float, tag: String? = null, top: Float = .2f, b
 /** One line of ink, as large as the paper allows between [maxSp] and [minSp] (font scale included, never cut). */
 @Composable
 private fun InkFit(text: String, maxSp: Float, minSp: Float, color: Color, bold: Boolean = false, optional: Boolean = false, fallback: String? = null, tight: Boolean = false,
-                   modifier: Modifier = Modifier) {
+                   modifier: Modifier = Modifier, inkFont: FontFamily? = null) {
     val measurer = rememberTextMeasurer()
     val inheritedStyle = androidx.compose.material3.LocalTextStyle.current
     // The artwork has finite room: keep the minimum physical ink size, rather than multiplying
@@ -951,7 +958,9 @@ private fun InkFit(text: String, maxSp: Float, minSp: Float, color: Color, bold:
     // full accessible descriptions and the separate close-view identity retain the user's scale.
     val fontScale = LocalDensity.current.fontScale
     val floorSp = minSp.coerceAtMost(8.5f) / fontScale.coerceAtLeast(1f)
-    fun style(size: Float) = inheritedStyle.merge(ink(size, bold, color)).copy(textAlign = TextAlign.Center, letterSpacing = 0.sp).let { if (tight) it.copy(lineHeight = (size * 1.02f).sp,
+    fun style(size: Float) = inheritedStyle.merge(ink(size, bold, color)).let { base ->
+        if (inkFont != null) base.copy(fontFamily = inkFont, fontWeight = FontWeight.Normal) else base
+    }.copy(textAlign = TextAlign.Center, letterSpacing = 0.sp).let { if (tight) it.copy(lineHeight = (size * 1.02f).sp,
         lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both)) else it }
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth(), Alignment.Center) {
         val px = constraints.maxWidth
@@ -963,7 +972,7 @@ private fun InkFit(text: String, maxSp: Float, minSp: Float, color: Color, bold:
             .firstOrNull { measured(t, it).let { layout -> !layout.didOverflowWidth &&
                 !layout.multiParagraph.didExceedMaxLines && kotlin.math.ceil(layout.multiParagraph.height) + 2 <= ph } }
         // the text, else its short [fallback], at the largest size that fits
-        val (shown, sp) = remember(text, fallback, px, ph, maxSp, floorSp, fontScale) {
+        val (shown, sp) = remember(text, fallback, px, ph, maxSp, floorSp, fontScale, inkFont, inheritedStyle, bold, tight) {
             fit(text)?.let { text to it } ?: fallback?.let { f -> fit(f)?.let { f to it } } ?: ((fallback ?: text) to -1f)
         }
         // a second line that does not fit even at [minSp] is left out (the sheet's close look and TalkBack say it whole)

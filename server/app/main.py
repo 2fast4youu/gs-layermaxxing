@@ -21,12 +21,22 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 
+# Runtime selection is deliberately limited to the two rollout contracts. Validate
+# before FastAPI/lifespan can initialize the database; never coerce or fall back.
+GRID_VERSION = 7
+_island_grid_version = os.environ.get("GS_ISLAND_GRID_VERSION", str(GRID_VERSION))
+if _island_grid_version not in ("7", "8"):
+    raise ValueError("GS_ISLAND_GRID_VERSION must be exactly 7 or 8")
+GRID_VERSION = int(_island_grid_version)
+
 DB_PATH = Path(os.getenv("DB_PATH", "/data/layermaxxing.db"))
 APP_VERSION = "4.0.0"
 SERVER_NAME = os.getenv("SERVER_NAME", "GS Layermaxxing")
 SERVER_ROLE = "production" if os.getenv("SERVER_ROLE", "test").lower() == "production" else "test"
 TESTSERVER_WARNING = "TESTSERVER VON GERFRIED – NUR ZUM AUSPROBIEREN"
 SUPPORTED_FEATURES = ["letters", "chats", "friendship_settings", "ep", "verification_exports", "creative_mode", "sparks", "chat_extras", "life_places", "island_construction", "special_decor", "build_grid_v2", "free_starters", "glossary_categories", "build_grid_v4", "build_grid_v5", "build_grid_v6", "build_grid_v7"]
+if GRID_VERSION == 8:
+    SUPPORTED_FEATURES = [*SUPPORTED_FEATURES, "build_grid_v8"]
 # 7.9.9: the four glossary categories (the first one is the default for old clients and old rows).
 GLOSSARY_CATEGORIES = ("Begriffe", "Witze", "Sprüche", "Zitate")
 # One-time creative entitlement for the accounts that already exist on the test
@@ -1742,7 +1752,10 @@ def coast_cells(land):
 #       (tools/island_edge.py) pins the edge cells and the look-out's spots on an empty island per land x stage for the
 #       app (test_v18_edge, IslandEdgeTest). An app that knows only version 6 shows "please update" and writes nothing.
 # The code of versions 4 and 5 stays as it was (the historic tests pin GRID_VERSION = 4 / 5 / 6 and run it unchanged).
-GRID_VERSION = 7
+#   8 = opt-in constant ground (island_constant_ground.json): every building retains its stage-0 cells;
+#       decoration/terrain/art sizes unchanged. Saved positions, neighbours and spent are never cleaned or refunded.
+#       New placements/moves retain zone + lighthouse coast validation; existing upgrades keep their saved spot.
+# Default stays 7; explicit GS_ISLAND_GRID_VERSION=8 requires a coordinated compatible APK/backend rollout.
 FOOTPRINT_RINGS_V3 = {
     "big": (2, 2, 1, 1, 1, 1),
     "starter": (1, 1, 1, 1, 1, 1),
@@ -1763,6 +1776,8 @@ def masks_active():
 
 
 GROUND = json.loads((Path(__file__).resolve().parent / "geometry" / "island_ground.json").read_text())
+# Selected only by explicit version 8; Root validates the compatible APK before activation.
+CONSTANT_GROUND = json.loads((Path(__file__).resolve().parent / "geometry" / "island_constant_ground.json").read_text())
 
 
 def ground_active():
@@ -1782,7 +1797,8 @@ def ground_land(i, j, land):
 
 def ground_rect(key, land, position, part="ground"):
     """version 6: the cells of a piece's ground rectangle (or the harbour's pier head [part] = "sea") at [position]."""
-    r = GROUND["pieces"][key]["lands"][max(0, min(5, land))].get(part)
+    contract = CONSTANT_GROUND if GRID_VERSION == 8 else GROUND
+    r = contract["pieces"][key]["lands"][max(0, min(5, land))].get(part)
     if not r:
         return set()
     x, y = position
@@ -2037,6 +2053,10 @@ def normalize_layout(state, strict=False):
     in 7.9.6) and spots left outside after shrinking move to the nearest free buildable cell. Without a
     free cell a piece is never put onto a taken one: on read it stays where it was (legacy data is kept
     as it is), in a write ([strict]) the action is refused with 422 before anything is stored."""
+    # v8 never relocates saved pieces, including legacy out-of-zone positions.
+    # Explicit build/move validates the destination; upgrade preserves the saved ground.
+    if GRID_VERSION == 8:
+        return state
     land = state.get("land", 0)
     positions = state.setdefault("positions", {})
 
@@ -2216,6 +2236,8 @@ def island_of(user_id: int, mode: str | None = None, user: sqlite3.Row = Depends
 @app.post("/api/island/construction")
 def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_user)) -> dict:
     with db() as conn:
+        if GRID_VERSION not in (2, 3, 4, 5, 6, 7, 8):
+            raise HTTPException(503, "Unbekannte Bauregel – Schreiben gesperrt")
         # Reserve the SQLite writer before reading revision/balance (atomic retry protection).
         conn.execute("BEGIN IMMEDIATE")
         uid = user["id"]
@@ -2351,7 +2373,7 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             if reason:
                 raise HTTPException(422, reason)
             state.setdefault("positions", {})[payload.building] = [x, y]
-        elif payload.action == "upgrade" and GRID_VERSION >= 5:
+        elif payload.action == "upgrade" and GRID_VERSION in (5, 6, 7):
             # 7.9.12 (version 5): the next stage is a bigger picture. It must fit where the building stands (ground
             # on the land, no other piece inside its mask) BEFORE anything is paid; otherwise it is moved first by
             # the owner. Nothing is ever relocated on its own.
@@ -2360,7 +2382,7 @@ def change_island(payload: IslandAction, user: sqlite3.Row = Depends(current_use
             if reason:
                 raise HTTPException(422, "Für die nächste Stufe ist hier kein Platz (%s) – bitte zuerst verschieben "
                                         "oder die Insel erweitern" % reason)
-        elif payload.action == "upgrade" and was_starter:
+        elif payload.action == "upgrade" and was_starter and GRID_VERSION < 5:
             # A stage-0 piece grows into a big building: if it now stands too close, it moves to the
             # nearest free cell (deterministic, like normalize_layout); nothing is ever lost.
             here = state.get("positions", {}).get(payload.building, ISLAND_DEFAULT_POSITIONS[payload.building])
