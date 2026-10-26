@@ -75,18 +75,20 @@ class IslandWorldStagesNavigationTest {
             rule.onAllNodesWithContentDescription("Bühne: ${o.caption}").fetchSemanticsNodes().size)
         when (b) {
             IsleBuilding.POST -> {
-                // the person surface is touched (the letter tree: its rope), then Anna's filters the post to her three letters
-                val tree = scene.clean
-                rule.onAllNodes(androidx.compose.ui.test.hasTestTag(if (tree) "tree-rope" else "post-hotspot-PEOPLE"), useUnmergedTree = true)[0].performClick(); tick()
-                slot("person:3")[0].performClick(); tick()
-                assertEquals(msg, 3, rule.onAllNodes(SemanticsMatcher("letters") { it.config.getOrNull(SceneSlotKey)?.startsWith("letter:") == true }, useUnmergedTree = true).fetchSemanticsNodes().size)
-                slot("letter:4")[0].performClick(); tick()
-                // 1074: a letter still travelling (letter 4: random) goes straight to the locked view; an arrived one would
-                // show its sealed envelope first
-                if (tree && rule.onAllNodes(androidx.compose.ui.test.hasTestTag("tree-envelope"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
-                    rule.onAllNodes(androidx.compose.ui.test.hasTestTag("tree-envelope"), useUnmergedTree = true)[0].performClick(); tick()
-                }
-                assertTrue("$msg $calls", calls.any { it == "open:4" || it == "locked:4" })
+                // Current production control: POST0 Filter → Person; POST1..3 Person.
+                // Count all Anna letters via the real picker, not only the current time page.
+                val d = NativePostTestDriver(rule)
+                d.tap("post-person")
+                d.person(3)
+                // Only Anna's received letter belongs in the physical inbox; her
+                // two outgoing records remain chat/history data, never inbox tiles.
+                assertEquals(msg, setOf("letter:4"), d.letters())
+                assertTrue("$msg no eager callback $calls", calls.isEmpty())
+                d.letter(4)
+                assertTrue("$msg arrival preview", d.exists("post-arrival"))
+                assertTrue("$msg preview must not dispatch $calls", calls.isEmpty())
+                d.tap("post-arrival-action")
+                assertEquals("$msg exactly one locked callback", listOf("locked:4"), calls)
             }
             IsleBuilding.HARBOUR -> {
                 slot("quest:1")[0].assertExists()
@@ -138,9 +140,10 @@ class IslandWorldStagesNavigationTest {
         visit(IsleBuilding.POST, 0)
         val tag = { t: String -> rule.onAllNodes(androidx.compose.ui.test.hasTestTag(t), useUnmergedTree = true) }
         // (the visit above filtered the tree to Anna; all people again) the arrived letter's seal waits for its running request
-        tag("tree-rope")[0].performClick(); tick(); slot("person:alle")[0].performClick(); tick()
+        val d = NativePostTestDriver(rule)
+        d.tap("post-person"); d.person(null)
         calls.clear()
-        slot("letter:${arrived.id}")[0].performClick(); tick(1200)
+        d.letter(arrived.id); tick(1200)
         assertTrue(rule.onAllNodesWithText("wird geöffnet", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         tag("tree-envelope")[0].performClick(); tick()
         assertTrue("$calls", calls.none { it.startsWith("open:") })

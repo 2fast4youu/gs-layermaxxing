@@ -74,6 +74,11 @@ import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
+    private lateinit var shakeReports: ShakeReports
+    override fun onResume() { super.onResume(); if (::shakeReports.isInitialized) shakeReports.resume() }
+    override fun onPause() { if (::shakeReports.isInitialized) shakeReports.pause(); super.onPause() }
+    override fun onDestroy() { if (::shakeReports.isInitialized) shakeReports.destroy(); super.onDestroy() }
+
     override fun onPostResume() {
         super.onPostResume()
         if (CrashDiagnostics.pending() || Build.VERSION.SDK_INT < 33) return
@@ -93,6 +98,12 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             CrashDiagnosticsStartup {
+            val reports = remember {
+                ShakeReports(this).also {
+                    shakeReports = it
+                    if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) it.resume()
+                }
+            }
             val store = remember { SessionStore(this) }
             var theme by remember { mutableStateOf(store.theme) }
             remember { DebugMode.hitboxes.value = store.debugHitboxes; true }
@@ -111,6 +122,11 @@ class MainActivity : FragmentActivity() {
 
                 LaunchedEffect(profile) {
                     verifiedRole = if (profile.isConfigured()) runCatching { api.serverInfo().role }.getOrNull() else null
+                }
+
+                androidx.compose.runtime.DisposableEffect(token, profile, biometricPassed, addingAccount, verifiedRole, confirmTestServer) {
+                    reports.bind(token, biometricPassed && !addingAccount && !confirmTestServer, profile, verifiedRole, api)
+                    onDispose { reports.unbind() }
                 }
 
                 fun selectProfile(selected: ServerProfile) {
@@ -144,6 +160,7 @@ class MainActivity : FragmentActivity() {
                     }) { Text("Verstanden") } },
                 )
 
+                CompositionLocalProvider(LocalShakeReports provides reports) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Column {
                         val warn = ServerProfilePolicy.showTestWarning(profile, verifiedRole)
@@ -208,6 +225,7 @@ class MainActivity : FragmentActivity() {
                         )
                     } }
                     }
+                }
                 }
             } }
             }

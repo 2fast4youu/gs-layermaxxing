@@ -93,6 +93,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -132,8 +133,8 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
 internal enum class ComposeMode(val label: String, val api: String) {
-    DURATION("Nach einer Dauer", "timed"), DATE_TIME("Zu einem Zeitpunkt", "timed"), MANUAL("Von mir freigeben", "manual"),
-    MUTUAL("Wenn beide zustimmen", "mutual"), PRESENCE("Wenn beide online sind", "presence"), RANDOM("Zufällig", "random")
+    DURATION("Nach einer Dauer", "timed"), DATE_TIME("Zeitpunkt", "timed"), MANUAL("Manuell freigeben", "manual"),
+    MUTUAL("Wenn beide zustimmen", "mutual"), PRESENCE("Wenn beide online sind", "presence"), RANDOM("Zeitfenster", "random")
 }
 internal enum class DelayUnit(val label: String, val seconds: Long) {
     MINUTES("Minuten", 60), HOURS("Stunden", 3600), DAYS("Tage", 86400)
@@ -267,7 +268,41 @@ fun LayerHome(
     val unreadMarker = rememberUnreadMarker(opened, transmit = { message -> api.markUnread(token, message.id) },
         onDone = { scope.launch { runCatching { refresh() } } }, onError = { error = ApiErrors.friendly(it) })
     // the letter being written on the letter tree's paper (kept when going back to the tree; a new account starts empty)
-    val treeDraft = remember(token) { mutableStateOf<LetterDraft?>(null) }
+    // The identity is frozen when the session opens; network refresh never rebinds an old writer.
+    // Account names are server-unique and survive token rotation/logout. Include the full endpoint.
+    val draftRepository = remember(token, store.serverProfile.key, store.name) {
+        LetterDraftRepository.forAccount(context, store.serverProfile.key + "|" + store.serverProfile.baseUrl, store.name.ifBlank { LetterDraftRepository.scope("session", token) }, store.knownUserId())
+    }
+    val treeDraft = androidx.compose.runtime.key(store.serverProfile.key, store.name, token) {
+        androidx.compose.runtime.saveable.rememberSaveable(token, saver = LetterDraft.StateSaver) { mutableStateOf<LetterDraft?>(null) }
+    }
+    val sheetDraft = remember(token, draftRepository) { mutableStateOf<LetterDraft?>(null) }
+    treeDraft.value?.let { draft ->
+        if (draft.repository == null) {
+            // Bundle restoration carries the ID, disk carries the full private attachment too.
+            treeDraft.value = runCatching { draftRepository.list().firstOrNull { it.draft.id == draft.id }?.draft }.getOrNull()
+                ?: draftRepository.bind(draft)
+        }
+        DraftPersistence(treeDraft.value!!)
+    }
+    fun openSheetDraft(recipient: Long?, body: String = "") {
+        if (treeDraft.value?.flush() == false || sheetDraft.value?.flush() == false) return
+        sheetDraft.value = draftRepository.bind(LetterDraft(recipient, body))
+        composeLetterFriend = recipient ?: -1L
+    }
+    fun closeSheetDraft() {
+        if (sheetDraft.value?.flush() != false) { composeLetterFriend = null; composeLetterText = ""; sheetDraft.value = null }
+    }
+    fun flushDrafts(): Boolean {
+        val treeSaved = treeDraft.value?.flush() != false
+        val sheetSaved = sheetDraft.value?.flush() != false
+        if (!treeSaved || !sheetSaved) error = "Entwurf konnte nicht gespeichert werden. Bitte Speicher prüfen; der Brief bleibt geöffnet."
+        return treeSaved && sheetSaved
+    }
+    val guardedLogout: () -> Unit = { if (flushDrafts()) onLogout() }
+    val guardedSwitch: (SavedAccount) -> Unit = { if (flushDrafts()) onSwitchAccount(it) }
+    val guardedAdd: () -> Unit = { if (flushDrafts()) onAddAccount() }
+    val guardedProfile: (ServerProfile) -> Unit = { if (flushDrafts()) onServerProfile(it) }
 
     LaunchedEffect(token) {
         // Switching accounts must not leak the previous account's transient state.
@@ -392,13 +427,13 @@ fun LayerHome(
                 accounts = accounts,
                 menuOpen = accountMenu,
                 onMenu = { accountMenu = it },
-                onSwitchAccount = onSwitchAccount,
-                onAddAccount = onAddAccount,
+                onSwitchAccount = guardedSwitch,
+                onAddAccount = guardedAdd,
                 onRefresh = { scope.launch { refresh() } },
             )
         },
         bottomBar = {
-            if (!fullScreenPlace && !worldStyle) MainNavigationBar(tabs, tab, chatsBadge) { tab = it; openThreadFriend = null }
+            if (!fullScreenPlace && !worldStyle) MainNavigationBar(tabs, tab, chatsBadge) { if (flushDrafts()) { tab = it; openThreadFriend = null } }
         },
     ) { padding ->
         // Consuming the scaffold insets here lets imePadding() below add exactly the
@@ -417,13 +452,13 @@ fun LayerHome(
                     letters = messages + outbox, topics = topics, opened = opened,
                     onBack = { tab = MainTab.CHATS },
                     onChat = { id -> openThreadFriend = id },
-                    onComposeLetter = { composeLetterFriend = it },
+                    onComposeLetter = { openSheetDraft(it) },
                     onOpenLetter = ::openLetter, onLockedTap = ::lockedLetterTap,
                     openRequests = opener.requests,
                     unreadMarker = unreadMarker,
                     // 1074: the letter tree writes on its own paper with the same draft / send path as the sheet
                     letterWriter = LetterWriter(friends, groups, friendshipSettings, creativeActive,
-                        transmit = { request -> api.send(token, request) }, onSent = { act {} }, draftState = treeDraft),
+                        transmit = { request -> api.send(token, request) }, onSent = { act {} }, draftState = treeDraft, repository = draftRepository),
                     onTopics = { id -> topicScope = TopicScope.friend(id); topicName = friends.firstOrNull { it.id == id }?.name ?: "Themen" },
                     onAllTopics = { hub = "topics" },
                     onGlossary = { hub = "glossary" },
@@ -448,7 +483,7 @@ fun LayerHome(
                     changeConstruction = { state, request -> api.islandAction(token, state, request) },
                     mainNavigation = {
                         MaterialTheme(colorScheme = appColors, typography = appTypography) {
-                            MainNavigationBar(tabs, tab, chatsBadge) { tab = it; openThreadFriend = null }
+                            MainNavigationBar(tabs, tab, chatsBadge) { if (flushDrafts()) { tab = it; openThreadFriend = null } }
                         }
                     },
                     onSettings = { hub = "settings" },
@@ -519,10 +554,17 @@ fun LayerHome(
                 hub == "ep" -> SubScreen("Punkte", onBack = { hub = null }, backLabel = "Inseln") {
                     EpScreen(token, api, friendshipSettings, ep, draft = null, onDraftConsumed = {}, act = ::act)
                 }
+                hub == "drafts" -> SubScreen("Entwürfe", onBack = { hub = null }) {
+                    DraftsPage(draftRepository, onResume = { draft ->
+                        if (treeDraft.value?.flush() != false && sheetDraft.value?.flush() != false) {
+                            sheetDraft.value = draft; composeLetterFriend = draft.selected.firstOrNull() ?: -1L
+                        }
+                    }, onNew = { openSheetDraft(null) })
+                }
                 hub == "accounts" -> SubScreen("Konten", onBack = { hub = "settings" }, backLabel = "Gemeindehaus") {
                     LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
-                        items(accounts, key = { it.token }) { account -> TextButton(onClick = { onSwitchAccount(account) }) { Text(account.name) } }
-                        item { Button(onClick = onAddAccount) { Text("Konto hinzufügen") } }
+                        items(accounts, key = { it.token }) { account -> TextButton(onClick = { guardedSwitch(account) }) { Text(account.name) } }
+                        item { Button(onClick = guardedAdd) { Text("Konto hinzufügen") } }
                     }
                 }
                 topicScope != null -> SubScreen(topicName, onBack = { topicScope = null }, backLabel = "Zurück") {
@@ -546,8 +588,8 @@ fun LayerHome(
                     requests = RequestInbox.forFriend(requestInbox, threadFriend.id),
                     onRespond = ::respondRequest,
                     act = ::act, onBack = { openThreadFriend = null },
-                    onComposeLetter = { composeLetterFriend = it },
-                    onLetterFromChat = { id, body -> composeLetterText = body; composeLetterFriend = id },
+                    onComposeLetter = { openSheetDraft(it) },
+                    onLetterFromChat = { id, body -> openSheetDraft(id, body) },
                     onOpenLetter = ::openLetter,
                     onLockedTap = ::lockedLetterTap,
                     onProof = { message -> scope.launch { runCatching { proof = api.proof(token, message.id) }.onFailure { error = it.message } } },
@@ -584,9 +626,9 @@ fun LayerHome(
                 )
                 tab == MainTab.MORE || hub == "settings" -> MoreScreen(
                     token, api, store, status, sessions, blocked, messages, outbox, ep,
-                    friendshipSettings, opened, onTheme, onLogout, serverProfile, onServerProfile,
+                    friendshipSettings, opened, onTheme, guardedLogout, serverProfile, guardedProfile,
                     onExit = if (hub == "settings") ({ hub = null }) else null,
-                    onAccounts = { hub = "accounts" },
+                    onAccounts = { hub = "accounts" }, onDrafts = { hub = "drafts" },
                     castleExperiment = castleExperiment,
                     onCastleExperiment = { store.setCastleExperiment(it); castleExperiment = it; appMode = store.appMode; tab = appMode.startTab; hub = null; topicScope = null },
                     creativeEligible = creativeEligible,
@@ -624,15 +666,15 @@ fun LayerHome(
     }
     composeLetterFriend?.let { friendId ->
         ModalBottomSheet(
-            onDismissRequest = { composeLetterFriend = null; composeLetterText = "" },
+            onDismissRequest = { closeSheetDraft() },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             dragHandle = null,
         ) {
             SendScreen(
                 token, api, friends, groups, friendshipSettings, initialRecipient = friendId,
-                creativeActive = creativeActive, initialText = composeLetterText,
-                onClose = { composeLetterFriend = null; composeLetterText = "" },
-                onSent = { _, _ -> composeLetterFriend = null; composeLetterText = ""; act {} },
+                creativeActive = creativeActive, initialText = composeLetterText, suppliedDraft = sheetDraft.value,
+                onClose = { closeSheetDraft() },
+                onSent = { _, _ -> composeLetterFriend = null; composeLetterText = ""; sheetDraft.value = null; act {} },
             )
         }
     }
@@ -904,11 +946,20 @@ private fun SendScreen(
     token: String, api: ApiClient, friends: List<ApiClient.UserSummary>, groups: List<ApiClient.Group>,
     settings: List<ApiClient.FriendshipSettings>,
     initialRecipient: Long?, creativeActive: Boolean = false,
-    onClose: () -> Unit, onSent: (Long?, Long?) -> Unit, initialText: String = "",
+    onClose: () -> Unit, onSent: (Long?, Long?) -> Unit, initialText: String = "", suppliedDraft: LetterDraft? = null,
 ) {
     val scope = rememberCoroutineScope()
     // 1074: the draft and its send are shared with the letter tree's paper composer (LetterCompose.kt)
-    val draft = remember(initialRecipient, initialText) { LetterDraft(initialRecipient, initialText) }
+    val draftContext = LocalContext.current
+    val draftAccount = remember(draftContext) { SessionStore(draftContext) }
+    val ownRepository = remember(token, draftAccount.serverProfile.key, draftAccount.name) {
+        LetterDraftRepository.forAccount(draftContext, draftAccount.serverProfile.key + "|" + draftAccount.serverProfile.baseUrl, draftAccount.name.ifBlank { LetterDraftRepository.scope("session", token) }, draftAccount.knownUserId())
+    }
+    val fallbackDraft = remember(token, initialRecipient, initialText, suppliedDraft) { if (suppliedDraft == null) ownRepository.bind(LetterDraft(initialRecipient, initialText)) else null }
+    val draft = suppliedDraft ?: requireNotNull(fallbackDraft)
+    DraftPersistence(draft)
+    BackHandler { if (draft.flush()) onClose() }
+
     var modeMenu by remember { mutableStateOf(false) }
     var recipientMenu by remember { mutableStateOf(false) }
     var confirmManual by remember { mutableStateOf(false) }
@@ -985,7 +1036,7 @@ private fun SendScreen(
             Text("Wann öffnen?", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Text("Wähle, wann die Nachricht sichtbar werden darf.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
-            ComposeMode.entries.forEach { choice ->
+            ReleaseSchedule.choices.forEach { choice ->
                 Surface(
                     modifier = Modifier.fillMaxWidth().clickable { draft.mode = choice },
                     shape = RoundedCornerShape(18.dp),
@@ -1001,20 +1052,9 @@ private fun SendScreen(
                     }
                 }
             }
-            // The chosen mode's own inputs live right below it, not on the main sheet.
-            when (draft.mode) {
-                ComposeMode.DURATION -> NumberAndUnit(draft.amount, { draft.amount = it }, draft.unit, { draft.unit = it })
-                ComposeMode.DATE_TIME -> DateTimeChooser(draft.dateTime) { draft.dateTime = it }
-                ComposeMode.RANDOM -> {
-                    Text("Zufällig innerhalb dieses Fensters:")
-                    NumberAndUnit(draft.randomStart, { draft.randomStart = it }, draft.randomStartUnit, { draft.randomStartUnit = it }, "Frühestens")
-                    NumberAndUnit(draft.randomEnd, { draft.randomEnd = it }, draft.randomEndUnit, { draft.randomEndUnit = it }, "Spätestens")
-                    Text("Das Fenster muss mindestens 1 Minute groß sein. Den tatsächlichen Zeitpunkt wählt der Server.", fontSize = 12.sp)
-                }
-                else -> Unit
-            }
+            ReleaseFields(draft, minimumDelay)
             if (minimumDelay > 0) Text(
-                "Diese Freundschaft verlangt mindestens ${formatRemaining(minimumDelay)} bis zur Freigabe; kürzere Zeiten werden automatisch angehoben.",
+                "Diese Freundschaft verlangt mindestens ${formatRemaining(minimumDelay)} bis zur Freigabe. Relative Zeiten werden bei Bedarf gemeinsam angehoben; absolute Zeiten müssen die Mindestwartezeit einhalten.",
                 fontSize = 12.sp,
             )
             Button(onClick = { modeMenu = false }, Modifier.fillMaxWidth()) { Text("Übernehmen") }
@@ -1029,7 +1069,7 @@ private fun SendScreen(
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onClose) { AppIcon(R.drawable.ico_back, null, size = 22.dp) }
+            TextButton(onClick = { if (draft.flush()) onClose() }) { AppIcon(R.drawable.ico_back, null, size = 22.dp) }
             Column(Modifier.weight(1f)) {
                 Text("An", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(recipientLabel, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -1070,19 +1110,8 @@ private fun SendScreen(
             horizontalArrangement = Arrangement.spacedBy(7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ComposerChip(sealChipLabel(draft.mode, draft.amount, draft.unit, draft.dateTime, minimumDelay), highlighted = true) {
+            ComposerChip(draft.releaseSummary(), highlighted = true) {
                 keyboard?.hide(); modeMenu = true
-            }
-            // Creative testing: one tap per release preset. The letter itself takes
-            // the ordinary path — same friendship gate, same crypto, same server —
-            // and every preset stays fast-forwardable, so the whole journey of a
-            // test letter can be walked without the other side pressing anything.
-            if (creativeActive) CreativeMode.LETTER_PRESETS.forEach { (label, _, seconds) ->
-                ComposerChip(label) {
-                    val chosen = DelayUnit.entries.lastOrNull { seconds >= it.seconds && seconds % it.seconds == 0L }
-                        ?: DelayUnit.MINUTES
-                    draft.mode = ComposeMode.DURATION; draft.unit = chosen; draft.amount = (seconds / chosen.seconds).toString()
-                }
             }
             ComposerChip(draft.attachment?.first ?: "Anhang", icon = R.drawable.ico_attach) { keyboard?.hide(); pickAttachment() }
             ComposerChip("Details", icon = if (detailsOpen) R.drawable.ico_collapse else R.drawable.ico_expand) { detailsOpen = !detailsOpen }
@@ -1096,6 +1125,7 @@ private fun SendScreen(
             TextButton(onClick = { keyboard?.hide(); infoSheet = true }) { Text("Mehr", fontSize = 12.sp) }
         }
         draft.attachment?.let { Text("${it.third.size / 1024} KB · verschlüsselt", Modifier.padding(horizontal = 14.dp), fontSize = 11.sp) }
+        draft.saveStatus?.let { Text(it, Modifier.padding(horizontal = 14.dp).testTag("draft-save-status"), fontFamily = Kit.Display) }
         draft.notice?.let { Text(it, Modifier.padding(horizontal = 14.dp), color = if (it.startsWith("✓")) Color(0xFF19703B) else MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         Button(
             onClick = { keyboard?.hide(); if (draft.mode == ComposeMode.MANUAL) confirmManual = true else scope.launch { send() } },
@@ -1428,10 +1458,12 @@ internal fun NumberAndUnit(
     label: String = "Nach",
 ) {
     var menu by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(amount, { onAmount(it.filter(Char::isDigit).take(4)) }, Modifier.width(140.dp), label = { Text(label) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-        Box { OutlinedButton(onClick = { menu = true }) { Text(unit.label) }; DropdownMenu(menu, { menu = false }) {
-            DelayUnit.entries.forEach { choice -> DropdownMenuItem({ Text(choice.label) }, { onUnit(choice); menu = false }) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedTextField(amount, { onAmount(it.take(24)) }, Modifier.fillMaxWidth()
+            .testTag("release-duration-$label"), label = { Text(label, fontFamily = Kit.Display) },
+            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        Box { OutlinedButton(onClick = { menu = true }) { Text(unit.label, fontFamily = Kit.Display) }; DropdownMenu(menu, { menu = false }) {
+            DelayUnit.entries.forEach { choice -> DropdownMenuItem({ Text(choice.label, fontFamily = Kit.Display) }, { onUnit(choice); menu = false }) }
         } }
     }
 }
@@ -1441,7 +1473,7 @@ internal fun DateTimeChooser(value: LocalDateTime, onChange: (LocalDateTime) -> 
     val context = LocalContext.current
     Text("Gewählt: ${value.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))}", fontWeight = FontWeight.SemiBold)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { DatePickerDialog(context, { _, y, m, d -> onChange(value.withYear(y).withMonth(m + 1).withDayOfMonth(d)) }, value.year, value.monthValue - 1, value.dayOfMonth).show() }) { Text("Datum") }
+        OutlinedButton(onClick = { DatePickerDialog(context, { _, y, m, d -> onChange(LocalDateTime.of(y, m + 1, d, value.hour, value.minute)) }, value.year, value.monthValue - 1, value.dayOfMonth).show() }) { Text("Datum") }
         OutlinedButton(onClick = { TimePickerDialog(context, { _, h, min -> onChange(value.withHour(h).withMinute(min)) }, value.hour, value.minute, true).show() }) { Text("Uhrzeit") }
     }
 }
@@ -1608,7 +1640,7 @@ private fun modeIcon(mode: ComposeMode): Int = when (mode) {
 }
 internal fun modeDescription(mode: ComposeMode): String = when (mode) {
     ComposeMode.DURATION -> "Öffnet nach einer Anzahl Stunden oder Tage."
-    ComposeMode.DATE_TIME -> "Öffnet an einem bestimmten Datum und zu einer Uhrzeit."
+    ComposeMode.DATE_TIME -> "Öffnet zum absoluten oder relativ zum Senden gewählten Zeitpunkt."
     ComposeMode.MANUAL -> "Bleibt gesperrt, bis du sie selbst freigibst."
     ComposeMode.MUTUAL -> "Öffnet erst, nachdem beide zugestimmt haben."
     ComposeMode.PRESENCE -> "Öffnet bei serverbestätigter gleichzeitiger Aktivität; das ist keine ausdrückliche Zustimmung."

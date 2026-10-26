@@ -148,7 +148,7 @@ internal fun MoreScreen(
     creativeEligible: Boolean, creativeSwitch: Boolean, onCreativeSwitch: (Boolean) -> Unit,
     onRecovery: (String) -> Unit, onProof: (ApiClient.Message) -> Unit, onOpenLetter: (ApiClient.Message) -> Unit,
     onLockedTap: (ApiClient.Message) -> Unit, act: ((suspend () -> Unit) -> Unit),
-    onExit: (() -> Unit)? = null, onAccounts: (() -> Unit)? = null,
+    onExit: (() -> Unit)? = null, onAccounts: (() -> Unit)? = null, onDrafts: (() -> Unit)? = null,
 ) {
     var dest by remember { mutableStateOf<MoreDest?>(null) }
     BackHandler(enabled = dest != null) { dest = null }
@@ -168,6 +168,7 @@ internal fun MoreScreen(
         if (onExit != null && onAccounts != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onAccounts) { Text("Konten wechseln") }
         }
+        onDrafts?.let { open -> TextButton(onClick = open, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Entwürfe", fontFamily = Kit.Display) } }
         Box(Modifier.weight(1f)) { MoreHub(status, ep, onLogout, onDest = { dest = it }, placesOnIsland = castleExperiment) }
     }
 }

@@ -93,16 +93,24 @@ class StageSceneSmallScreenTest {
             // the post's views show their label and count whole
             // 1011: the post's views appear when its brass slider is touched: label and count whole, over the bottom row
             if (b == IsleBuilding.POST && StageScenes.of(b, level).clean) {
-                // the letter tree: its brass belt touched, the four windows with their scratched labels on screen, labels whole
-                rule.onNodeWithTag("tree-belt", useUnmergedTree = true).performClick(); frames()
+                // POST0's current Filter → Status and POST1..3's Status open the
+                // same real status choices. Advance the owning scroll with the frozen clock.
+                val d = NativePostTestDriver(rule)
+                d.tap("post-status")
+                val received = StageFixtures.letters.filter { it.incoming && it.groupId == null }
+                val counts = PostViews.counts(received, emptyMap<Long, Any>(), null, "")
                 for (v in PostViews.View.entries) {
-                    rule.onNodeWithTag("tree-window-${v.name}", useUnmergedTree = true).performScrollTo(); frames()
-                    val n = rule.onNodeWithTag("tree-window-${v.name}", useUnmergedTree = true).fetchSemanticsNode()
+                    val tag = "tree-window-${v.name}"
+                    d.scrollTo(tag)
+                    val n = d.tag(tag).fetchSemanticsNode()
                     val r = unclipped(n)
                     assertTrue("$msg ${v.label} $r", r.width >= 48 * density - 1 && r.height >= 48 * density - 1 && r.left >= -1 && r.right <= root.right + 1 && r.bottom <= root.bottom)
+                    assertEquals("$msg ${v.label} exact count", "${v.label}: ${counts[v]} Briefe", d.description(tag))
+                    assertTrue("$msg ${v.label} cut ${layouts(n)}", !overflows(n))
                 }
                 rule.onAllNodesWithText("Ungelesen", useUnmergedTree = true).fetchSemanticsNodes().forEach { assertTrue("$msg Ungelesen cut", !overflows(it)) }
-                rule.activity.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames()
+                d.back()
+                assertTrue("$msg single Back dismissed status", !d.exists("post-selector"))
             } else if (b == IsleBuilding.POST) {
                 rule.onNodeWithTag("post-hotspot-VIEW", useUnmergedTree = true).performClick(); frames()
                 for (v in PostViews.View.entries) {
@@ -218,7 +226,7 @@ class StageSceneSmallScreenTest {
         rule.setContent { VillageTheme(true) { PostOffice(many, letters, emptyMap(), {}, {}, {}, {}, level = 1) } }
         frames()
         val d = NativePostTestDriver(rule)
-        d.tap("tree-rope")
+        d.tap("post-person")
         assertEquals((listOf("person:alle") + many.map { "person:${it.id}" }).toSet(), d.people())
         d.back()
         assertEquals(letters.map { "letter:${it.id}" }.toSet(), d.letters())
@@ -228,6 +236,8 @@ class StageSceneSmallScreenTest {
         d.frames()
         d.back()
         assertEquals(setOf("letter:1120"), d.keys("letter:"))
-        assertTrue(d.description("tree-belt").contains("Alle, 1 Briefe"))
+        d.tap("post-filter")
+        assertTrue(d.description("post-status").contains("Alle"))
+        assertTrue(d.description("post-mail").contains("1 Briefe"))
     }
 }

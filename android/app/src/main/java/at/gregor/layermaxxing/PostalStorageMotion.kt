@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
@@ -64,15 +65,15 @@ internal object PostalStorageMotion {
 /** A native brass runner, drawn on the furniture rather than a Material slider panel. Uses actual paging. */
 @Composable
 internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: Modifier = Modifier,
-                            summary: String = "", painted: Boolean = false, furniture: Boolean = false,
+                            summary: String = "", detents: List<String> = emptyList(), painted: Boolean = false, furniture: Boolean = false,
                             onScrubbing: (Boolean) -> Unit = {}, onPage: (Int) -> Unit) {
     val last = (pages - 1).coerceAtLeast(0)
     var dragging by remember { mutableStateOf(false) }
     var finger by remember { mutableStateOf(1f) }
-    val value = if (dragging) finger else PostalStorageMotion.fractionAt(page, pages)
+    val value = PostalStorageMotion.fractionAt(page, pages)
     val active = enabled && last > 0
     fun choose(f: Float) {
-        if (active && f.isFinite()) {
+        if (enabled && f.isFinite()) {
             onPage(PostalStorageMotion.pageAt(f, pages))
         }
     }
@@ -105,7 +106,7 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                             (scale * 27f).roundToPx()) }
                     }.size(scale * 49f).testTag("post-time-knob"))
                 Box(Modifier.align(Alignment.TopEnd).offset(y = (-22).dp).fillMaxWidth(.64f), Alignment.Center) {
-                    Text(summary, color = Color(0xFFFFEBC5), fontFamily = Kit.Display, fontSize = 12.sp, lineHeight = 15.sp,
+                    RailReadout(summary,
                         style = androidx.compose.ui.text.TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xFF27180D), Offset(1f, 1f), 1f)),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp).testTag("post-time-label"))
@@ -122,25 +123,25 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
             }
             if (painted) {
                 // Ink sits inside the upper wood, above the actual slot and photographed knob.
-                Text(summary, color = Color(0xFFFFEBC5), fontFamily = Kit.Display, fontSize = 12.sp, lineHeight = 14.sp,
-                    maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                RailReadout(summary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(top = maxWidth / 261f * 23f)
                         .testTag("post-time-label"))
             }
             Canvas(Modifier.fillMaxSize().then(if (painted || furniture) Modifier else Modifier.padding(horizontal = 22.dp)).testTag("post-time-rail")
                 .semantics {
-                    contentDescription = "Briefzeit ziehen: links ältere Briefe, rechts Gegenwart. Seite ${page + 1} von ${last + 1}"
-                    stateDescription = if (active) "Zeitreise verfügbar" else "Keine weitere Zeitseite verfügbar"
+                    contentDescription = "${detents.getOrNull(page).orEmpty()} UTC · Briefzeit ziehen: links ältere Briefe, rechts Gegenwart. Seite ${page + 1} von ${last + 1}"
+                    stateDescription = if (active) "Zeitreise verfügbar" else "Ein Monatsblatt; erneut wählen, um neue Post einzuordnen"
                     progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f, (pages - 2).coerceAtLeast(0))
-                    if (!active) disabled()
-                    setProgress { if (active && it.isFinite()) { choose(it); true } else false }
+                    if (!enabled) disabled()
+                    setProgress { if (enabled && it.isFinite()) { choose(it); true } else false }
                 }
-                .pointerInput(active, pages) {
+                .pointerInput(enabled, pages) {
                     // One owner from down to up. Capturing the old page callback in a long-lived
                     // pointer coroutine, or a competing tap detector, loses real runner swipes.
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        if (active) {
+                        if (enabled) {
                             down.consume()
                             dragging = true
                             currentScrubbing.value(true)
@@ -163,6 +164,27 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                         }
                     }
                 }) {
+                if (painted || furniture) {
+                    // A small moving neighbourhood of real detents; never twelve cramped labels.
+                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                        textSize = 12.dp.toPx(); textAlign = android.graphics.Paint.Align.CENTER
+                        typeface = android.graphics.Typeface.create("serif", android.graphics.Typeface.BOLD)
+                    }
+                    val indices = (maxOf(0, page - 1)..minOf(last, page + 1)).toList()
+                    for (index in indices) {
+                        val f = PostalStorageMotion.fractionAt(index, pages)
+                        val x = if (painted) size.width * (70.5f + 120f * f) / 261f else size.width * (28f + 554f * f) / 610f
+                        // If adjacent pages are too close to engrave, selected readout disambiguates.
+                        if (index != page && last > 5) continue
+                        val y = if (painted) size.width * 62f / 261f else size.width * 22f / 610f
+                        val label = detents.getOrNull(index)?.substringBefore(' ') ?: continue
+                        drawLine(Color(0xFF52391F), Offset(x, y + 2.dp.toPx()), Offset(x, y + 5.dp.toPx()), 1.dp.toPx())
+                        paint.color = android.graphics.Color.rgb(228, 198, 145)
+                        drawContext.canvas.nativeCanvas.drawText(label, x + .6.dp.toPx(), y + .6.dp.toPx(), paint)
+                        paint.color = android.graphics.Color.rgb(35, 23, 13)
+                        drawContext.canvas.nativeCanvas.drawText(label, x, y, paint)
+                    }
+                }
                 if (painted) {
                     // These are direction marks engraved at the ends, never a competing cursor
                     // or pointer owner. The whole wooden band, including its real knob, drags.
@@ -201,5 +223,31 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                     .then(if (painted || furniture) Modifier.semantics { role = Role.Button; onClick("Zurück zur Gegenwart") { onPage(0); true } }
                         else Modifier.clickable(onClickLabel = "Zurück zur Gegenwart") { onPage(0) }))
         }
+    }
+}
+
+/** Fit the readout to the actual wood width; expose full month/year/page in semantics. */
+@Composable
+private fun RailReadout(text: String, modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = androidx.compose.ui.text.TextStyle.Default,
+    textAlign: androidx.compose.ui.text.style.TextAlign = androidx.compose.ui.text.style.TextAlign.Center) {
+    var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    BoxWithConstraints(modifier.semantics {
+        getTextLayoutResult { results -> layout?.let { results.add(it); true } ?: false }
+    }) {
+        val measure = androidx.compose.ui.text.rememberTextMeasurer()
+        val density = LocalDensity.current
+        val width = with(density) { maxWidth.toPx() }
+        fun ink(size: Float) = style.copy(fontFamily = Kit.Display, fontSize = size.sp,
+            lineHeight = (size * 1.2f).sp, color = Color(0xFFFFEBC5), textAlign = textAlign)
+        // Month/year stay visible if a long page count would force tiny print.
+        val shown = if (measure.measure(text, ink(8f), maxLines=1, softWrap=false).size.width > width)
+            text.substringBefore(" ·") else text
+        val size = (24 downTo 16).map { it / 2f }.firstOrNull {
+            measure.measure(shown, ink(it), maxLines=1, softWrap=false).size.width <= width
+        } ?: 8f
+        Text(shown, style=ink(size), maxLines=1, onTextLayout={ layout=it }, modifier=Modifier.fillMaxWidth().semantics {
+            contentDescription=text
+        })
     }
 }

@@ -32,24 +32,71 @@ import java.time.ZoneId
  */
 @Stable
 internal class LetterDraft(recipient: Long?, text: String = "") {
-    var text by mutableStateOf(text)
-    var title by mutableStateOf("")
-    var coverNote by mutableStateOf("")
-    var selected by mutableStateOf(recipient?.let(::setOf) ?: emptySet())
-    var groupId by mutableStateOf<Long?>(null)
-    var mode by mutableStateOf(ComposeMode.DURATION)
-    var amount by mutableStateOf("3")
-    var unit by mutableStateOf(DelayUnit.DAYS)
-    var dateTime by mutableStateOf(LocalDateTime.now().plusDays(1).withSecond(0).withNano(0))
-    var randomStart by mutableStateOf("1")
-    var randomEnd by mutableStateOf("24")
-    var randomStartUnit by mutableStateOf(DelayUnit.HOURS)
-    var randomEndUnit by mutableStateOf(DelayUnit.HOURS)
-    var oneTime by mutableStateOf(false)
-    var attachment by mutableStateOf<Triple<String, String, ByteArray>?>(null)
+    var id: String = java.util.UUID.randomUUID().toString()
+        internal set
+    internal var repository: LetterDraftRepository? = null
+    internal var consumed = false
+    var saveStatus by mutableStateOf<String?>(null)
+    private var clearing = false
+    private fun <T> field(value: T) = DraftField(value,
+        changed = { repository?.edited(this, it) }, allowed = { clearing || (!busy && !consumed) })
+    fun flush(): Boolean = repository?.autosave(this) ?: true
+    fun discard(): Boolean = runCatching {
+        repository?.delete(id); consumed = true
+    }.onFailure { saveStatus = "Fehler: Entwurf konnte nicht gelöscht werden. Bitte erneut versuchen." }.isSuccess
+
+    var text by field(text)
+    var title by field("")
+    var coverNote by field("")
+    var selected by field(recipient?.let(::setOf) ?: emptySet())
+    var groupId by field<Long?>(null)
+    var mode by field(ComposeMode.DATE_TIME)
+    var timeBasis by field(TimeBasis.RELATIVE)
+    var windowStart by field(LocalDateTime.now().plusDays(1).withSecond(0).withNano(0))
+    var windowEnd by field(LocalDateTime.now().plusDays(2).withSecond(0).withNano(0))
+    var amount by field("3")
+    var unit by field(DelayUnit.DAYS)
+    var dateTime by field(LocalDateTime.now().plusDays(1).withSecond(0).withNano(0))
+    var randomStart by field("1")
+    var randomEnd by field("24")
+    var randomStartUnit by field(DelayUnit.HOURS)
+    var randomEndUnit by field(DelayUnit.HOURS)
+    var oneTime by field(false)
+    var attachment by field<Triple<String, String, ByteArray>?>(null)
     var busy by mutableStateOf(false)
     /** "✓ …" after sending, else the last error (never silently dropped). */
     var notice by mutableStateOf<String?>(null)
+
+    companion object {
+        val Saver = androidx.compose.runtime.saveable.Saver<LetterDraft, String>(
+            save = { d -> org.json.JSONObject().apply {
+                put("id", d.id); put("text", d.text); put("title", d.title); put("cover", d.coverNote)
+                put("selected", org.json.JSONArray(d.selected.toList())); put("group", d.groupId)
+                put("mode", d.mode.name); put("basis", d.timeBasis.name)
+                put("amount", d.amount); put("unit", d.unit.name); put("date", d.dateTime.toString())
+                put("start", d.randomStart); put("end", d.randomEnd)
+                put("startUnit", d.randomStartUnit.name); put("endUnit", d.randomEndUnit.name)
+                put("windowStart", d.windowStart.toString()); put("windowEnd", d.windowEnd.toString())
+                put("once", d.oneTime)
+            }.toString() },
+            restore = { saved -> org.json.JSONObject(saved).let { j -> LetterDraft(null).apply {
+                id = j.optString("id").takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()
+                text = j.getString("text"); title = j.getString("title"); coverNote = j.getString("cover")
+                selected = j.getJSONArray("selected").let { a -> (0 until a.length()).map { a.getLong(it) }.toSet() }
+                groupId = if (j.has("group") && !j.isNull("group")) j.getLong("group") else null
+                mode = ComposeMode.valueOf(j.getString("mode")); timeBasis = TimeBasis.valueOf(j.getString("basis"))
+                amount = j.getString("amount"); unit = DelayUnit.valueOf(j.getString("unit")); dateTime = LocalDateTime.parse(j.getString("date"))
+                randomStart = j.getString("start"); randomEnd = j.getString("end")
+                randomStartUnit = DelayUnit.valueOf(j.getString("startUnit")); randomEndUnit = DelayUnit.valueOf(j.getString("endUnit"))
+                windowStart = LocalDateTime.parse(j.getString("windowStart")); windowEnd = LocalDateTime.parse(j.getString("windowEnd"))
+                oneTime = j.getBoolean("once")
+            } } },
+        )
+        val StateSaver = androidx.compose.runtime.saveable.Saver<androidx.compose.runtime.MutableState<LetterDraft?>, String>(
+            save = { state -> state.value?.let { with(Saver) { save(it) } } ?: "null" },
+            restore = { saved -> mutableStateOf(if (saved == "null") null else Saver.restore(saved)) },
+        )
+    }
 
     val targetValid: Boolean get() = groupId != null || selected.isNotEmpty()
 
@@ -58,46 +105,35 @@ internal class LetterDraft(recipient: Long?, text: String = "") {
         settings.firstOrNull { it.friendId == id }?.minLetterDelaySeconds
     }.maxOrNull() ?: 0L else 0L
 
-    fun scheduleValid(now: Long = Instant.now().epochSecond): Boolean = when (mode) {
-        ComposeMode.DURATION -> (amount.toLongOrNull() ?: 0) > 0
-        ComposeMode.DATE_TIME -> dateTime.atZone(ZoneId.systemDefault()).toEpochSecond() > now
-        ComposeMode.RANDOM -> {
-            val from = (randomStart.toLongOrNull() ?: 0) * randomStartUnit.seconds
-            val to = (randomEnd.toLongOrNull() ?: 0) * randomEndUnit.seconds
-            from >= 60 && to - from >= 60
-        }
-        else -> true
-    }
+    fun scheduleValid(now: Long = Instant.now().epochSecond): Boolean =
+        runCatching { ReleaseSchedule.resolve(this, now, ZoneId.systemDefault()) }.isSuccess
 
-    fun canSend(now: Long = Instant.now().epochSecond) = targetValid && text.isNotBlank() && scheduleValid(now) && !busy
+    fun canSend(now: Long = Instant.now().epochSecond) = targetValid && text.isNotBlank() && scheduleValid(now) && !busy && !consumed
 
-    /** Why the letter cannot go yet, in words (null = it can). */
     fun problem(now: Long = Instant.now().epochSecond): String? = when {
         !targetValid -> "Noch kein Empfänger gewählt."
         text.isBlank() -> "Der Brief ist noch leer."
-        !scheduleValid(now) -> when (mode) {
-            ComposeMode.DURATION -> "Die Dauer bis zum Öffnen muss größer als 0 sein."
-            ComposeMode.DATE_TIME -> "Der Zeitpunkt liegt in der Vergangenheit."
-            else -> "Das Zufallsfenster muss frühestens nach 1 Minute beginnen und mindestens 1 Minute groß sein."
-        }
-        else -> null
+        else -> runCatching { ReleaseSchedule.resolve(this, now, ZoneId.systemDefault()) }.exceptionOrNull()?.message
+    }
+
+    fun releaseSummary(): String = when (mode) {
+        ComposeMode.MANUAL -> "Manuell freigeben · bleibt versiegelt bis zu deiner Freigabe"
+        ComposeMode.RANDOM -> if (timeBasis == TimeBasis.RELATIVE)
+            "Zeitfenster · $randomStart ${randomStartUnit.label} bis $randomEnd ${randomEndUnit.label} nach dem Senden"
+            else "Zeitfenster · $windowStart bis $windowEnd · ${ZoneId.systemDefault()}"
+        else -> if (timeBasis == TimeBasis.RELATIVE || mode == ComposeMode.DURATION)
+            "Zeitpunkt · $amount ${unit.label} nach dem Senden"
+            else "Zeitpunkt · $dateTime · ${ZoneId.systemDefault()}"
     }
 
     /** Seals the draft exactly as the server expects it (release times raised to the friendship's minimum). */
-    suspend fun seal(minimumDelay: Long): ApiClient.SendRequest {
-        val current = Instant.now().epochSecond
-        val minimum = current + minimumDelay + 5
-        val release = when (mode) {
-            ComposeMode.DURATION -> maxOf(current + (amount.toLongOrNull() ?: 0) * unit.seconds, minimum)
-            ComposeMode.DATE_TIME -> dateTime.atZone(ZoneId.systemDefault()).toEpochSecond()
-            else -> null
-        }
-        val randomFrom = if (mode == ComposeMode.RANDOM)
-            maxOf(current + (randomStart.toLongOrNull() ?: 1) * randomStartUnit.seconds, minimum) else null
-        val randomTo = if (mode == ComposeMode.RANDOM) {
-            val requested = current + (randomEnd.toLongOrNull() ?: 24) * randomEndUnit.seconds
-            if (randomFrom != null) maxOf(requested, randomFrom + 60) else requested
-        } else null
+    suspend fun seal(minimumDelay: Long, current: Long = Instant.now().epochSecond,
+        zone: ZoneId = ZoneId.systemDefault()): ApiClient.SendRequest {
+        require(targetValid && text.isNotBlank()) { problem(current) ?: "Empfänger und Brieftext fehlen." }
+        val times = ReleaseSchedule.resolve(this, current, zone, minimumDelay)
+        val release = times.releaseAt
+        val randomFrom = times.from
+        val randomTo = times.to
         val metadata = LetterMetadata(
             title.trim(), coverNote.trim(), if (groupId == null) selected.toList() else emptyList(),
             groupId, mode.api, release, randomFrom, randomTo, oneTime,
@@ -109,23 +145,39 @@ internal class LetterDraft(recipient: Long?, text: String = "") {
         val encrypted = CryptoBox.Encrypted(sealed.ciphertext, sealed.nonce, sealed.releaseKey)
         val encryptedAttachment = sealed.attachment?.let { ApiClient.EncryptedAttachment(it.name, it.mime, it.ciphertext, it.nonce) }
         return ApiClient.SendRequest(
-            recipientIds = if (groupId == null) selected.toList() else emptyList(), groupId = groupId,
-            encrypted = encrypted, title = title.trim(), mode = mode.api, releaseAt = release,
+            recipientIds = metadata.recipientIds, groupId = metadata.groupId,
+            encrypted = encrypted, title = metadata.title, mode = metadata.mode, releaseAt = release,
             randomFrom = randomFrom, randomTo = randomTo,
-            oneTime = oneTime, attachment = encryptedAttachment, coverNote = coverNote.trim(), evidence = sealed.evidence,
+            oneTime = metadata.oneTime, attachment = encryptedAttachment, coverNote = metadata.coverNote, evidence = sealed.evidence,
         )
     }
 
     /** Seal and hand to [transmit] (the app: ApiClient.send with the account's token). One send at a time. */
     suspend fun send(minimumDelay: Long, transmit: suspend (ApiClient.SendRequest) -> List<Long>, onSent: (Long?, Long?) -> Unit) {
-        if (busy) return
+        if (busy || consumed) return
+        if (!flush()) { notice = "Entwurf konnte nicht gespeichert werden. Bitte erneut versuchen."; return }
+        problem()?.let { notice = it; return }
         busy = true; notice = null
-        runCatching { transmit(seal(minimumDelay)) }.onSuccess { ids ->
+        try {
+            val ids = transmit(seal(minimumDelay))
+            require(ids.isNotEmpty()) { "Keine Sendebestätigung erhalten. Der Entwurf bleibt erhalten." }
+            // Freeze this instance before cleanup: late picker results and disposal cannot resurrect it.
+            consumed = true
             val likelyFriend = if (groupId == null) selected.firstOrNull() else null
-            text = ""; title = ""; coverNote = ""; attachment = null; notice = "✓ Verschlüsselt gesendet"
-            onSent(ids.firstOrNull(), likelyFriend)
-        }.onFailure { notice = it.message ?: "Senden fehlgeschlagen" }
-        busy = false
+            val removed = runCatching { repository?.confirmedSent(id, ids) }.isSuccess
+            if (!removed) {
+                notice = "✓ Gesendet. Der lokale Entwurf konnte nicht entfernt werden; bitte in Entwürfe löschen. Nicht erneut senden."
+            } else {
+                clearing = true
+                text = ""; title = ""; coverNote = ""; attachment = null; clearing = false; notice = "✓ Verschlüsselt gesendet"
+                onSent(ids.firstOrNull(), likelyFriend)
+            }
+        } catch (cancelled: CancellationException) {
+            notice = "Senden abgebrochen. Der Entwurf bleibt erhalten."
+            throw cancelled
+        } catch (error: Exception) {
+            notice = error.message ?: "Senden fehlgeschlagen"
+        } finally { busy = false }
     }
 }
 
@@ -135,11 +187,13 @@ internal fun rememberAttachmentPicker(draft: LetterDraft): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val current by rememberUpdatedState(draft)
+    val pending = remember { arrayOfNulls<LetterDraft>(1) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) scope.launch {
-            val target = current
+        val target = pending[0]
+        pending[0] = null
+        if (uri != null && target != null && !target.consumed) scope.launch {
             runCatching { withContext(Dispatchers.IO) {
-                val bytes = context.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                val bytes = context.contentResolver.openInputStream(uri)!!.use { it.readDraftBytes(2_000_001) }
                 require(bytes.size <= 2_000_000) { "Der Anhang darf höchstens 2 MB groß sein." }
                 var name = "Anhang"; context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                     val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME); if (cursor.moveToFirst() && index >= 0) name = cursor.getString(index)
@@ -148,7 +202,7 @@ internal fun rememberAttachmentPicker(draft: LetterDraft): () -> Unit {
             } }.onSuccess { target.attachment = it }.onFailure { target.notice = it.message }
         }
     }
-    return { picker.launch("*/*") }
+    return { if (!current.busy && !current.consumed) { pending[0] = current; picker.launch("*/*") } }
 }
 
 /**
@@ -165,8 +219,15 @@ internal class LetterWriter(
     val transmit: suspend (ApiClient.SendRequest) -> List<Long>,
     val onSent: () -> Unit,
     private val draftState: androidx.compose.runtime.MutableState<LetterDraft?>,
+    val repository: LetterDraftRepository? = null,
 ) {
-    var draft: LetterDraft? by draftState
+    var draft: LetterDraft?
+        get() = draftState.value?.takeUnless { it.consumed }
+        set(value) {
+            if (draftState.value !== value && draftState.value?.flush() == false) return
+            if (value != null) repository?.bind(value)
+            draftState.value = value
+        }
 }
 
 /** The state of the one request that opens (fetches + decrypts) a letter. Absent = no request running or failed. */

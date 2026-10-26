@@ -190,7 +190,18 @@ class IslandStartUiTest {
             openFromMenu(b)
             val stage = IslandStages.of(b, 2)
             rule.onAllNodesWithContentDescription("Ort: ${stage.name}")[0].assertExists()
-            rule.onAllNodesWithContentDescription("Kopfbild: ${stage.name}")[0].assertExists()
+            val scene = StageScenes.of(b, 2)
+            if (scene.clean) {
+                // The clean postal scene IS the picture, not a redundant header thumbnail.
+                rule.onAllNodesWithContentDescription("Kopfbild: ${stage.name}").assertCountEquals(0)
+                rule.onAllNodesWithContentDescription("Bühne: ${scene.caption}").assertCountEquals(1)
+                val samples = rule.onAllNodes(SemanticsMatcher("actual postal stage") {
+                    it.config.getOrNull(PostObjectMotionKey) != null
+                }, useUnmergedTree = true).fetchSemanticsNodes()
+                assertEquals(1, samples.size)
+                assertEquals(2, samples.single().config[PostObjectMotionKey].level)
+            } else rule.onAllNodesWithContentDescription("Kopfbild: ${stage.name}")[0].assertExists()
+            rule.onAllNodesWithContentDescription("Stufe: ${stage.subtitle}")[0].assertExists()
             rule.onAllNodesWithContentDescription("Ort: ${IslandStages.of(b, 0).name}").assertCountEquals(0)
             rule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }; tick(900)
         }

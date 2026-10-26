@@ -60,10 +60,11 @@ internal fun CrashDiagnosticsDialog(onClose: () -> Unit) {
         onDismissRequest = onClose,
         title = { Text("Fehlerbericht / Log kopieren") },
         text = {
-            Column {
+            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
                 if (copied) Text("Log kopiert")
                 if (cleared) Text("Gespeichertes Log gelöscht")
                 if (clearFailed) Text("Log konnte nicht vollständig gelöscht werden")
+                ShakeReportSettings(onClose)
                 SelectionContainer {
                     Text(text, Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()))
                 }

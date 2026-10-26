@@ -59,13 +59,20 @@ internal object CrashDiagnostics {
     fun clear(): Boolean = runCatching { storage?.clear() == true }.getOrDefault(false)
     fun preview(context: Context): String = try {
         val saved = storage?.saved().orEmpty()
-        ("Lokaler Fehlerbericht · nur auf diesem Gerät\n" +
-            "Keine automatische Übertragung. Kopieren nur auf Tastendruck.\n" +
+        ("Lokaler Fehlerbericht · lokal gespeichert\n" +
+            "Kopieren nur auf Tastendruck. Übertragung nur in ausdrücklich aktivierten Schüttelberichten.\n" +
             (if (saved.isEmpty()) "Kein Java-Absturz aufgezeichnet.\n" else "Letzter gespeicherter Java-Absturz\n$saved\n") +
             "Aktueller Lauf\n" + CrashFormatter.header(metadata, memory(), System.currentTimeMillis()) +
             storage?.events().orEmpty() + "\nVorheriger Lauf (auch ohne Java-Absturz)\n" +
             storage?.previousEvents().orEmpty() + "\n" + historicalExits(context)).take(64 * 1024)
-    } catch (_: Throwable) { "Lokale Diagnose derzeit nicht lesbar. Keine automatische Übertragung." }
+    } catch (_: Throwable) { "Lokale Diagnose derzeit nicht lesbar. Übertragung nur in ausdrücklich aktivierten Schüttelberichten." }
+
+    fun shakeSnapshot(context: Context): String {
+        val text = "Shake report v1\n" + preview(context)
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        return if (bytes.size <= ShakePng.MAX_META) text else
+            String(bytes, 0, ShakePng.MAX_META - 32, Charsets.UTF_8).trimEnd('\uFFFD') + "\n[bounded]\n"
+    }
 
     /** Called only when the user opens diagnostics, never during startup or exception handling. */
     internal fun historicalExits(context: Context): String {

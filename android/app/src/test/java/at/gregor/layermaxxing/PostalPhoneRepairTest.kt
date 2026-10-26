@@ -349,9 +349,8 @@ open class PostalPhoneRepairTest {
             heldFaces.all { it.size.width > 0 && it.size.height > 0 &&
                 it.boundsInRoot.width >= it.size.width - 1f && it.boundsInRoot.height >= it.size.height - 1f })
         if (level == 0) {
-            val cue = node("tree-wax-write-label").fetchSemanticsNode().boundsInRoot
-            assertTrue("Writing label must not cover any of the nine mail faces: $cue",
-                heldFaces.none { it.boundsInRoot.overlaps(cue) })
+            node("tree-wax-write-label").assertDoesNotExist()
+            rule.onNodeWithText("Schreiben").assertDoesNotExist()
             assertTrue("POST0 held mail faces must fit the actual phone viewport: ${heldFaces.map { it.boundsInRoot }}",
                 heldFaces.all { it.boundsInRoot.left >= rootBounds.left && it.boundsInRoot.right <= rootBounds.right &&
                     it.boundsInRoot.top >= rootBounds.top && it.boundsInRoot.bottom <= rootBounds.bottom })
@@ -438,16 +437,15 @@ open class PostalPhoneRepairTest {
         val bucket = node("tree-wax-bucket").fetchSemanticsNode().boundsInRoot
         val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
         assertTrue(bucket.center.x > root.center.x)
-        node("tree-wax-writing-cue").assertTextContains("Schreiben")
-        val cue = node("tree-wax-writing-cue").fetchSemanticsNode().boundsInRoot
-        assertTrue("Writing cue must fit the phone viewport: $cue", cue.left >= root.left && cue.right <= root.right && cue.top >= root.top && cue.bottom <= root.bottom)
-        // The label is clamped into the viewport; its tie still joins the bucket even if its centre shifts left.
-        assertTrue("Writing cue stays attached below the wax bucket", cue.right >= bucket.left && cue.left <= bucket.right && cue.top >= bucket.center.y && cue.top <= bucket.bottom + 12f)
+        node("tree-wax-writing-cue").assertDoesNotExist()
+        rule.onNodeWithText("Schreiben").assertDoesNotExist()
+        assertTrue("Wax remains an accessible physical control", node("tree-wax-bucket").fetchSemanticsNode()
+            .config[androidx.compose.ui.semantics.SemanticsProperties.ContentDescription].any { it.contains("Wachs") })
         tap("tree-wax-bucket"); frames(50); node("tree-to-101").assertExists(); capture("compose-chooser")
         tap("tree-to-101"); frames(50)
         node("tree-write-text").performTextInput("SYNTHETIC preserved draft"); frames(); capture("compose-draft")
         back(); until(ScenePhase.REST); frames(50)
-        tap("tree-wax-write-label"); frames(50)
+        tap("tree-wax-bucket"); frames(50)
         node("tree-write-text").assertTextContains("SYNTHETIC preserved draft", substring = true)
         back(); frames(50); tap("tree-pen"); frames(50)
         node("tree-write-text").assertTextContains("SYNTHETIC preserved draft", substring = true)

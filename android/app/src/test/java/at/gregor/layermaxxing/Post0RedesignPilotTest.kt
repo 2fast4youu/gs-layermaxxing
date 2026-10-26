@@ -174,9 +174,9 @@ class Post0RedesignPilotTest {
         val entry = node("post-filter").fetchSemanticsNode().boundsInRoot
         assertTrue(entry.width >= 48 * px - 1 && entry.height >= 48 * px - 1)
         for (t in listOf("post-person", "post-status", "post-mail", "post-controls")) node(t).assertDoesNotExist()
-        contained("post-filter"); contained("post-time-label"); contained("tree-wax-write-label")
+        contained("post-filter"); contained("post-time-label"); contained("tree-wax-bucket"); node("tree-wax-write-label").assertDoesNotExist(); rule.onNodeWithText("Schreiben").assertDoesNotExist()
         assertEquals("e_post_0_lay_sheet", node("post-filter-surface").fetchSemanticsNode().config[PostalMenuMaterialKey])
-        for (tag in listOf("post-filter-ink", "post-time-label", "tree-wax-writing-cue")) {
+        for (tag in listOf("post-filter-ink", "post-time-label")) {
             val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
             node(tag).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
             assertFalse("Readable control $tag: ${layouts.single()}", layouts.single().hasVisualOverflow)
@@ -188,7 +188,7 @@ class Post0RedesignPilotTest {
             assertTrue("Keep the existing landscape envelope proportions", envelope.boundsInRoot.width > envelope.boundsInRoot.height * 1.5f)
             node("post-identity-${m.id}").assertDoesNotExist()
             assertTrue(node("tree-letter-${m.id}").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.ContentDescription].any { it.contains(m.peerName) })
-            assertFalse("Writing cue must not cover a mail face", node("tree-wax-writing-cue").fetchSemanticsNode().boundsInRoot
+            assertFalse("Wax target must not cover a mail face", node("tree-wax-bucket").fetchSemanticsNode().boundsInRoot
                 .overlaps(node("tree-env-${m.id}").fetchSemanticsNode().boundsInRoot))
         }
         capture("rest120")

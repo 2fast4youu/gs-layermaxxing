@@ -74,6 +74,79 @@ class ApiClient(
     // never an automatic replay of this GET by OkHttp. Other endpoints retain their policy.
     private val letterContentClient by lazy { client.newBuilder().retryOnConnectionFailure(false).build() }
 
+    internal data class DebugReceipt(val id: String, val sha256: String, val bytes: Long)
+    // Explicit consent path: no redirect, transport replay or persistent/background retry.
+    private val debugClient by lazy { client.newBuilder().followRedirects(false)
+        .followSslRedirects(false).retryOnConnectionFailure(false).build() }
+    private suspend fun debugJson(request: Request, live: () -> Boolean): JSONObject =
+        suspendCancellableCoroutine { continuation ->
+            if (!live()) { continuation.cancel(); return@suspendCancellableCoroutine }
+            val call = debugClient.newCall(request)
+            call.timeout().timeout(60, TimeUnit.SECONDS)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    continuation.resumeWith(Result.failure(IOException("Diagnoseübertragung fehlgeschlagen")))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    continuation.resumeWith(runCatching {
+                        response.use {
+                            check(live())
+                            if (!it.isSuccessful) throw ApiException(it.code, "Diagnoseserver: HTTP ${it.code}")
+                            val source = it.body?.source() ?: error("Empty receipt")
+                            source.request(4097)
+                            check(source.buffer.size <= 4096)
+                            val bytes = source.buffer.readByteArray()
+                            JSONObject(String(bytes, Charsets.UTF_8))
+                        }
+                    })
+                }
+            })
+        }
+
+    internal suspend fun uploadShakeReport(token: String, profile: ServerProfile, file: java.io.File,
+        live: () -> Boolean): DebugReceipt = withContext(Dispatchers.IO) {
+        val url = baseUrl.toHttpUrl()
+        require(profile == ServerProfile.GERFRIED && baseUrl == profile.baseUrl && url.isHttps &&
+            url.username.isEmpty() && url.password.isEmpty() && url.query == null && url.fragment == null)
+        check(live())
+        val size = file.length()
+        require(size in 1..ShakePng.MAX_BYTES.toLong())
+        val digest = ShakePng.sha256(file)
+        // Reconfirm the role on this exact destination immediately before uploading.
+        check(debugJson(request("api/server-info").get().build(), live).getString("role") == "test")
+        check(live())
+        val body = object : okhttp3.RequestBody() {
+            override fun contentType() = "image/png".toMediaType()
+            override fun contentLength() = size
+            override fun isOneShot() = true
+            override fun writeTo(sink: okio.BufferedSink) {
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(8192); var sent = 0L
+                    while (true) {
+                        if (!live()) throw IOException("Diagnoseübertragung abgebrochen")
+                        val n = input.read(buffer); if (n < 0) break
+                        sent += n; if (sent > size || sent > ShakePng.MAX_BYTES) throw IOException("PNG size changed")
+                        sink.write(buffer, 0, n)
+                    }
+                    if (sent != size) throw IOException("PNG size changed")
+                }
+            }
+        }
+        fun receipt(json: JSONObject): DebugReceipt {
+            val id = json.getString("id")
+            require(Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}").matches(id))
+            val result = DebugReceipt(id, json.getString("sha256"), json.getLong("bytes"))
+            check(result.sha256 == digest && result.bytes == size)
+            return result
+        }
+        val posted = receipt(debugJson(authorized(token, "api/debug-reports").post(body).build(), live))
+        check(live())
+        val stored = receipt(debugJson(authorized(token, "api/debug-reports/${posted.id}").get().build(), live))
+        check(stored == posted && live() && file.length() == size && ShakePng.sha256(file) == digest)
+        stored
+    }
+
     data class ServerInfo(
         val name: String, val role: String, val version: String, val warning: String,
         val features: List<String>,

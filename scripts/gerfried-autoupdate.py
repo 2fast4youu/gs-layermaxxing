@@ -293,6 +293,22 @@ class Controller:
 
     def candidate_env(self, db: Path) -> dict:
         env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")}
+        # Smoke/migration must exercise the same explicitly selected contract as
+        # the dedicated service. Never inherit the controller's unrelated environment
+        # or the service's DB credentials; only this bounded non-secret flag is copied.
+        effective = self.systemctl("show", "-p", "Environment", "--value", self.cfg.service)
+        try:
+            assignments = shlex.split(effective)
+        except ValueError as exc:
+            raise DeployError("cannot parse service runtime environment") from exc
+        grid = None
+        for item in assignments:
+            if item.startswith("GS_ISLAND_GRID_VERSION="):
+                grid = item.partition("=")[2]
+                if grid not in ("7", "8"):
+                    raise DeployError("invalid service GS_ISLAND_GRID_VERSION; refusing candidate")
+        if grid is not None:
+            env["GS_ISLAND_GRID_VERSION"] = grid
         return {**env, "DB_PATH": str(db), "SERVER_ROLE": "test", "PYTHONDONTWRITEBYTECODE": "1"}
 
     def migrate_copy(self, release: Path, db: Path) -> None:

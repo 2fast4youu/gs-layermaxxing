@@ -418,3 +418,32 @@ def test_freeze_tree_never_chmods_hardlinked_shared_files(tmp_path):
     assert not os.access(rel / "own.py", os.W_OK) and (shared.stat().st_mode & 0o777) == 0o644
     for d in (rel, rel.parent, rel.parent.parent):
         d.chmod(0o755)  # let tmp_path cleanup proceed
+
+
+@pytest.mark.parametrize("effective, expected", [("", None), ("GS_ISLAND_GRID_VERSION=7", "7"),
+    ('DB_PATH=/private/real.db "SERVER_NAME=Gerfried Test" GS_ISLAND_GRID_VERSION=8 SECRET=never-copy', "8")])
+def test_candidate_uses_effective_service_grid_only(tmp_path, monkeypatch, effective, expected):
+    from types import SimpleNamespace
+    c = au.Controller(SimpleNamespace(service="fixture.service"))
+    calls = []
+    def show(*args):
+        calls.append(args)
+        return effective
+    c.systemctl = show
+    monkeypatch.setenv("GS_ISLAND_GRID_VERSION", "invalid-inherited")
+    monkeypatch.setenv("SECRET", "never-copy")
+    db = tmp_path / "snapshot.db"
+    env = c.candidate_env(db)
+    assert env.get("GS_ISLAND_GRID_VERSION") == expected
+    assert env["DB_PATH"] == str(db) and env["SERVER_ROLE"] == "test"
+    assert "SECRET" not in env and "SERVER_NAME" not in env
+    assert calls == [("show", "-p", "Environment", "--value", "fixture.service")]
+
+
+@pytest.mark.parametrize("effective", ["GS_ISLAND_GRID_VERSION=9", "GS_ISLAND_GRID_VERSION=08", "GS_ISLAND_GRID_VERSION=", '"unterminated'])
+def test_candidate_rejects_invalid_effective_runtime_grid(tmp_path, effective):
+    from types import SimpleNamespace
+    c = au.Controller(SimpleNamespace(service="fixture.service"))
+    c.systemctl = lambda *args: effective
+    with pytest.raises(au.DeployError):
+        c.candidate_env(tmp_path / "snapshot.db")

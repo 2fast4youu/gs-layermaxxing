@@ -3430,3 +3430,7 @@ def react(message_id: int, payload: ReactionCreate, user: sqlite3.Row = Depends(
                      ON CONFLICT(message_id,user_id) DO UPDATE SET emoji=excluded.emoji,created_at=excluded.created_at""",
                      (message_id, user["id"], payload.emoji, now_ts()))
     return {"ok": True}
+
+# Dedicated authenticated diagnostic storage, unavailable on production role.
+from app.debug_reports import install as install_debug_reports
+install_debug_reports(app, current_user, lambda: SERVER_ROLE, lambda: DB_PATH)

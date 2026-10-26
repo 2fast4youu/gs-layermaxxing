@@ -69,8 +69,15 @@ class StageSceneRenderTest {
     }
     /** The same strip taken from the decoded scene picture as FunctionStage maps it onto a [w] × [h] window (Crop). */
     private fun pictureEdge(scene: StageScenes.Scene, w: Int, h: Int): IntArray {
-        val id = scene.picture
         val res = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>().resources
+        // Postal storage uses approved clean derivatives, not the source painting
+        // with its old fixed letters. Compare against that actual registered material.
+        val postalLevel = (0..3).firstOrNull { StageScenes.of(IsleBuilding.POST, it).picture == scene.picture }
+        val postalBack = postalLevel?.let { level ->
+            if (level == 0) R.drawable.e_post_0_time_back else TreeArt.id(
+                androidx.test.core.app.ApplicationProvider.getApplicationContext(), "e_post_${level}_physical_back")
+        } ?: 0
+        val id = postalBack.takeIf { it != 0 } ?: scene.picture
         val pic = android.graphics.BitmapFactory.decodeResource(res, id, android.graphics.BitmapFactory.Options().apply { inScaled = false })
         val aspect = pic.width.toFloat() / pic.height
         val byHeight = w.toFloat() / h < aspect
@@ -117,8 +124,17 @@ class StageSceneRenderTest {
                 // (the letter tree, a clean stage: the six letters are written on its sheets)
                 IsleBuilding.POST -> {
                     val post = NativePostTestDriver(rule)
-                    assertEquals(msg, minOf(6, PostRegistration.of(level).sheets.size), post.keys("letter:").size)
-                    assertEquals(msg, StageFixtures.letters.map { "letter:${it.id}" }.toSet(), post.letters())
+                    // Every registered physical face displays its own real message.
+                    val received = StageFixtures.letters.filter { it.incoming && it.groupId == null }
+                    val ordered = received.sortedWith(compareByDescending<ApiClient.Message> { it.createdAt }.thenByDescending { it.id })
+                    val newestMonth = ordered.firstOrNull()?.let { java.time.YearMonth.from(java.time.Instant.ofEpochSecond(it.createdAt).atZone(java.time.ZoneOffset.UTC)) }
+                    val page = ordered.filter { java.time.YearMonth.from(java.time.Instant.ofEpochSecond(it.createdAt).atZone(java.time.ZoneOffset.UTC)) == newestMonth }
+                        .take(PostRegistration.of(level).sheets.size)
+                    val fronts = page
+                    assertEquals(msg, fronts.map { "letter:${it.id}" }.toSet(), post.keys("letter:"))
+                    assertEquals(msg, fronts.map { it.id },
+                        post.tag("tree-scene-REST").fetchSemanticsNode().config[PostalVisibleMailIdsKey])
+                    assertEquals(msg, received.map { "letter:${it.id}" }.toSet(), post.letters())
                     if (post.exists("tree-time-now")) post.tap("tree-time-now")
                 }
                 IsleBuilding.HARBOUR -> rule.onAllNodesWithText("Gemeinsam auf den Gipfel")[0].assertExists()
@@ -152,7 +168,7 @@ class StageSceneRenderTest {
             // no surface uses, between the header and the action row) the window shows the scene picture's own colours
             for (level in 0..3) {
                 val (shot, pic) = edges.getValue(b to level)
-                assertTrue("$b stage $level edge differs from its picture by $shot vs $pic", listOf(0, 1, 2).all { kotlin.math.abs(shot[it] - pic[it]) <= 28 })
+                assertTrue("$b stage $level edge differs from its picture by ${shot.contentToString()} vs ${pic.contentToString()}", listOf(0, 1, 2).all { kotlin.math.abs(shot[it] - pic[it]) <= 28 })
             }
         }
     }

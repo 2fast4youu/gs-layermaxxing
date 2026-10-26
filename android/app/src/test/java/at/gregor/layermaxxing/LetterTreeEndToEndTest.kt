@@ -242,7 +242,7 @@ open class LetterTreeEndToEndTest {
         assertTrue(shown("Diese Freundschaft verlangt mindestens"))
         field("3").performTextReplacement("0"); frames()
         tap("tree-write-send")
-        assertTrue(shown("Die Dauer bis zum Öffnen muss größer als 0 sein.")); assertTrue(sent.isEmpty())
+        assertTrue(shown("Dauer: positive ganze Zahl, höchstens 365 Tage.")); assertTrue(sent.isEmpty())
         field("0").performTextReplacement("2"); frames()
         // details: title, public envelope text, read once
         tap("tree-write-details")
