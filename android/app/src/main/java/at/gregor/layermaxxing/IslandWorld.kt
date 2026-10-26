@@ -298,6 +298,7 @@ internal fun IslandWorld(
     }
     // 7.9.13: one loader at a time, each attempt bounded; a failure keeps what is shown, retries soon
     // (2/5/10/20 s, then the calm 60 s refresh) and says so once in the header, never as a toast flood.
+    val pollLifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(owner, ownId, islands?.score, creativeActive) {
         val id = ownId ?: return@LaunchedEffect
         while (true) {
@@ -317,6 +318,8 @@ internal fun IslandWorld(
             }
             // A tap on "Erneut versuchen" or the app coming back to the front ends the pause early.
             kotlinx.coroutines.withTimeoutOrNull(wait) { retry.receive() }
+            // off screen the island is not polled; back on screen it is loaded again at once
+            pollLifecycle.awaitOnScreen()
         }
     }
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
