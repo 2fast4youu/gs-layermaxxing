@@ -238,10 +238,10 @@ class CodexLetterMotionTest {
 
     @Test
     @Config(qualifiers = "w360dp-h640dp-hdpi")
-    fun openingReprioritizesTheTrunkAndReadReentryReturnsToTheCurrentAnchor() {
+    fun openingPreservesTheTrunkAndReadReentryReturnsToTheCurrentAnchor() {
         h.start(letters = PostPilotFixtures.letters, fontScale = 1.5f)
         val firstEnvelope = h.tag("tree-env-1").fetchSemanticsNode().boundsInRoot
-        val nextAnchor = h.tag("tree-letter-12").fetchSemanticsNode().boundsInRoot
+        val neighbour = h.tag("tree-env-6").fetchSemanticsNode().boundsInRoot
         h.touch("tree-letter-1"); h.until(ScenePhase.SEALED)
         assertEquals(0, h.calls)
         h.touch("tree-envelope"); h.frames()
@@ -251,20 +251,18 @@ class CodexLetterMotionTest {
         assertTrue(h.exists("tree-letter-text"))
         assertNotNull(h.opened[1L])
         h.back(); h.until(ScenePhase.REST)
-        // REST begins the real reorder slide; stale hit targets stay disabled until it settles.
+        // REST restores the same physical batch; the receipt changes state, never order.
         repeat(30) { if (!h.exists("tree-letter-1")) h.frames(1) }
         h.tag("tree-letter-1").assertExists()
         assertEquals(0f, h.sample().camera, 0f)
         assertFalse(h.exists("tree-letter-text") || h.exists("tree-lifted"))
-        // Initial order: 1,6,11,14,3,8,4,7,12. Now: 6,11,14,3,8,4,7,12,1.
-        // Compare physical slots, since letter 1 no longer hangs at its original slot.
-        assertRestBounds("opened letter at slot 8", nextAnchor,
-            h.tag("tree-letter-1").fetchSemanticsNode().boundsInRoot)
-        assertRestBounds("unopened letter at slot 0", firstEnvelope,
+        // Compare physical slots before and after the read receipt.
+        assertRestBounds("opened letter keeps its slot", firstEnvelope,
+            h.tag("tree-env-1").fetchSemanticsNode().boundsInRoot)
+        assertRestBounds("unopened neighbour keeps its slot", neighbour,
             h.tag("tree-env-6").fetchSemanticsNode().boundsInRoot)
         val currentEnvelope = h.tag("tree-env-1").fetchSemanticsNode().boundsInRoot
-        // The reprioritized last-row envelope can lie behind the resting controls. Use the
-        // production readable picker, not an injected touch at an obscured semantics rectangle.
+        // Reenter through the production readable picker.
         h.touch("post-mail"); h.frames(); h.scrollSelectorTo("post-select-1"); h.touch("post-select-1")
         h.until(ScenePhase.READING)
         assertTrue(h.exists("tree-letter-text"))

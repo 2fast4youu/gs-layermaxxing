@@ -125,7 +125,19 @@ class PostalStorageInteractionTest {
     @Test fun singlePageRailDoesNotInventOlderLetters() {
         var changes = 0
         rule.setContent { VillageTheme(true) { PostalTimeRail(0, 1, true) { changes++ } } }
+        rule.onNodeWithTag("post-time-rail").assertIsNotEnabled()
         rule.onNodeWithTag("post-time-rail").performSemanticsAction(SemanticsActions.SetProgress) { assertFalse(it(.2f)) }
+        rule.onNodeWithTag("post-time-rail").performTouchInput { click(center) }
         assertEquals(0, changes)
+    }
+    @Test fun oneActualMonthDetentRefreshesTheSamePageWithoutInventingHistory() {
+        val requests = mutableListOf<Int>()
+        rule.setContent { VillageTheme(true) { PostalTimeRail(0, 1, true, detents = listOf("IX 2026")) { requests += it } } }
+        rule.onNodeWithTag("post-time-rail").assertIsEnabled()
+        rule.onNodeWithTag("post-time-rail").performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(.2f)) }
+        assertEquals(listOf(0), requests)
+        rule.onNodeWithTag("post-time-rail").performTouchInput { click(center) }
+        assertTrue(requests.size > 1)
+        assertTrue(requests.all { it == 0 })
     }
 }

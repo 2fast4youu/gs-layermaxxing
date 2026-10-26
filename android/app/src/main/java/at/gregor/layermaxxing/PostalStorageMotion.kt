@@ -72,8 +72,9 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
     var finger by remember { mutableStateOf(1f) }
     val value = PostalStorageMotion.fractionAt(page, pages)
     val active = enabled && last > 0
+    val canInteract = enabled && (last > 0 || detents.isNotEmpty())
     fun choose(f: Float) {
-        if (enabled && f.isFinite()) {
+        if (canInteract && f.isFinite()) {
             onPage(PostalStorageMotion.pageAt(f, pages))
         }
     }
@@ -131,17 +132,17 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
             Canvas(Modifier.fillMaxSize().then(if (painted || furniture) Modifier else Modifier.padding(horizontal = 22.dp)).testTag("post-time-rail")
                 .semantics {
                     contentDescription = "${detents.getOrNull(page).orEmpty()} UTC · Briefzeit ziehen: links ältere Briefe, rechts Gegenwart. Seite ${page + 1} von ${last + 1}"
-                    stateDescription = if (active) "Zeitreise verfügbar" else "Ein Monatsblatt; erneut wählen, um neue Post einzuordnen"
+                    stateDescription = if (active) "Zeitreise verfügbar" else if (canInteract) "Ein Monatsblatt; erneut wählen, um neue Post einzuordnen" else "Keine älteren Seiten"
                     progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f, (pages - 2).coerceAtLeast(0))
-                    if (!enabled) disabled()
-                    setProgress { if (enabled && it.isFinite()) { choose(it); true } else false }
+                    if (!canInteract) disabled()
+                    setProgress { if (canInteract && it.isFinite()) { choose(it); true } else false }
                 }
-                .pointerInput(enabled, pages) {
+                .pointerInput(canInteract, pages) {
                     // One owner from down to up. Capturing the old page callback in a long-lived
                     // pointer coroutine, or a competing tap detector, loses real runner swipes.
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        if (enabled) {
+                        if (canInteract) {
                             down.consume()
                             dragging = true
                             currentScrubbing.value(true)

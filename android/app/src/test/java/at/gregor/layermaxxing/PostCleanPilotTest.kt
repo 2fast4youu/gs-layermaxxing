@@ -8,6 +8,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onRoot
@@ -124,7 +126,7 @@ class PostCleanPilotTest {
             org.robolectric.shadows.ShadowLooper.idleMainLooper()
             d.frames()
             opened.clear(); locked.clear()
-            val letters = PostPilotFixtures.letters
+            val letters = PostPilotFixtures.letters.filter { it.incoming && it.groupId == null }
             val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
             val px = rule.activity.resources.displayMetrics.density
             assertFalse("no generic modal or function wall", d.exists("post-letters") || d.exists("post-people") || d.exists("tree-page"))
@@ -136,13 +138,13 @@ class PostCleanPilotTest {
                 assertTrue(d.description(name).isNotBlank())
             }
             assertEquals(letters.map { "letter:${it.id}" }.toSet(), d.letters())
-            if (d.exists("tree-time-now")) d.tap("tree-time-now")
+            d.tag("post-time-rail").performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(1f)) }; d.frames()
             d.tap("post-person")
             assertEquals((listOf("person:alle") + PostPilotFixtures.pals.map { "person:${it.id}" }).toSet(), d.people())
             d.person(40)
             val mira = PostViews.shown(letters, emptyMap<Long, Any>(), PostViews.View.ALL, 40, "")
             assertEquals(mira.map { "letter:${it.id}" }.toSet(), d.letters())
-            if (d.exists("tree-time-now")) d.tap("tree-time-now")
+            d.tag("post-time-rail").performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(1f)) }; d.frames()
             d.tap("post-status")
             val counts = PostViews.counts(letters, emptyMap<Long, Any>(), 40, "")
             for (v in PostViews.View.entries) {

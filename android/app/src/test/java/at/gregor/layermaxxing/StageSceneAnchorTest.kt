@@ -87,8 +87,9 @@ class StageSceneAnchorTest {
             }
             val shown = d.slots("letter:")
             // Every registered face owns one independently selectable real letter.
-            val ordered = TreeOrder.order(StageFixtures.letters, emptyMap<Long, String>())
-            val page = ordered.take(anchors.sheets.size)
+            val liveReceived = StageFixtures.letters.filter { it.incoming && it.groupId == null }
+            val byId = liveReceived.associateBy { it.id }
+            val page = receivedMonthPages(liveReceived, anchors.sheets.size).firstOrNull().orEmpty().map { byId.getValue(it) }
             val fronts = page
             assertEquals("POST$level occupied physical faces", fronts.size, shown.size)
             assertEquals("POST$level exact front letters in holder order",
@@ -98,7 +99,7 @@ class StageSceneAnchorTest {
                 assertTrue("$level letter $i on its actual holder", r.center.near(mapped(anchors.sheets[i]), density))
                 assertTrue("$level letter on screen", r.left >= -1 && r.right <= root.right + 1 && r.top >= 64 * density)
             }
-            assertEquals(StageFixtures.letters.map { "letter:${it.id}" }.toSet(), d.letters())
+            assertEquals(liveReceived.map { "letter:${it.id}" }.toSet(), d.letters())
             assertTrue(d.keys("person:").isEmpty())
             d.tap("post-person")
             assertTrue(d.keys("person:").isNotEmpty())

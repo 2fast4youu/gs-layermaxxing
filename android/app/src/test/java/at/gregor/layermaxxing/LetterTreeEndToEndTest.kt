@@ -61,7 +61,7 @@ open class LetterTreeEndToEndTest {
     /** A tap like a finger's: what lies further down the paper is scrolled into view first (the paper scrolls). */
     private fun tap(t: String) {
         if (t in listOf("post-person", "post-status", "post-mail") && !exists(t) && exists("post-filter")) { tag("post-filter").performClick(); frames() }
-        if (postLevel > 0 && t.startsWith("tree-letter-") && !exists(t)) {
+        if (t.removePrefix("tree-letter-").toLongOrNull() != null && t.startsWith("tree-letter-") && !exists(t)) {
             NativePostTestDriver(rule).letter(t.removePrefix("tree-letter-").toLong())
             return
         }
@@ -125,6 +125,7 @@ open class LetterTreeEndToEndTest {
     @Test fun sealBackSealBeforeTheAnswerAsksTheServerOnceAndTheAnswerDoesNotPullTheViewForward() {
         slow[1] = CompletableDeferred()
         start()
+        val originalSpread = onTrunk()
         tap("tree-letter-1")
         // a double tap on the envelope: one request
         tag("tree-envelope").performClick(); tag("tree-envelope").performClick(); frames()
@@ -143,7 +144,8 @@ open class LetterTreeEndToEndTest {
         slow.getValue(1).complete(Unit); frames(60)
         assertTrue(opened[1L] != null)
         assertFalse("no step forward to the letter", exists("tree-lifted") || exists("tree-letter-text"))
-        assertTrue("letter 1 moved to the opened ones", 1L !in onTrunk().take(3))
+        assertEquals("read receipt preserves the anchored spread", originalSpread, onTrunk())
+        assertTrue(tag("tree-letter-1").fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString().contains("Gelesen"))
         assertEquals(1, calls.count { it == "open:1" })
     }
 
@@ -178,7 +180,7 @@ open class LetterTreeEndToEndTest {
         // an opened letter whose text is not here: fetched once; a failure is said with a way to try again
         back()
         openFails = true
-        tap("tree-time-back"); tap("tree-letter-13"); frames(120)
+        tap("post-status"); tap("tree-window-READ"); tap("tree-letter-13"); frames(120)
         assertTrue(shown("Der Brief konnte nicht geholt werden."))
         assertEquals(1, calls.count { it == "open:13" })
         openFails = false
@@ -189,12 +191,13 @@ open class LetterTreeEndToEndTest {
 
     @Test fun travellingLettersStayBehindTheirGateAndNeverAskToOpen() {
         start()
-        tap("tree-letter-3"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
+        tap("tree-letter-4"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
         tap("tree-letter-8"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
-        assertEquals(listOf("locked:3", "locked:8"), calls)
+        assertEquals(listOf("locked:4", "locked:8"), calls)
         assertFalse(exists("tree-envelope") || exists("tree-lifted"))
-        if (postLevel == 0) tap("tree-letter-3") else tap("tree-padlock")
+        if (postLevel == 0) tap("tree-letter-4") else tap("tree-padlock")
         assertTrue(exists("post-arrival")); tap("post-arrival-action")
+        assertEquals(listOf("locked:4", "locked:8", if (postLevel == 0) "locked:4" else "locked:8"), calls)
         assertTrue(calls.last().startsWith("locked:") && calls.none { it.startsWith("open:") })
     }
 

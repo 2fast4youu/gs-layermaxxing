@@ -98,7 +98,7 @@ class LetterTreeTest {
         val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
         // no app chrome on the picture (no header, golden action, story buttons)
         assertTrue(rule.onAllNodesWithText("Brief schreiben").fetchSemanticsNodes().isEmpty())
-        assertEquals(listOf(1L, 6, 11, 14, 3, 8, 4, 7, 12), onTrunk())
+        assertEquals(listOf(1L, 2, 4, 6, 8, 9, 11, 13, 14), onTrunk())
         // tap the sealed letter: the camera moves to its envelope, still sealed; no text yet, no call yet
         tap("tree-letter-1")
         assertTrue(exists("tree-envelope") && !exists("tree-letter-text") && calls.isEmpty())
@@ -117,26 +117,26 @@ class LetterTreeTest {
         frames(200)
         assertTrue(exists("tree-letter-text") && !exists("tree-envelope"))
         assertTrue(rule.onAllNodesWithText("Inhalt von Brief 1 (TESTDATEN)").fetchSemanticsNodes().isNotEmpty())
-        // back: into the envelope, out to the tree; letter 1 is now opened and has moved to the opened letters
+        // Back to the tree: letter 1 is read, with the same chronological batch and slot.
         rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames(200)
         assertTrue(!exists("tree-lifted") && exists("tree-scene-REST"))
-        assertTrue(1L !in onTrunk().take(3))
+        assertEquals(listOf(1L, 2, 4, 6, 8, 9, 11, 13, 14), onTrunk())
     }
 
     @Test fun openedLettersGoStraightToTheirTextTravellingOnesStayClosed() {
         start(mapOf(9L to OpenedMessage("Inhalt von Brief 9 (TESTDATEN)", null, null, null)))
         // travelling (sealed by time / both agree): the existing locked view, no close-up, no open call
-        tap("tree-letter-3")
+        tap("tree-letter-8")
         assertTrue(exists("post-arrival")); assertTrue(calls.isEmpty())
         CodexMotionHarness(rule).scrollSelectorTo("post-arrival-action")
         tap("post-arrival-action")
-        assertEquals(listOf("locked:3"), calls); assertTrue(!exists("tree-lifted"))
-        // an opened letter on the older page: straight to its text, no seal
+        assertEquals(listOf("locked:8"), calls); assertTrue(!exists("tree-lifted"))
+        // Select the real received READ filter: straight to cached text, no seal.
         calls.clear()
         // the arrow's word is whole on screen at 360 dp / font 1.5
         assertTrue(tag("post-time-label").fetchSemanticsNode().boundsInRoot.width > 0f)
-        tap("tree-time-back")
-        assertEquals(listOf(2L, 5, 9, 10, 13), onTrunk())
+        tap("post-status"); tap("tree-window-READ")
+        assertEquals(listOf(2L, 9, 13), onTrunk())
         tap("tree-letter-9"); frames(120)
         // straight out of its envelope: no seal, no extra tap on the envelope
         assertTrue(!exists("tree-envelope") && exists("tree-letter-text") && exists("tree-scene-READING"))
@@ -147,23 +147,23 @@ class LetterTreeTest {
         tap("tree-letter-13"); frames(120)
         assertEquals(listOf("open:13"), calls)
         frames(); assertTrue(rule.onAllNodesWithText("Inhalt von Brief 13 (TESTDATEN)").fetchSemanticsNodes().isNotEmpty())
-        // back keeps the older page (and the time arrow forward to now is there)
+        // Back keeps the READ selection; explicitly choosing ALL returns to the full batch.
         rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames(200)
-        assertEquals(listOf(2L, 5, 9, 10, 13), onTrunk())
-        tap("tree-time-now")
-        assertEquals(listOf(1L, 6, 11, 14, 3, 8, 4, 7, 12), onTrunk())
+        assertEquals(listOf(2L, 9, 13), onTrunk())
+        tap("post-status"); tap("tree-window-ALL")
+        assertEquals(listOf(1L, 2, 4, 6, 8, 9, 11, 13, 14), onTrunk())
     }
 
     @Test fun filtersCombineWithTheOrderAndTheTimePages() {
         start()
-        tap("post-person"); tap("tree-strip-40")                 // Mira: 1, 2, 3, 14
-        assertEquals(listOf(1L, 14, 3, 2), onTrunk())
+        tap("post-person"); tap("tree-strip-40")                 // Mira received: 1, 2, 14
+        assertEquals(listOf(1L, 2, 14), onTrunk())
         assertTrue(!exists("tree-time-back"))
         tap("post-status"); tap("tree-window-UNREAD")            // Mira × Ungelesen: the arrived ones (1, 14)
-        assertEquals(PostViews.shown(letters, emptyMap<Long, Any>(), PostViews.View.UNREAD, 40, "").map { it.id }.toSet(), onTrunk().toSet())
+        assertEquals(PostViews.shown(letters.filter { it.incoming && it.groupId == null }, emptyMap<Long, Any>(), PostViews.View.UNREAD, 40, "").map { it.id }.toSet(), onTrunk().toSet())
         assertEquals(listOf(1L, 14), onTrunk())
         tap("post-status")
-        val counts = PostViews.counts(letters, emptyMap<Long, Any>(), 40, "")
+        val counts = PostViews.counts(letters.filter { it.incoming && it.groupId == null }, emptyMap<Long, Any>(), 40, "")
         for (v in PostViews.View.entries) assertEquals("${v.label}: ${counts[v]} Briefe", desc("tree-window-${v.name}"))
     }
 
@@ -289,7 +289,7 @@ class LetterTreeTest {
             assertTrue("edge $index selection only", exists("tree-scene-SEALED") && calls.isEmpty())
             rule.onRoot().performTouchInput { click(point) }; frames()
             assertTrue("edge $index returns without a request", exists("tree-scene-REST") && !exists("tree-envelope") && calls.isEmpty())
-            assertEquals(listOf(1L, 6, 11, 14, 3, 8, 4, 7, 12), onTrunk())
+            assertEquals(listOf(1L, 2, 4, 6, 8, 9, 11, 13, 14), onTrunk())
         }
         tap("tree-letter-1")
         val point = androidx.compose.ui.geometry.Offset(root.width * .5f, root.height * .95f)
@@ -309,7 +309,7 @@ class LetterTreeTest {
         for (n in nodes) {
             val res = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
             n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action?.invoke(res)
-            for (l in res) assertTrue("${n.config[SemanticsProperties.Text]} cut: w ${l.multiParagraph.maxIntrinsicWidth}/${l.size.width} h ${l.multiParagraph.height}/${n.size.height} overflowW=${l.didOverflowWidth} overflowH=${l.didOverflowHeight} maxW=${l.layoutInput.constraints.maxWidth} ellipsis=${(0 until l.lineCount).map { l.isLineEllipsized(it) }}",
+            for (l in res) assertTrue("${n.config.getOrNull(SemanticsProperties.Text) ?: l.layoutInput.text} cut: w ${l.multiParagraph.maxIntrinsicWidth}/${l.size.width} h ${l.multiParagraph.height}/${n.size.height} overflowW=${l.didOverflowWidth} overflowH=${l.didOverflowHeight} maxW=${l.layoutInput.constraints.maxWidth} ellipsis=${(0 until l.lineCount).map { l.isLineEllipsized(it) }}",
                 (0 until l.lineCount).all { l.getLineRight(it) - l.getLineLeft(it) <= l.size.width + 1 } && l.size.width <= l.layoutInput.constraints.maxWidth && l.multiParagraph.height <= n.size.height + 1 && !l.didOverflowHeight && (0 until l.lineCount).none { l.isLineEllipsized(it) })
         }
         return nodes
@@ -355,21 +355,21 @@ class LetterTreeTest {
         tap("post-status")
         for (v in PostViews.View.entries) {
             wholeTexts("tree-window-${v.name}").single()
-            val expectedCount = PostViews.counts(letters, opened, null, "")[v] ?: 0
+            val expectedCount = PostViews.counts(letters.filter { it.incoming && it.groupId == null }, opened, null, "")[v] ?: 0
             assertTrue("Named real count for $v", desc("tree-window-${v.name}").contains("${v.label}: $expectedCount"))
             assertTrue("No duplicate wood count for $v", !exists("tree-count-${v.name}"))
         }
         tap("post-selector-close")
-        // (1) the time arrow: its painted board is there with its word, a 48 dp target, on screen
+        // (1) The actual time runner and readout: a whole 48 dp target on screen.
         val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
-        val arrow = tag("tree-time-back").fetchSemanticsNode().boundsInRoot
-        assertTrue("$arrow", arrow.width >= 48 * density - 1 && arrow.height >= 48 * density - 1 && arrow.left >= 0f && arrow.right <= root.right)
         val rail = tag("post-time-rail").fetchSemanticsNode().boundsInRoot
+        assertTrue("$rail", rail.width >= 48 * density - 1 && rail.height >= 48 * density - 1 && rail.left >= 0f && rail.right <= root.right)
         assertTrue("runner touch height $rail", rail.height >= 48 * density - 1)
         assertTrue(wholeTexts("post-time-label").isNotEmpty())
-        // (3) the older page: "offen" / "gesendet" whole on the opened envelopes
-        tap("tree-time-back")
+        // (3) The received READ filter: whole name/state ink on every opened envelope.
+        tap("post-status"); tap("tree-window-READ")
         captureInkFixture("compact360-font1.5-older")
-        assertEquals(10, wholeTexts("tree-ink").size)
+        assertEquals(listOf(2L, 9, 13), onTrunk())
+        assertEquals(6, wholeTexts("tree-ink").size)
     }
 }

@@ -64,7 +64,10 @@ abstract class PostUpperMotionContract {
         assertEquals(1, h.compositions); assertEquals(0, h.disposals)
     }
     @Test fun peerNavigationKeepsGateAndUnreadResealsPersonally() = normal { h ->
-        h.start(letters = PostPilotFixtures.letters.filter { it.peerId == 40L }, level = level)
+        // Exercise an incoming timed gate; outgoing letters stay out of the inbox.
+        val receivedPeer = PostPilotFixtures.letters.filter { it.peerId == 40L }
+            .map { if (it.id == 3L) it.copy(incoming = true) else it }
+        h.start(letters = receivedPeer, level = level)
         h.touch("tree-letter-1"); h.until(ScenePhase.SEALED)
         h.touch("tree-envelope"); h.answer.complete(Unit); h.until(ScenePhase.READING)
         h.tag("tree-page").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 9000f) }; h.frames(35)

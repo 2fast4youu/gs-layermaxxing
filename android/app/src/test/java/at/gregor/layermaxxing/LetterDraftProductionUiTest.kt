@@ -46,6 +46,9 @@ class LetterDraftProductionUiTest {
     private val people = PostPilotFixtures.pals.take(1).map { it.copy(id = 101L, name = "SYNTHETIC Mira") }
     @Volatile private var sendFails = true
     private val sends = java.util.concurrent.atomic.AtomicInteger()
+    private val receiptResponses = java.util.concurrent.atomic.AtomicInteger()
+    private val receiptCallbacks = java.util.concurrent.atomic.AtomicInteger()
+    private val parsedReceipts = java.util.concurrent.CopyOnWriteArrayList<List<Long>>()
     private val sendCount get() = sends.get()
     private val bodies = java.util.concurrent.CopyOnWriteArrayList<org.json.JSONObject>()
 
@@ -62,12 +65,13 @@ class LetterDraftProductionUiTest {
                         val buffer = okio.Buffer(); chain.request().body!!.writeTo(buffer)
                         bodies += org.json.JSONObject(buffer.readUtf8()); sends.incrementAndGet()
                         if (sendFails) throw java.io.IOException("SYNTHETIC offline")
+                        receiptResponses.incrementAndGet()
                         Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200)
                             .message("Synthetic receipt").body("""{"ids":[800]}""".toResponseBody()).build()
                     }.build()) }
                     val writer = remember { LetterWriter(people, emptyList(), emptyList(), false,
-                        transmit = { api.send("synthetic-drafts-only", it) },
-                        onSent = {}, draftState = state, repository = repo) }
+                        transmit = { api.send("synthetic-drafts-only", it).also { ids -> parsedReceipts += ids } },
+                        onSent = { receiptCallbacks.incrementAndGet() }, draftState = state, repository = repo) }
                     SideEffect { active = writer; repository = repo }
                     if (mounted) LetterTreePlace(people, emptyList(), emptyMap(), onOpen = {}, onLocked = {},
                         onWrite = {}, onClose = {}, writer = writer, level = stage)
@@ -163,19 +167,23 @@ class LetterDraftProductionUiTest {
         rule.runOnIdle { assertTrue(File(root, "a").delete()) }
         back(); assertEquals("SYNTHETIC retained on failure", LetterDraftRepository(File(root, "a")).list().single().draft.text)
     }
-    private fun awaitSend() {
+    private fun awaitSend(sendingDraft: LetterDraft) {
         repeat(200) {
             frames(2)
-            if (rule.runOnIdle { active.draft?.busy != true }) return
+            // A consumed draft is hidden by the writer before atomic cleanup finishes.
+            // Wait for the retained operation itself, not its nullable UI selection.
+            if (rule.runOnIdle { !sendingDraft.busy }) return
             Thread.sleep(5)
         }
         fail("Production send did not finish")
     }
     @Test fun realComposerSendFailureRetainsSuccessfulReceiptRemovesOnlyItsDraft() {
         start(); begin("SYNTHETIC sent body")
-        val id = rule.runOnIdle { active.draft!!.id }
-        rule.runOnIdle { repository.bind(LetterDraft(101, "SYNTHETIC another draft")) }
-        tap("tree-write-send"); awaitSend()
+        val sendingDraft = rule.runOnIdle { active.draft!! }
+        val id = sendingDraft.id
+        val otherDraft = LetterDraft(101, "SYNTHETIC another draft")
+        rule.runOnIdle { repository.bind(otherDraft) }
+        tap("tree-write-send"); awaitSend(sendingDraft)
         assertEquals(1, sendCount); assertEquals(2, rule.runOnIdle { repository.list().size })
         tag("tree-write-notice").assertTextEquals("[LM-NET-IO] Verbindung zum Server fehlgeschlagen.")
         tag("tree-write-notice").assertTextEquals(ApiErrors.fromNetworkFailure(java.io.IOException("SYNTHETIC offline")).message!!)
@@ -184,14 +192,35 @@ class LetterDraftProductionUiTest {
             assertFalse(active.draft!!.notice!!.contains("SYNTHETIC"))
             assertFalse(active.draft!!.notice!!.contains("IOException"))
         }
+        assertEquals(0, receiptResponses.get()); assertEquals(0, receiptCallbacks.get())
+        assertFalse(rule.runOnIdle { sendingDraft.consumed })
         capture("send-failure")
         rule.runOnIdle { sendFails = false }
-        tap("tree-write-send"); awaitSend()
+        tap("tree-write-send"); awaitSend(sendingDraft)
         assertEquals(2, sendCount)
         assertEquals(2, bodies.size); assertEquals("timed", bodies.last().getString("mode"))
         assertEquals(101L, bodies.last().getJSONArray("recipient_ids").getLong(0))
-        assertFalse(LetterDraftRepository(File(root, "a")).list().any { it.draft.id == id })
-        assertEquals(1, LetterDraftRepository(File(root, "a")).list().size); capture("send-success")
+        // Keep the original disk-removal assertion and deadline. All data in this host is synthetic.
+        val receiptView = driver.exists("tree-write-sent")
+        val diagnostic = rule.runOnIdle {
+            "SYNTHETIC send cleanup: notice=${sendingDraft.notice} saveStatus=${sendingDraft.saveStatus} " +
+                "busy=${sendingDraft.busy} consumed=${sendingDraft.consumed} " +
+                "receiptResponses=${receiptResponses.get()} parsedReceipts=$parsedReceipts receiptCallbacks=${receiptCallbacks.get()} " +
+                "receiptView=$receiptView " +
+                "diskJson=${File(root, "a/$id.json").exists()} diskBackup=${File(root, "a/$id.json.bak").exists()} " +
+                "diskNew=${File(root, "a/$id.json.new").exists()} diskSent=${File(root, "a/$id.sent").exists()} " +
+                "diskSentNew=${File(root, "a/$id.sent.new").exists()} repositoryError=${repository.error}"
+        }
+        val remaining = LetterDraftRepository(File(root, "a")).list()
+        assertFalse(diagnostic, remaining.any { it.draft.id == id })
+        assertEquals(diagnostic, 1, remaining.size)
+        assertEquals(otherDraft.id, remaining.single().draft.id)
+        assertEquals("SYNTHETIC another draft", remaining.single().draft.text)
+        assertEquals(diagnostic, 1, receiptResponses.get()); assertEquals(diagnostic, 1, receiptCallbacks.get())
+        assertEquals(listOf(listOf(800L)), parsedReceipts.toList())
+        tag("tree-write-sent").assertExists()
+        assertTrue(diagnostic, File(root, "a/$id.sent").isFile)
+        capture("send-success")
     }
     @Test fun relativeWindowRawFieldsPersistAcrossNavigationUnmountAndFreshActivity() = scheduleRestart(ComposeMode.RANDOM, TimeBasis.RELATIVE)
     @Test fun relativePointRawFieldsPersistAcrossFreshActivity() = scheduleRestart(ComposeMode.DATE_TIME, TimeBasis.RELATIVE)

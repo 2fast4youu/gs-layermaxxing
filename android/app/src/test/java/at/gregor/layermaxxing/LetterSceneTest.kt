@@ -167,7 +167,7 @@ class LetterSceneTest {
 
     @Test fun aTapBesideTheLetterPutsItBackTapsAndScrollingOnItDoNot() {
         start(withOpened = mapOf(2L to OpenedMessage(LetterSceneFixtures.text(2), null, null, null)))
-        tap("tree-time-back"); tap("tree-letter-2", 220)
+        NativePostTestDriver(rule).letter(2); frames(220)
         assertEquals(ScenePhase.READING, phase())
         // on the paper: a tap in its middle, a scroll – nothing closes
         tag("tree-lifted").performTouchInput { click(Offset(width * .5f, height * .4f)) }; frames()
@@ -192,7 +192,7 @@ class LetterSceneTest {
         assertEquals(ScenePhase.REST, phase())
         assertTrue(calls.none { it.startsWith("open:") || it.startsWith("mark:") })
         // the same letter again: straight out, no seal, no extra tap
-        tap("tree-letter-2", 220)
+        NativePostTestDriver(rule).letter(2); frames(220)
         assertEquals(ScenePhase.READING, phase()); assertFalse(exists("tree-envelope"))
         // system back = the same way out
         back(); assertEquals(ScenePhase.REST, phase())
@@ -200,7 +200,7 @@ class LetterSceneTest {
 
     @Test fun markedUnreadIsSealedAgainThroughTheServerAndNeedsTheExtraTap() {
         start(withOpened = mapOf(2L to OpenedMessage(LetterSceneFixtures.text(2), null, null, null)))
-        tap("tree-time-back"); tap("tree-letter-2", 220)
+        NativePostTestDriver(rule).letter(2); frames(220)
         // a read-once letter is not offered (it is consumed); this one is
         tag("tree-page").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 9000f) }; frames()
         // the server fails first: said on the paper, the letter stays read and open
@@ -221,8 +221,8 @@ class LetterSceneTest {
         assertEquals("Siegel lösen und Brief öffnen", tag("tree-envelope").fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString())
         assertTrue(shown("ungelesen") || shown("Zum Öffnen"))
         assertTrue(calls.none { it.startsWith("open:") })
-        // out to the tree: it hangs sealed again with the arrived letters (now first, on the present page)
-        back(); tap("tree-time-now", 60)
+        // Out to the tree: sealed again in its unchanged chronological slot.
+        back()
         assertTrue(rule.onAllNodesWithTag("tree-letter-2", useUnmergedTree = true).fetchSemanticsNodes().single()
             .config[SemanticsProperties.ContentDescription].joinToString().contains("versiegelt"))
         // opened again: the extra tap is the normal open call (the server checks the gates and lifts the mark)
@@ -235,22 +235,23 @@ class LetterSceneTest {
     @Test fun aReadOnceLetterOffersNoUnreadAndAnUnlockedButUnmarkedLetterIsNeverRefetched() {
         val once = PostPilotFixtures.letters.map { if (it.id == 9L) it.copy(oneTime = true) else it }
         start(letters = once, withOpened = mapOf(9L to OpenedMessage("Inhalt von Brief 9 (TESTDATEN)", null, null, null)))
-        tap("tree-time-back"); tap("tree-letter-9", 220)
+        NativePostTestDriver(rule).letter(9); frames(220)
         assertTrue(exists("tree-letter-unread-none") && !exists("tree-letter-unread"))
         assertTrue(calls.isEmpty())
     }
 
     @Test fun theSamePersonsPreviousAndNewerLetterKeepEveryGate() {
-        start(withOpened = mapOf(2L to OpenedMessage(LetterSceneFixtures.text(2), null, null, null)))
-        tap("tree-time-back"); tap("tree-letter-2", 220)
-        // previous: letter 3 (sent to Mira, still travelling) – its gate: the app's locked view, no text, no move
-        assertTrue(tag("tree-letter-prev").fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString().contains("unterwegs"))
+        // A real incoming mutual-gated predecessor; outgoing 3 is outside the received archive.
+        start(letters = PostPilotFixtures.letters.map { if (it.id == 4L) it.copy(peerId = 40, peerName = "Mira") else it }, withOpened = mapOf(2L to OpenedMessage(LetterSceneFixtures.text(2), null, null, null)))
+        NativePostTestDriver(rule).letter(2); frames(220)
+        // Previous: incoming letter 4, mutual-gated; locked view, no text, no move.
+        assertTrue(tag("tree-letter-prev").fetchSemanticsNode().config[SemanticsProperties.ContentDescription].joinToString().contains("versiegelt"))
         tap("tree-letter-prev")
         assertTrue(exists("post-arrival")); assertTrue(calls.isEmpty())
         // At font 1.5 the arrival action is below the dialog viewport. Drive the
         // owning scroll with frames before the real click; an offscreen click is not a request.
         NativePostTestDriver(rule).tap("post-arrival-action"); frames()
-        assertEquals(listOf("locked:3"), calls); assertEquals(ScenePhase.READING, phase())
+        assertEquals(listOf("locked:4"), calls); assertEquals(ScenePhase.READING, phase())
         // newer: letter 1 (arrived, sealed) – back in, out, in to letter 1: it stays sealed until its own tap
         tap("tree-letter-next", 400)
         assertEquals(ScenePhase.SEALED, phase())
@@ -263,7 +264,7 @@ class LetterSceneTest {
         tap("tree-letter-prev", 400)
         assertEquals(ScenePhase.READING, phase())
         assertTrue(shown("Absatz 1"))
-        assertEquals(listOf("locked:3", "open:1"), calls)
+        assertEquals(listOf("locked:4", "open:1"), calls)
     }
 
     @Test fun theRecipientsAreRealButtons() {
@@ -289,7 +290,7 @@ class LetterSceneTest {
     @Test fun aRestoredSceneSettlesWithItsLetter() {
         val restore = clockControlledRestorationTester(rule)
         start(withOpened = mapOf(9L to OpenedMessage("Inhalt von Brief 9 (TESTDATEN)", null, null, null)), restore = restore)
-        tap("tree-time-back"); tag("tree-letter-9").performClick(); rule.waitForIdle()
+        tap("post-filter"); tap("post-mail"); NativePostTestDriver(rule).scrollTo("post-select-9"); tag("post-select-9").performClick(); rule.waitForIdle()
         repeat(60) { rule.mainClock.advanceTimeByFrame() }; rule.waitForIdle()
         // mid-way out of the envelope: restored, it is simply open
         restore.emulateSavedInstanceStateRestore(); frames()

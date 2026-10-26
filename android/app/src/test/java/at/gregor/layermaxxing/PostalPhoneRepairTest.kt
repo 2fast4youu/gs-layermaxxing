@@ -392,21 +392,32 @@ open class PostalPhoneRepairTest {
             assertEquals(rail.top + (343f - 264.6f) * scale, knob.center.y, 1.5f)
             assertEquals(30f * scale, knob.width, 1.5f)
         }
+        val pages = receivedMonthPages(mail, 9)
+        val last = pages.lastIndex
+        // Nearest physical detent, with exact ties toward the newer page.
+        fun snappedPage(fraction: Float) = (0..last).minWith(compareBy<Int> {
+            kotlin.math.abs((last - it).toDouble() - fraction.toDouble() * last)
+        }.thenBy { it })
+        fun pageFraction(page: Int) = if (last == 0) 1f else 1f - page.toFloat() / last
         assertKnob(1f); capture("painted-knob-now")
         node("post-time-rail").performTouchInput {
             down(Offset((390f - 319.5f) * scale, height / 2f))
         }; frames(3)
         assertKnob(0f)
-        assertEquals(13, node("tree-scene-REST").fetchSemanticsNode().config[PostalTimePageKey])
+        assertEquals(last, node("tree-scene-REST").fetchSemanticsNode().config[PostalTimePageKey])
+        assertEquals(pages.last(), node("tree-scene-REST").fetchSemanticsNode().config[PostalVisibleMailIdsKey])
         capture("painted-knob-oldest-held")
         node("post-time-rail").performTouchInput {
             moveTo(Offset((450f - 319.5f) * scale, height / 2f), 200)
         }; frames(3)
-        assertKnob(.5f); capture("painted-knob-middle-held")
+        val expectedMiddle = snappedPage(.5f)
+        assertEquals(expectedMiddle, node("tree-scene-REST").fetchSemanticsNode().config[PostalTimePageKey])
+        assertEquals(pages[expectedMiddle], node("tree-scene-REST").fetchSemanticsNode().config[PostalVisibleMailIdsKey])
+        assertKnob(pageFraction(expectedMiddle)); capture("painted-knob-middle-held")
         node("post-time-rail").performTouchInput { up() }; frames(30)
         val page = node("tree-scene-REST").fetchSemanticsNode().config[PostalTimePageKey]
-        assertTrue(page in 6..7)
-        assertKnob(PostalStorageMotion.fractionAt(page, 14))
+        assertEquals(expectedMiddle, page)
+        assertKnob(pageFraction(expectedMiddle))
         assertEquals(0, calls.get())
     }
 

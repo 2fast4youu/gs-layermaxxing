@@ -141,7 +141,7 @@ class StageStoryTest {
             if (level == 0) rule.setContent { androidx.compose.runtime.key(current) { VillageTheme(true) { PostOffice(StageFixtures.friends, letters, emptyMap(), onOpen = { opened += it.id }, onLocked = { locked += it.id }, onWrite = {}, onClose = {}, level = current) } } }
             frames()
             val post = NativePostTestDriver(rule)
-            assertEquals(letters.map { "letter:${it.id}" }.toSet(), post.letters())
+            assertEquals(letters.filter { it.incoming && it.groupId == null }.map { "letter:${it.id}" }.toSet(), post.letters())
             if (post.exists("tree-time-now")) post.tap("tree-time-now")
                 // All post stages use their own physical anchors and the shared seal protocol.
                 // the letter tree (clean stage): the unread letter is opened from its sheet, the padlock shows the oldest sealed one

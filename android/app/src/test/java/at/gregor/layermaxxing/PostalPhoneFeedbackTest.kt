@@ -119,7 +119,12 @@ open class PostalPhoneFeedbackTest {
     }
     @Test fun singleMailHasNoInventedHistory() {
         val h = CodexMotionHarness(rule); h.start(letters = PostPilotFixtures.letters.take(1), level = level, fontScale = fontScale)
-        h.tag("post-time-rail").assertIsNotEnabled()
+        h.tag("post-time-rail").assertIsEnabled()
+        val before = h.tag("tree-scene-REST").fetchSemanticsNode().config[PostalVisibleMailIdsKey]
+        h.tag("post-time-rail").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { assertTrue(it(1f)) }
+        h.frames(20)
+        assertEquals(0, h.tag("tree-scene-REST").fetchSemanticsNode().config[PostalTimePageKey])
+        assertEquals(before, h.tag("tree-scene-REST").fetchSemanticsNode().config[PostalVisibleMailIdsKey])
         h.touch("post-mail"); h.frames()
         h.tag("post-select-1").assertExists()
         assertEquals(1, rule.onAllNodes(SemanticsMatcher("selection") { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.TestTag)?.startsWith("post-select-") == true }, useUnmergedTree = true).fetchSemanticsNodes().size)
@@ -183,7 +188,9 @@ open class PostalPhoneFeedbackTest {
         h.frames(100); assertEquals(ScenePhase.REST, h.phase())
     }
     @Test fun realTimeDragSlidesMailAndRemovesStaleTapTargets() {
-        val h = CodexMotionHarness(rule); h.start(letters = PostPilotFixtures.letters, level = level, fontScale = fontScale)
+        // A genuine older UTC month ensures history even at the nine-slot tree capacity.
+        val letters = PostPilotFixtures.letters + PostPilotFixtures.letters.first().copy(id = 101, createdAt = PostPilotFixtures.letters.first().createdAt - 32L * 86400)
+        val h = CodexMotionHarness(rule); h.start(letters = letters, level = level, fontScale = fontScale)
         // Match the physical sprite travel used by PostAllStagesProductionTest, not the
         // generic swipe inset (which can stop short of the present-day knob position).
         fun fractionX(fraction: Float, width: Int): Float = if (level == 0)
@@ -196,30 +203,44 @@ open class PostalPhoneFeedbackTest {
             h.tag("post-time-rail").performTouchInput {
                 down(start)
                 moveTo(Offset(fractionX(fraction, width), start.y), 350)
-                up()
             }
         }
+        fun releaseKnob() { h.tag("post-time-rail").performTouchInput { up() }; h.frames(20) }
+        fun visible() = h.tag("tree-scene-REST").fetchSemanticsNode().config[PostalVisibleMailIdsKey]
         fun page() = h.tag("tree-scene-REST").fetchSemanticsNode().config[PostalTimePageKey]
         val capacity = listOf(9, 4, 6, 6)[level]
-        val lastPage = (PostPilotFixtures.letters.size - 1) / capacity
+        val expected = receivedMonthPages(letters, capacity)
+        val lastPage = expected.lastIndex
         assertEquals(0, page())
         assertTrue(h.exists("tree-letter-1"))
+        assertEquals(expected.first(), visible())
         dragKnob(0f)
         rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
         h.frames(3)
         assertFalse(h.exists("tree-letter-1"))
         val envelopes = rule.onAllNodes(SemanticsMatcher("mail motion") { it.config.getOrNull(PostalPageSlideKey) != null }, useUnmergedTree = true).fetchSemanticsNodes()
         assertTrue(envelopes.isNotEmpty())
-        assertTrue("a real mail slide, not a number-only change", envelopes.any { it.config[PostalPageSlideKey] > 0f })
+        assertTrue("Held month detents show whole faces", envelopes.all { it.config[PostalPageSlideKey] == 0f })
+        assertEquals(expected.last(), visible())
+        expected.first().forEach { assertFalse("No stale target $it during scrub", h.exists("tree-letter-$it")) }
+        releaseKnob()
         assertEquals(0, h.calls)
         h.frames(20)
         assertEquals("Left knob endpoint must reach oldest page", lastPage, page())
+        assertEquals(expected.last(), visible())
+        expected.last().forEach { h.tag("tree-letter-$it").assertExists() }
         val settled = rule.onAllNodes(SemanticsMatcher("mail motion") { it.config.getOrNull(PostalPageSlideKey) != null }, useUnmergedTree = true).fetchSemanticsNodes()
         assertTrue(settled.all { it.config[PostalPageSlideKey] == 0f })
         dragKnob(1f)
+        h.frames(3)
+        assertEquals(expected.first(), visible())
+        expected.last().forEach { assertFalse("No stale oldest target $it", h.exists("tree-letter-$it")) }
+        releaseKnob()
         rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
         h.frames(20)
         assertEquals("Right knob endpoint must return to first page", 0, page())
+        assertEquals(expected.first(), visible())
+        expected.first().forEach { h.tag("tree-letter-$it").assertExists() }
         assertTrue(h.exists("tree-letter-1")); assertEquals(0, h.calls)
     }
     @Test fun emptyMailHasHonestDisabledTime() {
