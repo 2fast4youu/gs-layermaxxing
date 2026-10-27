@@ -105,20 +105,32 @@ class PostalStorageInteractionTest {
             }
         }
         hFrames()
-        rule.onNodeWithTag("post-time-rail").performTouchInput { swipeLeft(durationMillis = 350) }
-        rule.runOnIdle {
-            assertTrue("drag dispatch must produce intermediate positions", requests.size > 3)
-            assertEquals(0, requests.first())
-            assertEquals(4, requests.last())
-            assertTrue(requests.zipWithNext().all { (a,b) -> b >= a })
+        fun drag(older: Boolean, expected: List<Int>) {
+            val rail = rule.onNodeWithTag("post-time-rail")
+            rail.performTouchInput { down(if (older) centerRight else centerLeft) }
+            rule.runOnIdle {
+                assertTrue("DOWN must not choose or refresh a page", requests.isEmpty())
+            }
+            // Dispatch real intermediate pointer frames while the host's snapshot writes
+            // remain unapplied; no accessibility progress action substitutes for the drag.
+            rail.performTouchInput {
+                val start = if (older) centerRight else centerLeft
+                val end = if (older) centerLeft else centerRight
+                for (frame in 1..25) moveTo(start + (end - start) * (frame / 25f), 14)
+                up()
+            }
+            rule.runOnIdle {
+                assertEquals("Every successive changed detent must arrive from real pointers", expected, requests)
+                assertTrue(requests.zipWithNext().all { (a,b) -> if (older) b > a else b < a })
+                assertEquals(expected.last(), currentPage.value)
+            }
         }
-        // Apply the real callback's page change so the obsolete left end-button no longer covers
-        // the start of the return drag. Freezing page=0 would test a non-updating host, not the app.
+        drag(older = true, expected = listOf(1, 2, 3, 4))
+        // Apply the real callback's page change before returning through the same updating host.
         rule.runOnIdle { androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
         hFrames()
         rule.runOnIdle { requests.clear() }
-        rule.onNodeWithTag("post-time-rail").performTouchInput { swipeRight(durationMillis = 350) }
-        rule.runOnIdle { assertEquals(4, requests.first()); assertEquals(0, requests.last()) }
+        drag(older = false, expected = listOf(3, 2, 1, 0))
     }
     private fun hFrames() { repeat(3) { rule.mainClock.advanceTimeByFrame() }; rule.waitForIdle() }
 

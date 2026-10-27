@@ -43,9 +43,9 @@ internal object StageFixtures {
 
     /** The production view of [b] at [level], with every action wired (to nothing) and the fixture data. */
     @Composable
-    fun Place(b: IsleBuilding, level: Int) = VillageTheme(true) {
+    fun Place(b: IsleBuilding, level: Int, postLetters: List<ApiClient.Message> = letters) = VillageTheme(true) {
         when (b) {
-            IsleBuilding.POST -> PostOffice(friends, letters, emptyMap(), onOpen = {}, onLocked = {}, onWrite = {}, onClose = {}, level = level)
+            IsleBuilding.POST -> PostOffice(friends, postLetters, emptyMap(), onOpen = {}, onLocked = {}, onWrite = {}, onClose = {}, level = level)
             IsleBuilding.HARBOUR -> HarbourBoard(quests, topics, onQuestDone = { _, _ -> }, onQuestDelete = {}, onNewQuest = {}, onAllTopics = {}, onClose = {}, level = level,
                 arrivals = arrivals, onArrivals = {})
             IsleBuilding.LIGHTHOUSE -> LighthouseView(friends, friends.associate { it.id to 2 }, incoming, outgoing, onRespond = { _, _ -> }, onFriend = {}, onFind = {}, onClose = {}, level = level)

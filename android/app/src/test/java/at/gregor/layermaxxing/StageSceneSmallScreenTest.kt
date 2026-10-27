@@ -57,11 +57,13 @@ class StageSceneSmallScreenTest {
     private fun frames() { rule.waitForIdle(); repeat(20) { rule.mainClock.advanceTimeByFrame() }; rule.waitForIdle() }
 
     @Test fun allTwentyFourStagesStayUsableOnASmallPhoneWithALargeFont() {
+        // ARRIVED test-only copies exercise real post faces at every stage and the large font.
+        val postLetters = StageFixtures.letters.map { if (it.incoming) it.copy(unlocked = true) else it }
         rule.mainClock.autoAdvance = false
         rule.setContent {
             val d = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale = 1.5f)) {
-                androidx.compose.runtime.key(current) { StageFixtures.Place(current.first, current.second) }
+                androidx.compose.runtime.key(current) { StageFixtures.Place(current.first, current.second, postLetters = postLetters) }
             }
         }
         val density = rule.activity.resources.displayMetrics.density
@@ -72,6 +74,7 @@ class StageSceneSmallScreenTest {
             val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
             val objects = slots().filter { !it.first.startsWith("book:") }
             assertTrue(msg, objects.isNotEmpty() || b == IsleBuilding.LIBRARY)
+            if (b == IsleBuilding.POST) assertTrue("$msg actual arrived faces for geometry", slots("letter:").isNotEmpty())
             for (i in objects.indices) for (j in i + 1 until objects.size)
                 assertTrue("$msg ${objects[i].first} / ${objects[j].first}", !objects[i].second.deflate(4 * density).overlaps(objects[j].second.deflate(4 * density)))
             val action = StageFixtures.action(b, level)?.let { rule.onAllNodesWithText(it)[0].fetchSemanticsNode().boundsInRoot }
@@ -97,7 +100,7 @@ class StageSceneSmallScreenTest {
                 // same real status choices. Advance the owning scroll with the frozen clock.
                 val d = NativePostTestDriver(rule)
                 d.tap("post-status")
-                val received = StageFixtures.letters.filter { it.incoming && it.groupId == null }
+                val received = postLetters.filter { it.incoming && it.groupId == null }
                 val counts = PostViews.counts(received, emptyMap<Long, Any>(), null, "")
                 for (v in PostViews.View.entries) {
                     val tag = "tree-window-${v.name}"

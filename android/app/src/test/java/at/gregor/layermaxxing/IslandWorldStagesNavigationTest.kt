@@ -148,6 +148,8 @@ class IslandWorldStagesNavigationTest {
         // (the visit above filtered the tree to Anna; all people again) the arrived letter's seal waits for its running request
         val d = NativePostTestDriver(rule)
         d.tap("post-person"); d.person(null)
+        // The visit also selected TRAVEL for Anna's pending announcement; Lena has arrived.
+        d.tap("post-status"); d.tap("tree-window-ALL")
         calls.clear()
         d.letter(arrived.id); tick(1200)
         assertTrue(rule.onAllNodesWithText("wird geöffnet", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())

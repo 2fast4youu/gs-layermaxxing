@@ -47,9 +47,9 @@ class StageSceneAnchorTest {
         rule.runOnIdle { current = b to level; androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications() }
         rule.waitForIdle(); repeat(20) { rule.mainClock.advanceTimeByFrame() }; rule.waitForIdle()
     }
-    private fun start() {
+    private fun start(postLetters: List<ApiClient.Message> = StageFixtures.letters) {
         rule.mainClock.autoAdvance = false
-        rule.setContent { androidx.compose.runtime.key(current) { StageFixtures.Place(current.first, current.second) } }
+        rule.setContent { androidx.compose.runtime.key(current) { StageFixtures.Place(current.first, current.second, postLetters = postLetters) } }
     }
 
     /** The painted surface on screen (px), mapped like FunctionStage maps the picture (Crop). */
@@ -68,7 +68,9 @@ class StageSceneAnchorTest {
     private fun Rect.near(o: Rect, slack: Float) = Rect(o.left - slack, o.top - slack, o.right + slack, o.bottom + slack).contains(center)
 
     @Test fun thePostsObjectsAreItsControlsAndTheLettersLieInTheDrawer() {
-        start()
+        // ARRIVED test-only copies keep this holder-geometry test populated; the shared records stay pending.
+        val postLetters = StageFixtures.letters.map { if (it.incoming) it.copy(unlocked = true) else it }
+        start(postLetters = postLetters)
         val d = NativePostTestDriver(rule)
         for (level in 1..3) {
             show(IsleBuilding.POST, level)
@@ -87,10 +89,11 @@ class StageSceneAnchorTest {
             }
             val shown = d.slots("letter:")
             // Every registered face owns one independently selectable real letter.
-            val liveReceived = StageFixtures.letters.filter { it.incoming && it.groupId == null }
+            val liveReceived = postLetters.filter { it.incoming && it.groupId == null && it.unlocked }
             val byId = liveReceived.associateBy { it.id }
             val page = receivedMonthPages(liveReceived, anchors.sheets.size).firstOrNull().orEmpty().map { byId.getValue(it) }
             val fronts = page
+            assertTrue("POST$level actual arrived faces for holder geometry", fronts.isNotEmpty())
             assertEquals("POST$level occupied physical faces", fronts.size, shown.size)
             assertEquals("POST$level exact front letters in holder order",
                 fronts.map { "letter:${it.id}" }, shown.map { it.config[SceneSlotKey] })

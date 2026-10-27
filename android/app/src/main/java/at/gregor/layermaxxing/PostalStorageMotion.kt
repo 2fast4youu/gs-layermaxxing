@@ -182,6 +182,9 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                                     down.position.x < (if (painted) size.width * 190.5f / 261f else if (furniture) size.width * 582f / 610f else size.width.toFloat()) + .5f
                                 val leftEnd = !onHandle && (down.position.x <= minOf(48.dp.toPx(), size.width / 2f) || startFraction <= 0f)
                                 val rightEnd = !onHandle && (down.position.x >= maxOf(size.width - 48.dp.toPx(), size.width / 2f) || startFraction >= 1f)
+                                // Adjacent real detents can be closer than Android touch slop.
+                                // Only engraved end taps need its jitter tolerance.
+                                val motionThreshold = if (leftEnd || rightEnd) viewConfiguration.touchSlop else .5f
                                 var moved = false
                                 var selected = startPage
                                 do {
@@ -189,7 +192,7 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                                     val pointer = event.changes.firstOrNull { it.id == down.id }
                                     if (pointer != null) {
                                         pointer.consume()
-                                        if ((pointer.position - down.position).getDistance() > viewConfiguration.touchSlop) moved = true
+                                        if ((pointer.position - down.position).getDistance() > motionThreshold) moved = true
                                         if (moved) {
                                             val finger = fractionAtX(pointer.position.x, size.width)
                                             val next = PostalStorageMotion.pageAt(finger, gesturePages)
