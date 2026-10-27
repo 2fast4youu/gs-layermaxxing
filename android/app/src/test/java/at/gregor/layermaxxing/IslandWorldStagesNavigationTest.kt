@@ -80,9 +80,15 @@ class IslandWorldStagesNavigationTest {
                 val d = NativePostTestDriver(rule)
                 d.tap("post-person")
                 d.person(3)
-                // Only Anna's received letter belongs in the physical inbox; her
-                // two outgoing records remain chat/history data, never inbox tiles.
-                assertEquals(msg, setOf("letter:4"), d.letters())
+                // Anna's incoming record has not arrived: no physical envelope or inbox
+                // picker entry. Its gate remains reachable through a named announcement.
+                assertEquals(msg, emptySet<String>(), d.letters())
+                assertTrue("$msg no pending envelope", !d.exists("tree-env-4") && !d.exists("tree-letter-4"))
+                d.tap("post-status"); d.tap("tree-window-TRAVEL")
+                d.tap("post-mail")
+                assertEquals(msg, setOf("announcement:4"), d.keys("announcement:"))
+                assertTrue("$msg announcement is not an envelope", d.keys("letter:").isEmpty())
+                d.back()
                 assertTrue("$msg no eager callback $calls", calls.isEmpty())
                 d.letter(4)
                 assertTrue("$msg arrival preview", d.exists("post-arrival"))

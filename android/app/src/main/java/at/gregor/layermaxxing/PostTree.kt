@@ -285,8 +285,9 @@ private fun LetterTreeContent(
     val direct = PostViews.direct(all)
     val people = PostViews.people(pals, all)
     val q = query
+    val arrived = all.filter(PostalBatches::eligible)
     val counts = PostViews.counts(all, opened, person, q)
-    val ordered = PostViews.shown(all, opened, view, person, q)
+    val ordered = PostViews.shown(if (view == PostViews.View.TRAVEL) all else arrived, opened, view, person, q)
     val perPage = anchors.sheets.size
     // Read/unread, arrivals and cache refresh update records, never the physical ID snapshot.
     var batches by rememberSaveable(view, person, q, level) { mutableStateOf<List<String>?>(null) }
@@ -298,12 +299,13 @@ private fun LetterTreeContent(
         ?: archive.getOrNull(page)?.let(PostalBatches::ids).orEmpty()
     // A deleted record leaves its physical slot empty until explicit navigation. Never
     // manufacture a placeholder message or shift its surviving neighbours into the hole.
-    val slotMail = anchoredIds.map { id -> direct.firstOrNull { it.id == id } }
+    val slotMail = anchoredIds.map { id -> direct.firstOrNull { it.id == id && PostalBatches.eligible(it) } }
     val onPage = slotMail.filterNotNull()
-    val occupiedSlots = slotMail.indexOfLast { it != null } + 1
+    val occupiedSlots = anchoredIds.size.coerceAtMost(perPage)
 
     val faceIds = onPage.map { it.id }
     var timeScrubbing by remember { mutableStateOf(false) }
+    var gestureArchive by remember { mutableStateOf<List<String>?>(null) }
     var settledFaceIds by remember { mutableStateOf(faceIds) }
     val pageSlide = remember { androidx.compose.animation.core.Animatable(0f) }
     androidx.compose.runtime.LaunchedEffect(faceIds, still, timeScrubbing) {
@@ -538,10 +540,19 @@ private fun LetterTreeContent(
                         val strap = if (level == 3) registeredStrap.copy(top = maxOf(registeredStrap.top,
                             clearTag.top + maxOf(48.dp, clearTag.h) + 4.dp)) else registeredStrap
                         PostalTimeRail(page, pages, true, modifier = Modifier.offset(strap.left, strap.top).size(strap.w, maxOf(48.dp, strap.h)),
-                            summary = archive.getOrNull(page)?.let { "${PostalBatches.label(it)} · ${page + 1}/$pages" } ?: "Keine Post", detents = archive.map(PostalBatches::label), painted = level == 0,
-                            furniture = level > 0, onScrubbing = { timeScrubbing = it }) { requested ->
-                                // Only this explicit time action refreshes the physical archive.
-                                val refreshed = PostalBatches.build(ordered, perPage)
+                            summary = archive.getOrNull(page)?.let { "${page * perPage + 1}–${page * perPage + PostalBatches.ids(it).size} von ${archive.sumOf { batch -> PostalBatches.ids(batch).size }} · ${PostalBatches.label(it)}" } ?: "Keine Post", detents = archive.map(PostalBatches::label), painted = level == 0,
+                            compactSummary = archive.getOrNull(page)?.let {
+                                "${page * perPage + 1}–${page * perPage + PostalBatches.ids(it).size}/${archive.sumOf { batch -> PostalBatches.ids(batch).size }} · ${PostalBatches.compactMonths(it)}"
+                            } ?: "Keine Post",
+                            furniture = level > 0, onScrubbing = {
+                                if (it) gestureArchive = archive
+                                else gestureArchive = null
+                                timeScrubbing = it
+                            }) { requested ->
+                                // Ordinary paging keeps the entire saved partition, including between arrivals.
+                                // Reselecting the current detent/knob deliberately refreshes eligible mail.
+                                val refreshed = if (requested == page) PostalBatches.build(ordered, perPage)
+                                    else gestureArchive ?: archive
                                 batches = refreshed
                                 page = requested.coerceIn(0, (refreshed.size - 1).coerceAtLeast(0))
                             }
@@ -549,8 +560,19 @@ private fun LetterTreeContent(
                     }
                 }
                 if (idle) {
-                    if (onPage.isEmpty()) Box(g.box(anchors.sheets.first()).let { it.copy(w = g.picture.w * .42f) }.mod(), Alignment.Center) {
-                        Text(if (direct.isEmpty()) "Noch keine empfangenen Briefe" else "Keine Briefe in dieser Auswahl", style = ink(13f, color = if (level == 0) Ink else Scratch), modifier = Modifier.testTag("post-empty"))
+                    val pendingCount = counts[PostViews.View.TRAVEL] ?: 0
+                    val pendingOnly = (arrived.isEmpty() || view == PostViews.View.TRAVEL) && pendingCount > 0
+                    if (onPage.isEmpty()) Box(g.box(anchors.sheets.first()).let {
+                        // An announcement is ink on the empty scene, not constrained to a small
+                        // envelope face. Reserve a complete accessible-size line above the tray.
+                        it.copy(w = g.picture.w * (if (pendingOnly) .65f else .42f),
+                            h = if (pendingOnly) maxOf(it.h, 32.dp) else it.h)
+                    }.mod(), if (pendingOnly) Alignment.TopStart else Alignment.Center) {
+                        Text(if (pendingOnly) "$pendingCount unterwegs" else if (direct.isEmpty()) "Noch keine empfangenen Briefe" else "Keine Briefe in dieser Auswahl",
+                            style = ink(13f, color = if (level == 0) Ink else Scratch), maxLines = if (pendingOnly) 1 else Int.MAX_VALUE,
+                            modifier = Modifier.fillMaxWidth().testTag("post-empty").semantics {
+                                if (pendingOnly) contentDescription = "$pendingCount Ankündigungen unterwegs. Noch nicht angekommen. Im Filter Unterwegs ansehen."
+                            })
                     }
                 }
                 // ---- the letter looked at: the same envelope, in front of the bark that dims a little as the camera comes
@@ -678,7 +700,7 @@ private fun LetterTreeContent(
                                 PostalFilterRow("Alle Personen", "tree-strip-alle", chosen = person == null, slot = "person:alle") { person = null; page = 0; batches = null; focus = TreeFocus.REST }
                                 val pc = PostViews.personCounts(all, opened, view, q)
                                 people.filter { it.name.contains(peopleSearch, true) }.forEach { p ->
-                                    PostalFilterRow(p.name, "tree-strip-${p.id}", value = "${pc[p.id] ?: 0} Briefe", chosen = p.id == person, slot = "person:${p.id}") {
+                                    PostalFilterRow(p.name, "tree-strip-${p.id}", value = "${pc[p.id] ?: 0} ${if (view == PostViews.View.TRAVEL) "Ankündigungen" else "Briefe"}", chosen = p.id == person, slot = "person:${p.id}") {
                                         person = p.id; page = 0; batches = null; focus = TreeFocus.REST
                                     }
                                 }
@@ -686,13 +708,13 @@ private fun LetterTreeContent(
                         }
                         if (expanded != "person") PostalFilterRow("Status", "post-status", value = view.label) { expanded = if (expanded == "status") null else "status" }
                         if (expanded == "status") PostViews.View.entries.forEach { v ->
-                            PostalFilterRow(v.label, "tree-window-${v.name}", value = "${counts[v] ?: 0} Briefe", chosen = view == v) {
+                            PostalFilterRow(v.label, "tree-window-${v.name}", value = "${counts[v] ?: 0} ${if (v == PostViews.View.TRAVEL) "Ankündigungen" else "Briefe"}", chosen = view == v) {
                                 view = v; page = 0; batches = null; focus = TreeFocus.REST
                             }
                         }
                         if (expanded == null) {
                             PostalFilterSearch(query, { query = it; page = 0; batches = null }, "Briefe suchen", "post-search")
-                            PostalFilterRow("${ordered.size} Briefe durchsuchen", "post-mail") { focus = TreeFocus.MAIL }
+                            PostalFilterRow("${ordered.size} ${if (view == PostViews.View.TRAVEL) "Ankündigungen" else "Briefe"} durchsuchen", "post-mail") { focus = TreeFocus.MAIL }
                             if (person != null || view != PostViews.View.ALL || query.isNotBlank())
                                 PostalFilterRow("Filter zurücksetzen", "post-filter-reset") { person = null; view = PostViews.View.ALL; query = ""; peopleSearch = ""; page = 0; batches = null; expanded = null }
                         }
@@ -713,13 +735,13 @@ private fun LetterTreeContent(
                         }
                     }
                     TreeFocus.MAIL -> {
-                        if (level > 0) Text(if (level == 3) "Briefe in Ablagen und auf dem Tisch" else "Briefe auswählen", style = ink(20f, bold = true))
+                        if (level > 0) Text(if (view == PostViews.View.TRAVEL) "Ankündigungen unterwegs" else if (level == 3) "Briefe in Ablagen und auf dem Tisch" else "Briefe auswählen", style = ink(20f, bold = true))
                         PostalFilterSearch(query, { query = it; page = 0; batches = null }, "Briefe suchen", "post-search")
                         if (ordered.isEmpty()) Text("Keine Briefe in dieser Auswahl", style = ink(16f))
                         ordered.forEachIndexed { index, m ->
-                            if (level == 3 && index % 2 == 0) Text("Zeitseite ${index / perPage + 1} · Ablage & Tisch ${(index % perPage) / 2 + 1}: ${minOf(2, ordered.size - index)} Briefe", style = ink(16f, bold = true))
-                            val tray = if (level == 3) "${if (index % 2 == 0) "Ablage" else "Tisch"} ${(index % perPage) / 2 + 1} · " else ""
-                            PostalPickerButton("$tray${if (m.incoming) "von" else "an"} ${m.peerName}\n${PostViews.viewOf(m, opened[m.id] != null).label} · ${PostViews.availability(m, Conversations.letterState(m, opened[m.id] != null))}\n${m.title.ifBlank { m.coverNote }}", "post-select-${m.id}", slot = "letter:${m.id}", clean = true) {
+                            if (view != PostViews.View.TRAVEL && level == 3 && index % 2 == 0) Text("Zeitseite ${index / perPage + 1} · Ablage & Tisch ${(index % perPage) / 2 + 1}: ${minOf(2, ordered.size - index)} Briefe", style = ink(16f, bold = true))
+                            val tray = if (view == PostViews.View.TRAVEL) "Ankündigung · " else if (level == 3) "${if (index % 2 == 0) "Ablage" else "Tisch"} ${(index % perPage) / 2 + 1} · " else ""
+                            PostalPickerButton("$tray${if (m.incoming) "von" else "an"} ${m.peerName}\n${PostViews.viewOf(m, opened[m.id] != null).label} · ${PostViews.availability(m, Conversations.letterState(m, opened[m.id] != null))}\n${m.title.ifBlank { m.coverNote }}", "post-select-${m.id}", slot = "${if (PostalBatches.eligible(m)) "letter" else "announcement"}:${m.id}", clean = true) {
                                 focus = TreeFocus.REST
                                 if (Conversations.letterState(m, opened[m.id] != null).locked) lockedTap(m) else approach(m, readable(m))
                             }
@@ -883,12 +905,14 @@ private fun ColumnScope.LetterOnPaper(m: ApiClient.Message, opened: Map<Long, Op
     opened[m.id]?.text?.let { kept = it }
     val text = opened[m.id]?.text ?: kept
     val st = Conversations.letterState(m, opened[m.id] != null)
-    Text((if (m.incoming) "von " else "an ") + m.peerName, style = ink(21f, bold = true))
-    Text(formatLetterDate(m.createdAt) + " · " + PostViews.availability(m, st), style = ink(12f))
-    Text(Conversations.letterPreviewText(m), style = ink(16f, color = RedInk), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    Text((if (m.incoming) "von " else "an ") + m.peerName, style = ink(15f, bold = true), modifier = Modifier.testTag("tree-letter-sender"))
+    Text(formatLetterDate(m.createdAt) + " · " + PostViews.availability(m, st), style = ink(12f), modifier = Modifier.testTag("tree-letter-date"))
     val failed = text == null && requests[m.id] == OpenRequest.FAILED
     Text(text ?: if (failed) "Der Brief konnte nicht geholt werden." else "Der Brief wird geholt …",
-        style = ink(16f, color = if (failed) RedInk else Ink).copy(fontWeight = FontWeight.SemiBold, lineHeight = 23.sp), modifier = Modifier.testTag("tree-letter-text"))
+        style = ink(20f, color = if (failed) RedInk else Ink).copy(fontWeight = FontWeight.Medium, lineHeight = 29.sp), modifier = Modifier.testTag("tree-letter-text"))
+    m.title.ifBlank { m.coverNote }.takeIf { it.isNotBlank() && it != text }?.let {
+        Text(it, style = ink(13f), modifier = Modifier.padding(top = 8.dp).testTag("tree-letter-cover"))
+    }
     if (failed) StampButton("noch einmal holen", "tree-letter-retry") { onOpen(m) }
     opened[m.id]?.name?.let { Text("Anhang: $it", style = ink(13f)) }
     androidx.compose.foundation.layout.Spacer(Modifier.height(6.dp))

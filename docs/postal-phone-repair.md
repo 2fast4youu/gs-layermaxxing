@@ -1,3 +1,5 @@
+> APK85 current batching/arrival/reading contract and Root validation commands: [postal-batches84.md](postal-batches84.md). Historical version79 evidence below remains historical.
+
 # Postal phone repair after APK78
 
 ## APK81: all POST upgrade views and actual visible capacity

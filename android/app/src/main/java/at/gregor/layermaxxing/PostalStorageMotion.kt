@@ -31,6 +31,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.key.*
+import androidx.compose.foundation.focusable
 
 /** Reversible storage-to-view pose: clear the wooden lip before turning toward the reader. */
 internal data class StoragePose(val pitch: Float = 0f, val yaw: Float = 0f, val roll: Float = 0f)
@@ -65,11 +68,9 @@ internal object PostalStorageMotion {
 /** A native brass runner, drawn on the furniture rather than a Material slider panel. Uses actual paging. */
 @Composable
 internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: Modifier = Modifier,
-                            summary: String = "", detents: List<String> = emptyList(), painted: Boolean = false, furniture: Boolean = false,
+                            summary: String = "", compactSummary: String = summary, detents: List<String> = emptyList(), painted: Boolean = false, furniture: Boolean = false,
                             onScrubbing: (Boolean) -> Unit = {}, onPage: (Int) -> Unit) {
     val last = (pages - 1).coerceAtLeast(0)
-    var dragging by remember { mutableStateOf(false) }
-    var finger by remember { mutableStateOf(1f) }
     val value = PostalStorageMotion.fractionAt(page, pages)
     val active = enabled && last > 0
     val canInteract = enabled && (last > 0 || detents.isNotEmpty())
@@ -78,8 +79,11 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
             onPage(PostalStorageMotion.pageAt(f, pages))
         }
     }
-    val currentChoose = rememberUpdatedState<(Float) -> Unit> { choose(it) }
     val currentScrubbing = rememberUpdatedState(onScrubbing)
+    val currentPage = rememberUpdatedState(page)
+    val currentLast = rememberUpdatedState(last)
+    val currentOnPage = rememberUpdatedState(onPage)
+    fun step(delta: Int) { if (canInteract) onPage((page + delta).coerceIn(0, last)) }
     // Measured on the immutable 900x1350 scene: belt x319.5..580.5, slot x390..510/y343.
     // Pointer and moving photographed brass share the exact same source-art transform.
     fun fractionAtX(x: Float, width: Int): Float = if (painted)
@@ -124,42 +128,84 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
             }
             if (painted) {
                 // Ink sits inside the upper wood, above the actual slot and photographed knob.
-                RailReadout(summary,
+                RailReadout(summary, displayText = compactSummary, maxInkHeight = maxWidth / 261f * 38.4f,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(top = maxWidth / 261f * 23f)
                         .testTag("post-time-label"))
             }
             Canvas(Modifier.fillMaxSize().then(if (painted || furniture) Modifier else Modifier.padding(horizontal = 22.dp)).testTag("post-time-rail")
+                .onPreviewKeyEvent {
+                    if (it.type == KeyEventType.KeyDown && canInteract) when (it.key) {
+                        Key.DirectionLeft, Key.PageUp -> { step(1); true }
+                        Key.DirectionRight, Key.PageDown -> { step(-1); true }
+                        else -> false
+                    } else false
+                }.focusable()
+                .pointerInput(canInteract) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (canInteract && event.type == PointerEventType.Scroll) {
+                                val delta = event.changes.sumOf { (it.scrollDelta.y + it.scrollDelta.x).toDouble() }
+                                if (delta != 0.0) {
+                                    currentOnPage.value((currentPage.value + if (delta > 0) 1 else -1).coerceIn(0, currentLast.value))
+                                    event.changes.forEach { it.consume() }
+                                }
+                            }
+                        }
+                    }
+                }
                 .semantics {
                     contentDescription = "${detents.getOrNull(page).orEmpty()} UTC · Briefzeit ziehen: links ältere Briefe, rechts Gegenwart. Seite ${page + 1} von ${last + 1}"
-                    stateDescription = if (active) "Zeitreise verfügbar" else if (canInteract) "Ein Monatsblatt; erneut wählen, um neue Post einzuordnen" else "Keine älteren Seiten"
+                    stateDescription = if (active) "Zeitreise verfügbar; aktuellen Knopf erneut wählen, um neue Post einzuordnen" else if (canInteract) "Ein Briefstapel; erneut wählen, um neue Post einzuordnen" else "Keine älteren Seiten"
                     progressBarRangeInfo = ProgressBarRangeInfo(value, 0f..1f, (pages - 2).coerceAtLeast(0))
                     if (!canInteract) disabled()
                     setProgress { if (canInteract && it.isFinite()) { choose(it); true } else false }
                 }
-                .pointerInput(canInteract, pages) {
+                .pointerInput(canInteract) {
                     // One owner from down to up. Capturing the old page callback in a long-lived
                     // pointer coroutine, or a competing tap detector, loses real runner swipes.
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         if (canInteract) {
                             down.consume()
-                            dragging = true
                             currentScrubbing.value(true)
                             try {
-                                finger = fractionAtX(down.position.x, size.width)
-                                currentChoose.value(finger)
+                                val gesturePages = currentLast.value + 1
+                                val startPage = currentPage.value
+                                val startFraction = fractionAtX(down.position.x, size.width)
+                                // Give the engraved ends their 48dp targets without stealing a
+                                // resting handle tap when the compact rail's targets overlap it.
+                                val handleFraction = PostalStorageMotion.fractionAt(startPage, gesturePages)
+                                val onHandle = kotlin.math.abs(startFraction - handleFraction) < .025f &&
+                                    down.position.x > (if (painted) size.width * 70.5f / 261f else if (furniture) size.width * 28f / 610f else 0f) - .5f &&
+                                    down.position.x < (if (painted) size.width * 190.5f / 261f else if (furniture) size.width * 582f / 610f else size.width.toFloat()) + .5f
+                                val leftEnd = !onHandle && (down.position.x <= minOf(48.dp.toPx(), size.width / 2f) || startFraction <= 0f)
+                                val rightEnd = !onHandle && (down.position.x >= maxOf(size.width - 48.dp.toPx(), size.width / 2f) || startFraction >= 1f)
+                                var moved = false
+                                var selected = startPage
                                 do {
                                     val event = awaitPointerEvent(PointerEventPass.Main)
                                     val pointer = event.changes.firstOrNull { it.id == down.id }
                                     if (pointer != null) {
                                         pointer.consume()
-                                        finger = fractionAtX(pointer.position.x, size.width)
-                                        currentChoose.value(finger)
+                                        if ((pointer.position - down.position).getDistance() > viewConfiguration.touchSlop) moved = true
+                                        if (moved) {
+                                            val finger = fractionAtX(pointer.position.x, size.width)
+                                            val next = PostalStorageMotion.pageAt(finger, gesturePages)
+                                            if (next != selected) { selected = next; currentOnPage.value(next) }
+                                        }
                                     }
                                 } while (event.changes.any { it.id == down.id && it.pressed })
+                                if (!moved) {
+                                    val next = when {
+                                        leftEnd -> (startPage + 1).coerceAtMost(gesturePages - 1)
+                                        rightEnd -> (startPage - 1).coerceAtLeast(0)
+                                        else -> PostalStorageMotion.pageAt(startFraction, gesturePages)
+                                    }
+                                    currentOnPage.value(next)
+                                }
                             } finally {
-                                dragging = false
                                 currentScrubbing.value(false)
                             }
                         }
@@ -181,9 +227,13 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                         val label = detents.getOrNull(index)?.substringBefore(' ') ?: continue
                         drawLine(Color(0xFF52391F), Offset(x, y + 2.dp.toPx()), Offset(x, y + 5.dp.toPx()), 1.dp.toPx())
                         paint.color = android.graphics.Color.rgb(228, 198, 145)
-                        drawContext.canvas.nativeCanvas.drawText(label, x + .6.dp.toPx(), y + .6.dp.toPx(), paint)
-                        paint.color = android.graphics.Color.rgb(35, 23, 13)
-                        drawContext.canvas.nativeCanvas.drawText(label, x, y, paint)
+                        // POST0 has one combined range/month line above the brass. Keep its ticks,
+                        // but never engrave a second month label in the same wood band.
+                        if (!painted) {
+                            drawContext.canvas.nativeCanvas.drawText(label, x + .6.dp.toPx(), y + .6.dp.toPx(), paint)
+                            paint.color = android.graphics.Color.rgb(35, 23, 13)
+                            drawContext.canvas.nativeCanvas.drawText(label, x, y, paint)
+                        }
                     }
                 }
                 if (painted) {
@@ -221,8 +271,8 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
                         else Modifier.clickable(onClickLabel = "Ältere Briefe") { onPage((page + 1).coerceAtMost(last)) }))
             if (active && page > 0) Text(if (painted || furniture) "" else "›", fontSize = 25.sp, color = ink,
                 modifier = Modifier.align(Alignment.CenterEnd).size(48.dp).testTag("tree-time-now")
-                    .then(if (painted || furniture) Modifier.semantics { role = Role.Button; onClick("Zurück zur Gegenwart") { onPage(0); true } }
-                        else Modifier.clickable(onClickLabel = "Zurück zur Gegenwart") { onPage(0) }))
+                    .then(if (painted || furniture) Modifier.semantics { role = Role.Button; onClick("Neuere Briefe") { onPage((page - 1).coerceAtLeast(0)); true } }
+                        else Modifier.clickable(onClickLabel = "Neuere Briefe") { onPage((page - 1).coerceAtLeast(0)) }))
         }
     }
 }
@@ -230,6 +280,7 @@ internal fun PostalTimeRail(page: Int, pages: Int, enabled: Boolean, modifier: M
 /** Fit the readout to the actual wood width; expose full month/year/page in semantics. */
 @Composable
 private fun RailReadout(text: String, modifier: Modifier = Modifier,
+    displayText: String = text, maxInkHeight: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Infinity,
     style: androidx.compose.ui.text.TextStyle = androidx.compose.ui.text.TextStyle.Default,
     textAlign: androidx.compose.ui.text.style.TextAlign = androidx.compose.ui.text.style.TextAlign.Center) {
     var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
@@ -241,11 +292,12 @@ private fun RailReadout(text: String, modifier: Modifier = Modifier,
         val width = with(density) { maxWidth.toPx() }
         fun ink(size: Float) = style.copy(fontFamily = Kit.Display, fontSize = size.sp,
             lineHeight = (size * 1.2f).sp, color = Color(0xFFFFEBC5), textAlign = textAlign)
-        // Month/year stay visible if a long page count would force tiny print.
-        val shown = if (measure.measure(text, ink(8f), maxLines=1, softWrap=false).size.width > width)
-            text.substringBefore(" ·") else text
+        // Furniture keeps its existing range-first fallback; POST0 always paints the complete compact line.
+        val shown = if (displayText == text && measure.measure(text, ink(8f), maxLines=1, softWrap=false).size.width > width)
+            text.substringBefore(" ·") else displayText
         val size = (24 downTo 16).map { it / 2f }.firstOrNull {
-            measure.measure(shown, ink(it), maxLines=1, softWrap=false).size.width <= width
+            val measured = measure.measure(shown, ink(it), maxLines=1, softWrap=false).size
+            measured.width <= width && measured.height <= with(density) { maxInkHeight.toPx() }
         } ?: 8f
         Text(shown, style=ink(size), maxLines=1, onTextLayout={ layout=it }, modifier=Modifier.fillMaxWidth().semantics {
             contentDescription=text

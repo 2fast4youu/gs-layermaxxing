@@ -73,6 +73,11 @@ internal class NativePostTestDriver(val rule: AndroidComposeTestRule<ActivitySce
     fun letter(id: Long) {
         tap("post-mail")
         val name = "post-select-$id"
+        if (!exists(name)) {
+            back()
+            tap("post-status"); tap("tree-window-TRAVEL")
+            tap("post-mail")
+        }
         scrollTo(name)
         tap(name)
         frames(40)

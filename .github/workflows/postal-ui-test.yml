@@ -78,6 +78,7 @@ jobs:
             --tests '*Post0RedesignPilotTest' \
             --tests '*PostAllStagesProductionTest' \
             --tests '*PostalBatchesTest' \
+            --tests '*PostAllStagesProductionTest.wholeBatch84*' \
             --tests '*ReleaseScheduleTest' \
             --tests '*LetterDraftRepositoryTest' \
             --tests '*LetterDraftProductionUiTest' \
@@ -136,8 +137,8 @@ jobs:
           application_id = manifest_value('application-id')
           version_code = int(manifest_value('version-code'))
           version_name = manifest_value('version-name')
-          if (application_id, version_code, version_name) != ('at.gregor.layermaxxing.gerfried', 83, '7.9.14-shake-debug1'):
-              raise SystemExit('Actual APK manifest does not match the version 83 rollout candidate')
+          if (application_id, version_code, version_name) != ('at.gregor.layermaxxing.gerfried', 85, '7.9.14-post-batches1'):
+              raise SystemExit('Actual APK manifest does not match the version 85 rollout candidate')
           with zipfile.ZipFile(source) as apk:
               for name in ('island_edge.json', 'island_ground.json', 'island_constant_ground.json'):
                   if apk.read(name) != (Path('server/app/geometry') / name).read_bytes():
@@ -148,7 +149,7 @@ jobs:
           if not found or found.group(1).lower() != os.environ['EXPECTED_SIGNER'].lower():
               raise SystemExit('Unexpected APK signer; refuse delivery')
           out = Path('dist'); out.mkdir()
-          target = out / 'GS-Layermaxxing-Gerfried-v7.9.14-shake-debug1.apk'
+          target = out / 'GS-Layermaxxing-Gerfried-v7.9.14-post-batches1.apk'
           shutil.copy2(source, target)
           manifest = {'commit': os.environ['GITHUB_SHA'], 'branch': os.environ['GITHUB_REF_NAME'],
                       'file': target.name, 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
@@ -167,7 +168,7 @@ jobs:
               f.write('APK SHA256: `' + manifest['sha256'] + '`\n')
       - uses: actions/upload-artifact@v4
         with:
-          name: postal-ui-test-apk-83
+          name: postal-ui-test-apk-85
           path: dist/*
           if-no-files-found: error
           retention-days: 14

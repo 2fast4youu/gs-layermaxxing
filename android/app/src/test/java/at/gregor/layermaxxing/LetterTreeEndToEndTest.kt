@@ -191,11 +191,11 @@ open class LetterTreeEndToEndTest {
 
     @Test fun travellingLettersStayBehindTheirGateAndNeverAskToOpen() {
         start()
-        tap("tree-letter-4"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
-        tap("tree-letter-8"); assertTrue(exists("post-arrival")); tap("post-arrival-action")
+        NativePostTestDriver(rule).letter(4); assertTrue(exists("post-arrival")); tap("post-arrival-action")
+        NativePostTestDriver(rule).letter(8); assertTrue(exists("post-arrival")); tap("post-arrival-action")
         assertEquals(listOf("locked:4", "locked:8"), calls)
         assertFalse(exists("tree-envelope") || exists("tree-lifted"))
-        if (postLevel == 0) tap("tree-letter-4") else tap("tree-padlock")
+        if (postLevel == 0) NativePostTestDriver(rule).letter(4) else tap("tree-padlock")
         assertTrue(exists("post-arrival")); tap("post-arrival-action")
         assertEquals(listOf("locked:4", "locked:8", if (postLevel == 0) "locked:4" else "locked:8"), calls)
         assertTrue(calls.last().startsWith("locked:") && calls.none { it.startsWith("open:") })

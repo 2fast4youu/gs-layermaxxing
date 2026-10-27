@@ -141,7 +141,7 @@ class StageStoryTest {
             if (level == 0) rule.setContent { androidx.compose.runtime.key(current) { VillageTheme(true) { PostOffice(StageFixtures.friends, letters, emptyMap(), onOpen = { opened += it.id }, onLocked = { locked += it.id }, onWrite = {}, onClose = {}, level = current) } } }
             frames()
             val post = NativePostTestDriver(rule)
-            assertEquals(letters.filter { it.incoming && it.groupId == null }.map { "letter:${it.id}" }.toSet(), post.letters())
+            assertEquals(letters.filter { it.incoming && it.groupId == null && it.unlocked }.map { "letter:${it.id}" }.toSet(), post.letters())
             if (post.exists("tree-time-now")) post.tap("tree-time-now")
                 // All post stages use their own physical anchors and the shared seal protocol.
                 // the letter tree (clean stage): the unread letter is opened from its sheet, the padlock shows the oldest sealed one
@@ -151,7 +151,7 @@ class StageStoryTest {
                 // (the camera moves back out first: 640 ms)
                 post.back(); frames(); frames(); frames()
                 if (level == 0) {
-                    post.tap("tree-letter-8")
+                    post.letter(8)
                 } else post.tap("tree-padlock")
                 // Selecting a travelling letter only shows its gate, on EVERY stage.
                 // The explicit arrival action, not the selection, reaches the locked handler.

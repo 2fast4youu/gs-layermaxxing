@@ -4,9 +4,9 @@ package at.gregor.layermaxxing
  * 7.9.14: what the post shows, on every stage the same rule (the tree, the mailbox drawer, the letter room, the counter):
  *  - labelled views with real counts: Alle, Ungelesen, Gelesen, Gesendet, Unterwegs;
  *  - the READING state is the own one and nothing else: an incoming letter is "Gelesen" when the server has my read time
- *    for it or it was opened here, otherwise "Ungelesen"; a sent letter is "Gesendet". Whether a letter is still
- *    travelling, sealed or waiting for a gate is its AVAILABILITY ([availability]) and never changes its view: a sealed
- *    letter to me stays visible under Ungelesen (without its content), nothing disappears;
+ *    for it or it was opened here, otherwise "Ungelesen"; a sent letter is "Gesendet". Arrival is an independent
+ *    server gate: arrived sealed mail stays under Ungelesen; unreleased incoming records belong exclusively to
+ *    Unterwegs announcements until that gate opens. Public availability never releases content;
  *  - a person filter that combines with every view and is kept when the view changes; people are every friend plus
  *    everyone a letter was exchanged with (an old friend's letters do not vanish);
  *  - a search over name and cover (title / cover note, what the envelope shows; never the sealed content).
@@ -31,9 +31,10 @@ internal object PostViews {
 
     fun inView(m: ApiClient.Message, view: View, opened: Map<Long, *>): Boolean =
         when (view) {
-            View.ALL -> true
+            View.ALL -> !m.incoming || !Conversations.letterState(m, opened[m.id] != null).locked
+            View.SENT -> !m.incoming
             View.TRAVEL -> Conversations.letterState(m, opened[m.id] != null).locked
-            else -> viewOf(m, opened[m.id] != null) == view
+            else -> !Conversations.letterState(m, opened[m.id] != null).locked && viewOf(m, opened[m.id] != null) == view
         }
 
     fun matches(m: ApiClient.Message, query: String): Boolean {

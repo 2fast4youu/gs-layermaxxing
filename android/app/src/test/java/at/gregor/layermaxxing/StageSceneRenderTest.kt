@@ -125,11 +125,9 @@ class StageSceneRenderTest {
                 IsleBuilding.POST -> {
                     val post = NativePostTestDriver(rule)
                     // Every registered physical face displays its own real message.
-                    val received = StageFixtures.letters.filter { it.incoming && it.groupId == null }
+                    val received = StageFixtures.letters.filter { it.incoming && it.groupId == null && it.unlocked }
                     val ordered = received.sortedWith(compareByDescending<ApiClient.Message> { it.createdAt }.thenByDescending { it.id })
-                    val newestMonth = ordered.firstOrNull()?.let { java.time.YearMonth.from(java.time.Instant.ofEpochSecond(it.createdAt).atZone(java.time.ZoneOffset.UTC)) }
-                    val page = ordered.filter { java.time.YearMonth.from(java.time.Instant.ofEpochSecond(it.createdAt).atZone(java.time.ZoneOffset.UTC)) == newestMonth }
-                        .take(PostRegistration.of(level).sheets.size)
+                    val page = ordered.take(PostRegistration.of(level).sheets.size)
                     val fronts = page
                     assertEquals(msg, fronts.map { "letter:${it.id}" }.toSet(), post.keys("letter:"))
                     assertEquals(msg, fronts.map { it.id },

@@ -1,3 +1,5 @@
+> Superseded postal batching/arrival contract: [APK85 whole arrived-mail spreads](postal-batches84.md). Historical candidate2 descriptions below are not the current capacities or eligibility rules.
+
 # Postal phone feedback — isolated test candidate 2
 
 This preview branch contains the native postal interaction corrections following real phone feedback1253. It is NOT the completed15-scene release. The app remains `at.gregor.layermaxxing.gerfried`; version75 / `7.9.14-post-test2` updates the same-signed test1 installation without uninstalling.

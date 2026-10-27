@@ -126,7 +126,7 @@ class PostCleanPilotTest {
             org.robolectric.shadows.ShadowLooper.idleMainLooper()
             d.frames()
             opened.clear(); locked.clear()
-            val letters = PostPilotFixtures.letters.filter { it.incoming && it.groupId == null }
+            val letters = PostPilotFixtures.letters.filter { it.incoming && it.groupId == null && it.unlocked }
             val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
             val px = rule.activity.resources.displayMetrics.density
             assertFalse("no generic modal or function wall", d.exists("post-letters") || d.exists("post-people") || d.exists("tree-page"))
@@ -146,10 +146,10 @@ class PostCleanPilotTest {
             assertEquals(mira.map { "letter:${it.id}" }.toSet(), d.letters())
             d.tag("post-time-rail").performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(1f)) }; d.frames()
             d.tap("post-status")
-            val counts = PostViews.counts(letters, emptyMap<Long, Any>(), 40, "")
+            val counts = PostViews.counts(PostPilotFixtures.letters.filter { it.incoming && it.groupId == null }, emptyMap<Long, Any>(), 40, "")
             for (v in PostViews.View.entries) {
                 d.scrollTo("tree-window-${v.name}")
-                assertEquals("${v.label}: ${counts[v]} Briefe", d.description("tree-window-${v.name}"))
+                assertEquals("${v.label}: ${counts[v]} ${if (v == PostViews.View.TRAVEL) "Ankündigungen" else "Briefe"}", d.description("tree-window-${v.name}"))
                 val r = d.tag("tree-window-${v.name}").fetchSemanticsNode().boundsInRoot
                 assertTrue("$l ${v.label} visible $r", r.left >= -1 && r.right <= root.right + 1 && r.top >= 64 * px - 1 && r.bottom <= root.bottom + 1)
             }

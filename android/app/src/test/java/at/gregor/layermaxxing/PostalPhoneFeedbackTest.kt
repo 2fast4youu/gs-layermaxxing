@@ -111,7 +111,8 @@ open class PostalPhoneFeedbackTest {
     @Test fun lockedSelectionShowsReleaseDetailsWithoutOpening() {
         val locked = PostPilotFixtures.letters.first().copy(unlocked = false, mode = "timed", releaseAt = 2000000000)
         val h = CodexMotionHarness(rule); h.start(letters = listOf(locked), level = level, fontScale = fontScale)
-        h.touch("tree-letter-${locked.id}"); h.frames()
+        assertFalse(h.exists("tree-letter-${locked.id}")); assertFalse(h.exists("tree-env-${locked.id}"))
+        NativePostTestDriver(rule).letter(locked.id); h.frames()
         h.tag("post-arrival").assertTextContains("Freigabezeit:", substring = true)
         assertEquals(0, h.calls); assertEquals(ScenePhase.REST, h.phase())
         h.scrollSelectorTo("post-arrival-action"); h.touch("post-arrival-action"); h.frames()
@@ -188,8 +189,10 @@ open class PostalPhoneFeedbackTest {
         h.frames(100); assertEquals(ScenePhase.REST, h.phase())
     }
     @Test fun realTimeDragSlidesMailAndRemovesStaleTapTargets() {
-        // A genuine older UTC month ensures history even at the nine-slot tree capacity.
-        val letters = PostPilotFixtures.letters + PostPilotFixtures.letters.first().copy(id = 101, createdAt = PostPilotFixtures.letters.first().createdAt - 32L * 86400)
+        // More than two full arrived spreads guarantee real history; months never create partial pages.
+        val letters = PostPilotFixtures.letters + (101L..119L).map { id ->
+            PostPilotFixtures.letters.first().copy(id = id, unlocked = true, createdAt = PostPilotFixtures.letters.first().createdAt - (32L + id) * 86400)
+        }
         val h = CodexMotionHarness(rule); h.start(letters = letters, level = level, fontScale = fontScale)
         // Match the physical sprite travel used by PostAllStagesProductionTest, not the
         // generic swipe inset (which can stop short of the present-day knob position).
@@ -220,7 +223,7 @@ open class PostalPhoneFeedbackTest {
         assertFalse(h.exists("tree-letter-1"))
         val envelopes = rule.onAllNodes(SemanticsMatcher("mail motion") { it.config.getOrNull(PostalPageSlideKey) != null }, useUnmergedTree = true).fetchSemanticsNodes()
         assertTrue(envelopes.isNotEmpty())
-        assertTrue("Held month detents show whole faces", envelopes.all { it.config[PostalPageSlideKey] == 0f })
+        assertTrue("Held batch detents show whole faces", envelopes.all { it.config[PostalPageSlideKey] == 0f })
         assertEquals(expected.last(), visible())
         expected.first().forEach { assertFalse("No stale target $it during scrub", h.exists("tree-letter-$it")) }
         releaseKnob()

@@ -242,7 +242,8 @@ open class PostalPhoneRepairTest {
 
     @Test fun travellingLetterOnlyShowsArrivalInformationAndNeverFetches() {
         start(listOf(mail.first().copy(unlocked = false, mode = "timed", releaseAt = 2100000000)))
-        tap("tree-letter-1"); node("post-arrival").assertTextContains("Freigabezeit:", substring = true)
+        node("tree-letter-1").assertDoesNotExist(); node("tree-env-1").assertDoesNotExist()
+        NativePostTestDriver(rule).letter(1); node("post-arrival").assertTextContains("Freigabezeit:", substring = true)
         assertEquals(ScenePhase.REST, phase()); assertEquals(0, calls.get()); assertTrue(opened.isEmpty())
     }
 
@@ -401,7 +402,8 @@ open class PostalPhoneRepairTest {
         fun pageFraction(page: Int) = if (last == 0) 1f else 1f - page.toFloat() / last
         assertKnob(1f); capture("painted-knob-now")
         node("post-time-rail").performTouchInput {
-            down(Offset((390f - 319.5f) * scale, height / 2f))
+            down(Offset((510f - 319.5f) * scale, height / 2f))
+            moveTo(Offset((390f - 319.5f) * scale, height / 2f), 200)
         }; frames(3)
         assertKnob(0f)
         assertEquals(last, node("tree-scene-REST").fetchSemanticsNode().config[PostalTimePageKey])

@@ -98,7 +98,7 @@ class LetterTreeTest {
         val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
         // no app chrome on the picture (no header, golden action, story buttons)
         assertTrue(rule.onAllNodesWithText("Brief schreiben").fetchSemanticsNodes().isEmpty())
-        assertEquals(listOf(1L, 2, 4, 6, 8, 9, 11, 13, 14), onTrunk())
+        assertEquals(listOf(1L, 2, 6, 9, 11, 13, 14), onTrunk())
         // tap the sealed letter: the camera moves to its envelope, still sealed; no text yet, no call yet
         tap("tree-letter-1")
         assertTrue(exists("tree-envelope") && !exists("tree-letter-text") && calls.isEmpty())
@@ -120,13 +120,14 @@ class LetterTreeTest {
         // Back to the tree: letter 1 is read, with the same chronological batch and slot.
         rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames(200)
         assertTrue(!exists("tree-lifted") && exists("tree-scene-REST"))
-        assertEquals(listOf(1L, 2, 4, 6, 8, 9, 11, 13, 14), onTrunk())
+        assertEquals(listOf(1L, 2, 6, 9, 11, 13, 14), onTrunk())
     }
 
     @Test fun openedLettersGoStraightToTheirTextTravellingOnesStayClosed() {
         start(mapOf(9L to OpenedMessage("Inhalt von Brief 9 (TESTDATEN)", null, null, null)))
         // travelling (sealed by time / both agree): the existing locked view, no close-up, no open call
-        tap("tree-letter-8")
+        assertTrue(!exists("tree-letter-8") && !exists("tree-env-8"))
+        NativePostTestDriver(rule).letter(8)
         assertTrue(exists("post-arrival")); assertTrue(calls.isEmpty())
         CodexMotionHarness(rule).scrollSelectorTo("post-arrival-action")
         tap("post-arrival-action")
@@ -151,7 +152,7 @@ class LetterTreeTest {
         rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }; frames(200)
         assertEquals(listOf(2L, 9, 13), onTrunk())
         tap("post-status"); tap("tree-window-ALL")
-        assertEquals(listOf(1L, 2, 4, 6, 8, 9, 11, 13, 14), onTrunk())
+        assertEquals(listOf(1L, 2, 6, 9, 11, 13, 14), onTrunk())
     }
 
     @Test fun filtersCombineWithTheOrderAndTheTimePages() {
@@ -164,7 +165,7 @@ class LetterTreeTest {
         assertEquals(listOf(1L, 14), onTrunk())
         tap("post-status")
         val counts = PostViews.counts(letters.filter { it.incoming && it.groupId == null }, emptyMap<Long, Any>(), 40, "")
-        for (v in PostViews.View.entries) assertEquals("${v.label}: ${counts[v]} Briefe", desc("tree-window-${v.name}"))
+        for (v in PostViews.View.entries) assertEquals("${v.label}: ${counts[v]} ${if (v == PostViews.View.TRAVEL) "Ankündigungen" else "Briefe"}", desc("tree-window-${v.name}"))
     }
 
     @Test fun theFountainPenWritesANewLetter() {
@@ -289,7 +290,7 @@ class LetterTreeTest {
             assertTrue("edge $index selection only", exists("tree-scene-SEALED") && calls.isEmpty())
             rule.onRoot().performTouchInput { click(point) }; frames()
             assertTrue("edge $index returns without a request", exists("tree-scene-REST") && !exists("tree-envelope") && calls.isEmpty())
-            assertEquals(listOf(1L, 2, 4, 6, 8, 9, 11, 13, 14), onTrunk())
+            assertEquals(listOf(1L, 2, 6, 9, 11, 13, 14), onTrunk())
         }
         tap("tree-letter-1")
         val point = androidx.compose.ui.geometry.Offset(root.width * .5f, root.height * .95f)

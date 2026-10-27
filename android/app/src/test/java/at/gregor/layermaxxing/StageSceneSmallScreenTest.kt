@@ -105,7 +105,7 @@ class StageSceneSmallScreenTest {
                     val n = d.tag(tag).fetchSemanticsNode()
                     val r = unclipped(n)
                     assertTrue("$msg ${v.label} $r", r.width >= 48 * density - 1 && r.height >= 48 * density - 1 && r.left >= -1 && r.right <= root.right + 1 && r.bottom <= root.bottom)
-                    assertEquals("$msg ${v.label} exact count", "${v.label}: ${counts[v]} Briefe", d.description(tag))
+                    assertEquals("$msg ${v.label} exact count", "${v.label}: ${counts[v]} ${if (v == PostViews.View.TRAVEL) "Ankündigungen" else "Briefe"}", d.description(tag))
                     assertTrue("$msg ${v.label} cut ${layouts(n)}", !overflows(n))
                 }
                 rule.onAllNodesWithText("Ungelesen", useUnmergedTree = true).fetchSemanticsNodes().forEach { assertTrue("$msg Ungelesen cut", !overflows(it)) }

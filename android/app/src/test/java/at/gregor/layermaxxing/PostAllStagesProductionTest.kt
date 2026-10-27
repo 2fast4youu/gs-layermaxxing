@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class PostAllStagesProductionTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
     @get:Rule val testName = TestName()
+    private var readingText = "TESTDATA verified reading content"
     private var level = 0
     private var fontScale = 1f
     private var activeMail by mutableStateOf<List<ApiClient.Message>>(emptyList())
@@ -105,7 +106,7 @@ class PostAllStagesProductionTest {
         activeMail = letters
         val key = CryptoBox.encrypt("synthetic key material").key
         val aad = "TESTDATA canonical metadata"
-        val encrypted = CryptoBox.encryptBytes("TESTDATA verified reading content".toByteArray(), key, aad.toByteArray())
+        val encrypted = CryptoBox.encryptBytes(readingText.toByteArray(), key, aad.toByteArray())
         val transport = OkHttpClient.Builder().addInterceptor { chain ->
             check(chain.request().header("Authorization") == "Bearer synthetic-postal-only")
             if (chain.request().url.encodedPath.endsWith("/messages")) {
@@ -154,7 +155,7 @@ class PostAllStagesProductionTest {
     }
     private fun select() { tap("tree-letter-1"); until(ScenePhase.SEALED); assertEquals(0, calls.get()) }
     private fun capture(name: String) {
-        val directory = System.getenv("POST_ALL_STAGE_SHOTS")?.takeIf { it.isNotBlank() } ?: return
+        val directory = (System.getenv("POST_BATCH84_SHOTS") ?: System.getenv("POST_ALL_STAGE_SHOTS"))?.takeIf { it.isNotBlank() } ?: return
         frames()
         val out = File(directory, "post$level-${fontScale}/${testName.methodName}").also { it.mkdirs() }
         val view = rule.activity.window.decorView
@@ -162,6 +163,18 @@ class PostAllStagesProductionTest {
         rule.runOnIdle { view.draw(Canvas(bitmap)) }
         File(out, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
+        if (exists("tree-letter-text")) {
+            val metrics = File(out, "reading-layout.csv")
+            if (!metrics.exists()) metrics.writeText("frame,tag,font_sp,line_height_sp,left,top,right,bottom,text_length,lines\n")
+            for (tag in listOf("tree-letter-sender", "tree-letter-date", "tree-letter-text")) {
+                if (!exists(tag)) continue
+                val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+                node(tag).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                val layout = layouts.single(); val bounds = node(tag).fetchSemanticsNode().boundsInRoot
+                metrics.appendText("$name,$tag,${layout.layoutInput.style.fontSize.value},${layout.layoutInput.style.lineHeight.value},${bounds.left},${bounds.top},${bounds.right},${bounds.bottom},${layout.layoutInput.text.length},${layout.lineCount}\n")
+            }
+        }
+        if (phase() == ScenePhase.REST) File(out, "batch-frames.csv").appendText("$name,${rule.mainClock.currentTime},${page()},${ids().joinToString(";")}\n")
         val csv = File(out, "actual-frames.csv")
         if (!csv.exists()) csv.writeText("frame,clock_ms,phase,transport_calls,pointer_x_px:pointer_y_px,before_pointer,after_pointer,calls_after_pointer\n")
         csv.appendText("$name,${rule.mainClock.currentTime},${phase()},${calls.get()},$pointer\n")
@@ -298,7 +311,7 @@ class PostAllStagesProductionTest {
             mail.first().copy(id=(month*100+item).toLong(),createdAt=time)
         } }.reversed()
         val capacity=listOf(9,4,6,6)[stage]
-        val expected=PostalBatches.build(history,capacity)
+        val expected=receivedMonthPages(history,capacity)
         val restore=StateRestorationTester(rule)
         start(history,restore=restore)
         val visited=mutableListOf<Long>()
@@ -306,17 +319,311 @@ class PostAllStagesProductionTest {
             node("post-time-rail").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) {
                 it(1f-index.toFloat()/(expected.size-1))
             }; frames(3)
-            assertEquals(PostalBatches.ids(expected[index]),ids())
+            assertEquals(expected[index],ids())
             assertTrue(node("post-time-rail").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.ContentDescription].any {
-                it.contains(PostalBatches.label(expected[index]))
+                it.contains("UTC") && it.contains("Seite ${index + 1} von ${expected.size}")
             })
             visited+=ids()
         }
         assertEquals(history.size,visited.size); assertEquals(history.map { it.id }.toSet(),visited.toSet())
         restore.emulateSavedInstanceStateRestore(); frames(40)
-        assertEquals(PostalBatches.ids(expected.last()),ids())
+        assertEquals(expected.last(),ids())
         capture("month-detents-year-boundary")
         assertEquals(0,calls.get())
+    }
+
+    @Test fun wholeBatch84Post0() = wholeBatch84(0)
+    @Test fun wholeBatch84Post1() = wholeBatch84(1)
+    @Test fun wholeBatch84Post2() = wholeBatch84(2)
+    @Test fun wholeBatch84Post3() = wholeBatch84(3)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84Post0Compact320() = wholeBatch84(0, 1.5f)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84Post1Compact320() = wholeBatch84(1, 1.5f)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84Post2Compact320() = wholeBatch84(2, 1.5f)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84Post3Compact320() = wholeBatch84(3, 1.5f)
+    @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun wholeBatch84Post0Compact360() = wholeBatch84(0, 1.5f)
+    @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun wholeBatch84Post1Compact360() = wholeBatch84(1, 1.5f)
+    @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun wholeBatch84Post2Compact360() = wholeBatch84(2, 1.5f)
+    @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun wholeBatch84Post3Compact360() = wholeBatch84(3, 1.5f)
+
+    /** Independent fixture/order oracle, real end taps, real handle down/moves/up, real mouse wheel.
+     * Two January messages force the first full spread across the December/year boundary. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    private fun wholeBatch84(stage: Int, scale: Float = 1f) {
+        level = stage; fontScale = scale
+        val capacity = listOf(9,4,6,6)[stage]
+        val epoch = java.time.Instant.parse("2026-01-02T12:00:00Z").epochSecond
+        val arrived = mail.take(3 * capacity + 1).mapIndexed { i, m -> m.copy(createdAt = epoch - i * 86400L) }
+        val pending = listOf("timed", "mutual", "manual", "random", "presence").mapIndexed { i, mode ->
+            arrived.first().copy(id = 500L + i, mode = mode, unlocked = false, releaseAt = epoch - 999999,
+                recipientApproved = false, createdAt = epoch + 500 + i,
+                randomFrom = if (mode == "random") epoch + 10000 else null,
+                randomTo = if (mode == "random") epoch + 20000 else null)
+        }
+        val sent = arrived.first().copy(id = 600, incoming = false, createdAt = epoch + 1000)
+        // The oracle deliberately does not call PostalBatches or the shared test helper.
+        val expected = arrived.sortedWith(compareByDescending<ApiClient.Message> { it.createdAt }.thenByDescending { it.id })
+            .map { it.id }.chunked(capacity)
+        val restore = StateRestorationTester(rule)
+        start((arrived + pending + sent).reversed(), restore = restore)
+        var capturedFrame = 0
+        fun faces(index: Int, interactive: Boolean = true) {
+            assertEquals(expected[index], ids())
+            val native = rule.onAllNodes(SemanticsMatcher("actual native envelopes") {
+                it.config.getOrNull(PostalPageSlideKey) != null
+            }, useUnmergedTree = true).fetchSemanticsNodes()
+            assertEquals(expected[index].size, native.size)
+            expected[index].forEach { id ->
+                assertTrue(node("tree-env-$id").fetchSemanticsNode().config.contains(StoragePoseKey))
+                if (interactive) node("tree-letter-$id").assertExists() else node("tree-letter-$id").assertDoesNotExist()
+            }
+            (pending + sent).forEach {
+                node("tree-env-${it.id}").assertDoesNotExist(); node("tree-letter-${it.id}").assertDoesNotExist()
+                node("post-stamp-${it.id}").assertDoesNotExist()
+            }
+            // Inspect the actual displayed TextLayout, not just its full accessibility description.
+            val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            node("post-time-label").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            val from = index * capacity + 1
+            val to = index * capacity + expected[index].size
+            val roman = listOf("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII")
+            fun month(id: Long) = java.time.Instant.ofEpochSecond(arrived.single { it.id == id }.createdAt)
+                .atZone(java.time.ZoneOffset.UTC).let { java.time.YearMonth.of(it.year, it.monthValue) }
+            val endpoints = listOf(month(expected[index].first()), month(expected[index].last())).distinct()
+            val months = endpoints.joinToString("–") { roman[it.monthValue - 1] }
+            val fullMonths = endpoints.joinToString("–") { "${roman[it.monthValue - 1]} ${it.year}" }
+            val description = node("post-time-label").fetchSemanticsNode().children.single()
+                .config[androidx.compose.ui.semantics.SemanticsProperties.ContentDescription].single()
+            assertEquals("$from–$to von ${arrived.size} · $fullMonths", description)
+            val visible = if (stage == 0) "$from–$to/${arrived.size} · $months"
+                else "$from–$to von ${arrived.size}"
+            if (stage == 0) assertEquals(visible, layout.layoutInput.text.text)
+            else assertTrue(layout.layoutInput.text.text.contains(visible))
+            assertFalse("POST$stage actual wood ink must fit", layout.hasVisualOverflow)
+            assertEquals(1, layout.lineCount)
+            assertEquals(layout.layoutInput.text.length, layout.getLineEnd(0, visibleEnd = true))
+            if (stage == 0) {
+                val paintedText = rule.onNode(hasText(visible) and hasAnyAncestor(hasTestTag("post-time-label")), useUnmergedTree = true)
+                paintedText.assertIsDisplayed()
+                val ink = paintedText.fetchSemanticsNode().boundsInRoot
+                val knob = node("post-time-knob").fetchSemanticsNode().boundsInRoot
+                val wood = node("post-time-rail").fetchSemanticsNode().boundsInRoot
+                assertTrue("combined ink stays on the registered wood", ink.left >= wood.left && ink.right <= wood.right && ink.top >= wood.top)
+                assertTrue("actual range/Roman line clears the photographed brass", ink.bottom < knob.top)
+                assertTrue("wood ink remains legible", layout.layoutInput.style.fontSize.value >= 8f)
+                // Roman glyphs are part of the painted line and have real nonempty glyph bounds.
+                val romanStart = visible.indexOf(" · ") + 3
+                for (i in romanStart until visible.length) {
+                    val glyph = layout.getBoundingBox(i)
+                    assertTrue(glyph.width > 0f && glyph.height > 0f)
+                    assertTrue(glyph.left >= 0f && glyph.right <= layout.size.width)
+                }
+            }
+            capture("batch84-${capturedFrame++}-page-$index")
+        }
+        fun end(older: Boolean, jitter: Boolean = false) {
+            val rail = node("post-time-rail").fetchSemanticsNode().boundsInRoot
+            var target = Offset.Zero
+            node("post-time-rail").performTouchInput {
+                target = Offset(if (stage == 0) width * (if (older) 32f else 229f) / 261f
+                    else width * (if (older) 14f else 596f) / 610f, height / 2f)
+                if (jitter) { down(target); moveTo(target + Offset(1f, 1f), 16); up() } else click(target)
+            }
+            pointer = "${rail.left + target.x}:${rail.top + target.y},REST,REST,${calls.get()}"
+            frames(30)
+        }
+        fun x(f: Float, width: Int) = if (stage == 0) width * (70.5f + 120f * f) / 261f
+            else width * (28f + 554f * f) / 610f
+        fun drag(index: Int, releasePointer: Boolean = true) {
+            val rail = node("post-time-rail").fetchSemanticsNode().boundsInRoot
+            val knob = node("post-time-knob").fetchSemanticsNode().boundsInRoot
+            var target = Offset.Zero
+            node("post-time-rail").performTouchInput {
+                down(knob.center - rail.topLeft)
+                target = Offset(x(1f - index.toFloat() / expected.lastIndex, width), knob.center.y - rail.top)
+                moveTo(target, 240)
+            }
+            pointer = "${rail.left + target.x}:${rail.top + target.y},REST,REST,${calls.get()}"
+            frames(3)
+            faces(index, interactive = false)
+            val moving = rule.onAllNodes(SemanticsMatcher("whole faces during held pointer") {
+                it.config.getOrNull(PostalPageSlideKey) != null
+            }, useUnmergedTree = true).fetchSemanticsNodes()
+            assertTrue(moving.all { it.config[PostalPageSlideKey] == 0f })
+            if (releasePointer) { node("post-time-rail").performTouchInput { up() }; frames(30); faces(index) }
+        }
+        faces(0)
+        val readout = node("post-time-label").fetchSemanticsNode().children.single()
+        val readoutDescription = readout.config[androidx.compose.ui.semantics.SemanticsProperties.ContentDescription].single()
+        assertTrue(readoutDescription.contains("I 2026–XII 2025"))
+        assertTrue(readoutDescription.contains("1–$capacity von ${arrived.size}"))
+        val readoutLayouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        node("post-time-label").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(readoutLayouts) }
+        assertTrue(readoutLayouts.single().layoutInput.text.text.contains(
+            if (stage == 0) "1–$capacity/${arrived.size} · I–XII" else "1–$capacity von ${arrived.size}"))
+        // A new arrival BETWEEN gestures must not rotate the next frozen whole spread.
+        rule.runOnIdle { activeMail = activeMail + arrived.first().copy(id = 9998, createdAt = epoch + 9998) }
+        frames(30); faces(0)
+        node("tree-env-9998").assertDoesNotExist()
+        val visited = ids().toMutableList()
+        end(true); faces(1); visited += ids()
+        end(true); faces(2); visited += ids()
+        end(true); faces(3); visited += ids()
+        assertEquals(arrived.map { it.id }, visited); assertEquals(visited.size, visited.toSet().size)
+        end(false); faces(2); end(false); faces(1); end(false); faces(0)
+        end(true, jitter = true); faces(1); end(false, jitter = true); faces(0)
+        drag(1); drag(3); drag(0)
+        node("post-time-rail").performMouseInput { moveTo(center); scroll(1f) }; frames(30); faces(1)
+        node("post-time-rail").performMouseInput { moveTo(center); scroll(-1f) }; frames(30); faces(0)
+        node("post-time-rail").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
+        node("post-time-rail").performKeyInput { pressKey(androidx.compose.ui.input.key.Key.DirectionLeft) }; frames(30); faces(1)
+        node("post-time-rail").performKeyInput { pressKey(androidx.compose.ui.input.key.Key.DirectionRight) }; frames(30); faces(0)
+        node("tree-time-back").performClick(); frames(30); faces(1)
+        node("tree-time-back").performClick(); frames(30); faces(2)
+        node("tree-time-now").performClick(); frames(30); faces(1)
+        node("tree-time-now").performClick(); frames(30); faces(0)
+        // A new eligible arrival during DOWN..UP must not rotate any held batch.
+        drag(1, releasePointer = false)
+        rule.runOnIdle {
+            activeMail = activeMail + arrived.first().copy(id = 9999, createdAt = epoch + 9999)
+            opened[arrived.first().id] = OpenedMessage("SYNTHETIC cached reading", null, null, null)
+        }; frames(5); faces(1, interactive = false)
+        val heldRail = node("post-time-rail").fetchSemanticsNode().boundsInRoot
+        var heldTarget = Offset.Zero
+        node("post-time-rail").performTouchInput {
+            heldTarget = Offset(x(1f - 2f / expected.lastIndex, width), height / 2f)
+            moveTo(heldTarget, 200)
+        }
+        pointer = "${heldRail.left + heldTarget.x}:${heldRail.top + heldTarget.y},REST,REST,${calls.get()}"
+        frames(3); faces(2, interactive = false)
+        node("post-time-rail").performTouchInput { up() }; frames(30); faces(2)
+        restore.emulateSavedInstanceStateRestore(); frames(30); faces(2)
+        // Live server revocation removes an anchored face immediately; its neighbour keeps its slot.
+        val revoked = expected[2].first()
+        val survivor = expected[2][1]
+        val bounds = node("tree-env-$survivor").fetchSemanticsNode().boundsInRoot
+        rule.runOnIdle { activeMail = activeMail.map { if (it.id == revoked) it.copy(unlocked = false) else it } }; frames(30)
+        assertEquals(expected[2].drop(1), ids()); node("tree-env-$revoked").assertDoesNotExist()
+        assertEquals(bounds, node("tree-env-$survivor").fetchSemanticsNode().boundsInRoot)
+        // Ordinary back/forward navigation still uses the original partition after revocation.
+        end(false); faces(1)
+        end(true); assertEquals(expected[2].drop(1), ids())
+        node("tree-env-$revoked").assertDoesNotExist()
+        end(false); faces(1)
+        // A real tap on the CURRENT photographed knob deliberately refreshes all chunks.
+        val refreshRail = node("post-time-rail").fetchSemanticsNode().boundsInRoot
+        val refreshKnob = node("post-time-knob").fetchSemanticsNode().boundsInRoot
+        node("post-time-rail").performTouchInput { click(refreshKnob.center - refreshRail.topLeft) }
+        frames(30)
+        val refreshed = activeMail.filter { it.incoming && it.groupId == null && it.unlocked }
+            .sortedWith(compareByDescending<ApiClient.Message> { it.createdAt }.thenByDescending { it.id }).map { it.id }.chunked(capacity)
+        assertEquals(refreshed[1], ids())
+        end(false)
+        assertEquals(refreshed[0], ids())
+        assertEquals(listOf(9999L, 9998L), ids().take(2))
+        ids().forEach { node("tree-env-$it").assertExists(); node("tree-letter-$it").assertExists() }
+        assertEquals(ids().size, rule.onAllNodes(SemanticsMatcher("refreshed native envelopes") {
+            it.config.getOrNull(PostalPageSlideKey) != null
+        }, useUnmergedTree = true).fetchSemanticsNodes().size)
+        capture("batch84-explicit-knob-refresh")
+        assertEquals(0, calls.get())
+        // Pending metadata survives exclusively as a deliberate announcement, with the gate action intact.
+        tap("post-status"); NativePostTestDriver(rule).scrollTo("tree-window-TRAVEL"); tap("tree-window-TRAVEL")
+        assertTrue(ids().isEmpty()); node("post-empty").assertExists()
+        tap("post-mail"); NativePostTestDriver(rule).scrollTo("post-select-500"); tap("post-select-500")
+        node("post-arrival").assertTextContains("Freigabezeit:", substring = true)
+        assertEquals(0, calls.get()); assertTrue(exists("post-arrival-action"))
+    }
+
+    @Test fun wholeBatch84ReadingPost0() = reading84(0)
+    @Test fun wholeBatch84ReadingPost1() = reading84(1)
+    @Test fun wholeBatch84ReadingPost2() = reading84(2)
+    @Test fun wholeBatch84ReadingPost3() = reading84(3)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84ReadingPost0Compact() = reading84(0, 1.5f)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84ReadingPost1Compact() = reading84(1, 1.5f)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84ReadingPost2Compact() = reading84(2, 1.5f)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84ReadingPost3Compact() = reading84(3, 1.5f)
+    @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun wholeBatch84ReadingPost0Compact360() = reading84(0, 1.5f)
+    @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun wholeBatch84ReadingPost1Compact360() = reading84(1, 1.5f)
+    @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun wholeBatch84ReadingPost2Compact360() = reading84(2, 1.5f)
+    @Test @Config(qualifiers = "w360dp-h640dp-hdpi") fun wholeBatch84ReadingPost3Compact360() = reading84(3, 1.5f)
+    @Test fun wholeBatch84PendingOnlyPost0() = pendingOnly84(0)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84PendingOnlyPost1() = pendingOnly84(1)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84PendingOnlyPost2() = pendingOnly84(2)
+    @Test @Config(qualifiers = "w320dp-h640dp-hdpi") fun wholeBatch84PendingOnlyPost3() = pendingOnly84(3)
+    private fun pendingOnly84(stage: Int) {
+        level = stage; fontScale = 1.5f
+        start(listOf("timed", "mutual", "manual").mapIndexed { i, mode ->
+            mail[i].copy(unlocked = false, mode = mode, releaseAt = 1, readAt = 1)
+        })
+        assertTrue(ids().isEmpty())
+        mail.take(3).forEach { m ->
+            node("tree-env-${m.id}").assertDoesNotExist(); node("tree-letter-${m.id}").assertDoesNotExist()
+            node("post-stamp-${m.id}").assertDoesNotExist()
+        }
+        node("post-empty").assertTextEquals("3 unterwegs")
+        assertTrue(node("post-empty").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.ContentDescription]
+            .any { it.contains("3 Ankündigungen unterwegs") && it.contains("Noch nicht angekommen") })
+        val pendingLayouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        node("post-empty").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(pendingLayouts) }
+        assertEquals(1, pendingLayouts.single().lineCount)
+        capture("pending84-layout-diagnostic")
+        val pendingLayout = pendingLayouts.single()
+        assertFalse("pending stage=$stage size=${pendingLayout.size} constraints=${pendingLayout.layoutInput.constraints} " +
+            "paragraph=${pendingLayout.multiParagraph.width}x${pendingLayout.multiParagraph.height} " +
+            "width=${pendingLayout.didOverflowWidth} height=${pendingLayout.didOverflowHeight} style=${pendingLayout.layoutInput.style}",
+            pendingLayout.hasVisualOverflow)
+        node("post-time-rail").assertIsNotEnabled()
+        assertEquals(ScenePhase.REST, phase())
+        assertEquals(0, calls.get())
+        capture("pending84-announcements-no-envelopes")
+        tap("post-status")
+        assertTrue(NativePostTestDriver(rule).description("tree-window-ALL").contains("0 Briefe"))
+        assertTrue(NativePostTestDriver(rule).description("tree-window-UNREAD").contains("0 Briefe"))
+        assertTrue(NativePostTestDriver(rule).description("tree-window-TRAVEL").contains("3 Ankündigungen"))
+        back()
+        tap(if (stage == 0) "tree-wax-bucket" else "tree-pen"); frames(50)
+        assertTrue(exists("tree-page")); assertEquals(0, calls.get())
+        capture("pending84-announcements-only-composer")
+    }
+
+    private fun reading84(stage: Int, scale: Float = 1f) {
+        level = stage; fontScale = scale
+        readingText = "TESTDATA actual decrypted first paragraph. The words on this paper are the message.\n\n" +
+            (1..12).joinToString("\n\n") { "Paragraph $it: comfortable ink on original paper, with the complete authenticated content available by scrolling." }
+        val restore = StateRestorationTester(rule)
+        start(mail.take(1), restore = restore); select(); release = true; at(.5f, .5f); until(ScenePhase.READING)
+        assertEquals(1, calls.get())
+        node("tree-letter-text").assertTextEquals(readingText)
+        fun layout(tag: String): androidx.compose.ui.text.TextLayoutResult {
+            val result = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            node(tag).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(result) }
+            return result.single()
+        }
+        val body = layout("tree-letter-text")
+        assertTrue(body.layoutInput.style.fontSize.value > layout("tree-letter-sender").layoutInput.style.fontSize.value)
+        assertTrue(body.layoutInput.style.fontSize.value > layout("tree-letter-date").layoutInput.style.fontSize.value)
+        assertEquals(29f, body.layoutInput.style.lineHeight.value)
+        assertEquals(readingText.length, body.getLineEnd(body.lineCount - 1, visibleEnd = true))
+        assertFalse((0 until body.lineCount).any { body.isLineEllipsized(it) })
+        val firstInk = node("tree-letter-text").fetchSemanticsNode().boundsInRoot
+        val paper = node("tree-page").fetchSemanticsNode().boundsInRoot
+        assertTrue("Actual reading starts on the first screen", firstInk.top >= paper.top && firstInk.top < paper.bottom - 29f)
+        capture("reading84-first-authenticated-text")
+        NativePostTestDriver(rule).scrollTo("tree-letter-unread")
+        node("tree-letter-unread").assertIsDisplayed()
+        node("tree-letter-prev").assertExists(); node("tree-letter-next").assertExists()
+        capture("reading84-scrolled-actions")
+        fun scrollOffset() = node("tree-page").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange].value()
+        val offset = scrollOffset()
+        assertTrue(offset > 0f)
+        rule.runOnIdle { activeMail = activeMail.map { it.copy(readAt = 2000000000L) } }; frames(10)
+        assertEquals(offset, scrollOffset())
+        restore.emulateSavedInstanceStateRestore(); until(ScenePhase.READING)
+        assertEquals(offset, scrollOffset())
+        tap("tree-letter-unread"); until(ScenePhase.SEALED); assertEquals(1, unreadCalls.get())
+        at(.5f, .84f); until(ScenePhase.READING); assertEquals(2, calls.get())
+        node("tree-letter-text").assertTextEquals(readingText)
     }
 
     @Test fun releaseComposerPointRelative411() = composerRelease(ComposeMode.DATE_TIME, TimeBasis.RELATIVE)
