@@ -1,0 +1,68 @@
+name: Verify per-app Android signing key
+'on':
+  workflow_dispatch: {}
+  push:
+    paths:
+    - .github/workflows/android-signing-check.yml
+permissions:
+  contents: read
+jobs:
+  verify-key:
+    name: Verify ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - app: gs-layermaxxing
+          keystore: ANDROID_RELEASE_KEYSTORE_B64
+          store_password: ANDROID_RELEASE_STORE_PASSWORD
+          key_password: ANDROID_RELEASE_KEY_PASSWORD
+          alias: ANDROID_RELEASE_KEY_ALIAS
+          cert: 1e8d34ee5627cc2c794dd862a89b3822b94956b8b19540bc8d0d22f94f334198
+    steps:
+    - uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Verify certificate and real private-key signing
+      shell: bash
+      env:
+        KEYSTORE_B64: ${{ secrets[matrix.keystore] }}
+        STORE_PASSWORD: ${{ secrets[matrix.store_password] }}
+        KEY_PASSWORD: ${{ secrets[matrix.key_password] }}
+        KEY_ALIAS: ${{ secrets[matrix.alias] }}
+        EXPECTED_CERT: ${{ matrix.cert }}
+      run: 'set -euo pipefail
+
+        umask 077
+
+        d="$RUNNER_TEMP/android-signing-probe"
+
+        mkdir -p "$d/content"
+
+        printf ''GitHub per-app signing verification only\n'' > "$d/content/probe.txt"
+
+        trap ''rm -rf "$d"'' EXIT
+
+        printf ''%s'' "$KEYSTORE_B64" | base64 --decode > "$d/release.p12"
+
+        keytool -exportcert -keystore "$d/release.p12" -alias "$KEY_ALIAS" -storepass:env
+        STORE_PASSWORD > "$d/cert.der"
+
+        ACTUAL=$(sha256sum "$d/cert.der" | cut -d'' '' -f1)
+
+        test "$ACTUAL" = "$EXPECTED_CERT" || { echo ''Certificate mismatch''; exit
+        1; }
+
+        jar --create --file "$d/unsigned.jar" -C "$d/content" .
+
+        jarsigner -keystore "$d/release.p12" -storepass:env STORE_PASSWORD -keypass:env
+        KEY_PASSWORD -signedjar "$d/signed.jar" "$d/unsigned.jar" "$KEY_ALIAS"
+
+        jarsigner -verify "$d/signed.jar"
+
+        printf ''Verified per-app private key and certificate: %s\n'' "$ACTUAL"
+
+        '
